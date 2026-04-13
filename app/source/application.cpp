@@ -19,7 +19,12 @@ int Application::run(const StartupContext& context) const {
 
     brls::Application::createWindow(switchbox::core::BuildInfo::app_name());
     brls::Application::getPlatform()->setThemeVariant(brls::ThemeVariant::DARK);
-    brls::Application::setGlobalQuit(true);
+    brls::Application::getStyle().addMetric("brls/applet_frame/header_height", 64.0f);
+    brls::Application::getStyle().addMetric("brls/applet_frame/header_padding_top_bottom", 8.0f);
+    brls::Application::getStyle().addMetric("brls/applet_frame/header_padding_sides", 26.0f);
+    brls::Application::getStyle().addMetric("brls/applet_frame/header_title_font_size", 22.0f);
+    brls::Application::getStyle().addMetric("brls/applet_frame/header_title_top_offset", 3.0f);
+    brls::Application::setGlobalQuit(false);
     brls::Application::pushActivity(new HomeActivity(context));
 
     while (brls::Application::mainLoop()) {

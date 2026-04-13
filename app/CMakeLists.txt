@@ -1,6 +1,8 @@
 add_library(switchbox_app STATIC
     source/application.cpp
+    source/header_status_hint.cpp
     source/home_activity.cpp
+    source/placeholder_activity.cpp
 )
 
 target_include_directories(switchbox_app

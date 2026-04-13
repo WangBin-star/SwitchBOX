@@ -9,6 +9,9 @@ namespace switchbox::app {
 class HomeActivity : public brls::Activity {
 public:
     explicit HomeActivity(const StartupContext& context);
+
+private:
+    StartupContext context;
 };
 
 }  // namespace switchbox::app

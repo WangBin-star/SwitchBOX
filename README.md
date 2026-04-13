@@ -1,5 +1,22 @@
 # SwitchBOX
 
+## 2026-04-13 UI约定补充
+
+以下界面约定当前已经确认，后续默认按此继续开发：
+
+- 顶部保留 `Borealis AppletFrame` 标题栏，不再改成自定义整页头部
+- 底部保留 `Borealis` 按键提示栏，不再移除
+- 底部原生时间、WiFi、电量显示继续隐藏
+- 右上角使用自定义状态区显示时间和 WiFi 状态
+- 当前右上角时间格式为 `HH:MM:SS`
+- 当前右上角时间字号为 `14`
+- 当前首页底部 `+` 按键提示保留，提示文字为 `设置`
+
+当前实现约定：
+
+- 首页的 `+ = 设置` 动作注册在首页根 `AppletFrame`
+- 全局 `BUTTON_START = 退出` 已关闭，避免覆盖首页底部的 `设置` 提示
+
 ## 本项目的目的
 
 让 `Nintendo Switch` 可以像电视盒子一样使用，支持两类核心能力：
@@ -52,7 +69,9 @@ UI 框架：
 - `.nro` 生成链路已在当前机器复验通过
 - `Borealis` 以 vendored 方式接入项目
 - `resources/` 资源目录接入构建
-- 基础首页活动页 `HomeActivity`
+- `HomeActivity` 已升级为主入口壳
+- 已加入 `IPTV / SMB / Playback Test / Settings` 四个模块入口
+- 已加入可复用的占位页面 `PlaceholderActivity`
 - 桌面端应用壳启动与页面展示
 - Switch 端 `ELF / NACP / NRO` 产物已成功生成
 - VS Code 任务化构建
@@ -63,7 +82,9 @@ UI 框架：
 当前程序还不是播放器主体，现阶段是一个可启动的应用壳：
 
 - 启动后进入 `HomeActivity`
-- 页面展示项目标题、当前平台、版本号和下一阶段目标
+- 首页现在是主入口，不再只是静态状态页
+- 当前提供 4 个入口：`IPTV`、`SMB / NAS`、`Playback Test`、`Settings`
+- 每个入口都会进入对应的占位 Activity，供后续逐步替换为真实功能
 - 桌面端用于快速调试 UI 和应用流程
 - Switch 端已用于验证真实目标平台构建、打包和 `.nro` 产出链路
 
@@ -71,11 +92,10 @@ UI 框架：
 
 接下来优先做以下内容：
 
-1. 明确首页导航结构
-2. 加入 IPTV 数据模型和占位页面
-3. 预留 SMB / NAS 浏览入口
-4. 接入播放器壳层与播放状态管理
-5. 在已打通的 Switch 构建基础上继续推进真正的播放壳
+1. 将 `Playback Test` 升级为真实播放器 Activity 骨架
+2. 给 `IPTV` 页面接入数据模型和列表壳
+3. 给 `SMB / NAS` 页面接入连接设置和浏览壳
+4. 在已打通的 `Desktop + Switch` 构建基础上推进播放状态管理
 
 ## 开发环境
 
@@ -183,6 +203,12 @@ cmd /d /s /c "\"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxilia
 cmd /d /s /c "\"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat\" >nul && \"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe\" --build build\desktop-vs"
 ```
 
+补充说明：
+
+- 手动执行桌面端构建时，必须带上 `vcvars64.bat` 这层开发环境
+- 如果直接在普通 PowerShell 里运行 `cmake --build build/desktop-vs`，可能会出现找不到 `string`、`algorithm` 等标准库头文件的情况
+- 日常最稳的方式仍然是优先使用 `VS Code` 任务：`switchbox: build desktop`
+
 桌面目标运行：
 
 ```powershell
@@ -211,6 +237,10 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build .
 ## 当前产物位置
 
 桌面可执行文件：
+
+- `build/desktop-vs/app/switchbox_desktop.exe`
+
+当前桌面端最新构建也已经确认成功：
 
 - `build/desktop-vs/app/switchbox_desktop.exe`
 
