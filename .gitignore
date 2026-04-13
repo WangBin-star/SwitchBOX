@@ -13,7 +13,9 @@ Makefile
 
 # IDEs and editors
 .idea/
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/settings.json
 *.suo
 *.user
 *.userosscache

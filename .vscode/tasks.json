@@ -1,0 +1,100 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "switchbox: configure desktop",
+      "type": "shell",
+      "command": "cmd",
+      "args": [
+        "/d",
+        "/s",
+        "/c",
+        "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" >nul && \"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe\" -S . -B build\\desktop-vs -G Ninja -DCMAKE_MAKE_PROGRAM=\"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja\\ninja.exe\" -DSWITCHBOX_BUILD_DESKTOP=ON -DSWITCHBOX_BUILD_SWITCH=OFF"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "switchbox: build desktop",
+      "type": "shell",
+      "command": "cmd",
+      "args": [
+        "/d",
+        "/s",
+        "/c",
+        "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" >nul && \"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe\" --build build\\desktop-vs"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": "switchbox: configure desktop"
+    },
+    {
+      "label": "switchbox: run desktop",
+      "type": "shell",
+      "command": "${workspaceFolder}\\build\\desktop-vs\\app\\switchbox_desktop.exe",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "dependsOn": "switchbox: build desktop"
+    },
+    {
+      "label": "switchbox: configure switch",
+      "type": "shell",
+      "command": "C:\\devkitPro\\msys2\\usr\\bin\\cmake.exe",
+      "args": [
+        "-S",
+        ".",
+        "-B",
+        "build/switch",
+        "-G",
+        "Unix Makefiles",
+        "-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/switch.cmake",
+        "-DSWITCHBOX_BUILD_DESKTOP=OFF",
+        "-DSWITCHBOX_BUILD_SWITCH=ON"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "C:\\devkitPro\\msys2\\usr\\bin;${env:PATH}",
+          "DEVKITPRO": "/opt/devkitpro",
+          "DEVKITA64": "/opt/devkitpro/devkitA64"
+        }
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "switchbox: build switch",
+      "type": "shell",
+      "command": "C:\\devkitPro\\msys2\\usr\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        "build/switch"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "C:\\devkitPro\\msys2\\usr\\bin;${env:PATH}",
+          "DEVKITPRO": "/opt/devkitpro",
+          "DEVKITA64": "/opt/devkitpro/devkitA64"
+        }
+      },
+      "problemMatcher": [],
+      "dependsOn": "switchbox: configure switch"
+    }
+  ]
+}
