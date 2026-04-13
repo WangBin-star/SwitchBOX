@@ -22,3 +22,10 @@ endif ()
 include("${DEVKITPRO}/cmake/Switch.cmake")
 
 set(SWITCHBOX_SWITCH TRUE CACHE BOOL "Building for Nintendo Switch")
+
+if (WIN32)
+    # GCC-generated depfiles can break under CMake Makefiles when the workspace path
+    # contains Windows drive prefixes or non-ASCII characters. Fall back to CMake's
+    # dependency scanner for stable builds on this host.
+    set(CMAKE_DEPENDS_USE_COMPILER FALSE)
+endif ()

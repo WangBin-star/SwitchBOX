@@ -56,12 +56,14 @@
       "type": "shell",
       "command": "C:\\devkitPro\\msys2\\usr\\bin\\cmake.exe",
       "args": [
+        "--%",
         "-S",
         ".",
         "-B",
         "build/switch",
         "-G",
-        "Unix Makefiles",
+        "Ninja",
+        "-DCMAKE_MAKE_PROGRAM=C:/devkitPro/msys2/usr/bin/ninja.exe",
         "-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/switch.cmake",
         "-DSWITCHBOX_BUILD_DESKTOP=OFF",
         "-DSWITCHBOX_BUILD_SWITCH=ON"
@@ -83,10 +85,10 @@
       "command": "C:\\devkitPro\\msys2\\usr\\bin\\cmake.exe",
       "args": [
         "--build",
-        "build/switch"
+        "."
       ],
       "options": {
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}/build/switch",
         "env": {
           "PATH": "C:\\devkitPro\\msys2\\usr\\bin;${env:PATH}",
           "DEVKITPRO": "/opt/devkitpro",

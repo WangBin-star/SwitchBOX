@@ -1,6 +1,26 @@
 {
   "cmake.configureOnOpen": false,
+  "files.encoding": "utf8",
   "files.associations": {
     "*.tpp": "cpp"
+  },
+  "terminal.integrated.defaultProfile.windows": "PowerShell UTF-8",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell UTF-8": {
+      "source": "PowerShell",
+      "args": [
+        "-NoExit",
+        "-Command",
+        "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $PSDefaultParameterValues['Get-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Set-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; chcp 65001 > $null"
+      ]
+    }
+  },
+  "terminal.integrated.automationProfile.windows": {
+    "source": "PowerShell",
+    "args": [
+      "-NoExit",
+      "-Command",
+      "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $PSDefaultParameterValues['Get-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Set-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; chcp 65001 > $null"
+    ]
   }
 }

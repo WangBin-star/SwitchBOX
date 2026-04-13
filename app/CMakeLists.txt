@@ -1,5 +1,6 @@
 add_library(switchbox_app STATIC
     source/application.cpp
+    source/home_activity.cpp
 )
 
 target_include_directories(switchbox_app
@@ -9,6 +10,7 @@ target_include_directories(switchbox_app
 
 target_link_libraries(switchbox_app
     PUBLIC
+        borealis
         switchbox_core
 )
 
@@ -48,11 +50,18 @@ if (SWITCHBOX_BUILD_DESKTOP)
             target_compile_options(switchbox_desktop PRIVATE -Wall -Wextra -Wpedantic)
         endif ()
     endif ()
+
+    add_custom_target(switchbox_desktop_resources
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${CMAKE_BINARY_DIR}/resources"
+    )
+
+    add_dependencies(switchbox_desktop switchbox_desktop_resources)
 endif ()
 
 if (SWITCHBOX_BUILD_SWITCH)
     add_executable(switchbox_switch
         source/main_switch.cpp
+        "${CMAKE_SOURCE_DIR}/library/borealis/library/lib/platforms/switch/switch_wrapper.c"
     )
 
     target_link_libraries(switchbox_switch
@@ -78,6 +87,12 @@ if (SWITCHBOX_BUILD_SWITCH)
     endif ()
 
     set(SWITCHBOX_NACP_PATH "${CMAKE_CURRENT_BINARY_DIR}/switchbox_switch.nacp")
+    set(SWITCHBOX_SWITCH_ROMFS_DIR "${DEVKITPRO}/tmp/switchbox-switch-romfs")
+
+    file(REMOVE_RECURSE "${SWITCHBOX_SWITCH_ROMFS_DIR}")
+    file(MAKE_DIRECTORY "${SWITCHBOX_SWITCH_ROMFS_DIR}")
+    file(COPY "${SWITCHBOX_RESOURCES_DIR}/" DESTINATION "${SWITCHBOX_SWITCH_ROMFS_DIR}")
+
     nx_generate_nacp(
         OUTPUT "${SWITCHBOX_NACP_PATH}"
         NAME "${SWITCHBOX_SWITCH_TITLE}"
@@ -85,7 +100,18 @@ if (SWITCHBOX_BUILD_SWITCH)
         VERSION "${PROJECT_VERSION}"
     )
 
+    # elf2nro can fail on Windows workspaces with non-ASCII source paths.
+    # Stage romfs assets under an ASCII-only path before packaging the NRO.
+    add_custom_target(switchbox_switch_romfs_stage
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+    )
+
     nx_create_nro(switchbox_switch
         NACP "${SWITCHBOX_NACP_PATH}"
+        ROMFS "${SWITCHBOX_SWITCH_ROMFS_DIR}"
     )
+
+    add_dependencies(switchbox_switch_nro switchbox_switch_romfs_stage)
 endif ()
