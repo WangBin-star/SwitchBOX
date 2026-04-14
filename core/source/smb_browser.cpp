@@ -4,12 +4,19 @@
 #include <array>
 #include <cctype>
 #include <filesystem>
+#include <memory>
 #include <string_view>
 #include <system_error>
 
 #if defined(_WIN32) && !defined(__SWITCH__)
 #include <windows.h>
 #include <winnetwk.h>
+#endif
+
+#ifdef __SWITCH__
+#include <fcntl.h>
+#include <smb2/libsmb2.h>
+#include <smb2/smb2.h>
 #endif
 
 namespace switchbox::core {
@@ -20,6 +27,26 @@ struct ParsedShareTarget {
     std::string share_name;
     std::string initial_relative_path;
 };
+
+#ifdef __SWITCH__
+struct Smb2ContextDeleter {
+    void operator()(smb2_context* context) const {
+        if (context != nullptr) {
+            smb2_destroy_context(context);
+        }
+    }
+};
+
+struct Smb2DirectoryDeleter {
+    smb2_context* context = nullptr;
+
+    void operator()(smb2dir* directory) const {
+        if (context != nullptr && directory != nullptr) {
+            smb2_closedir(context, directory);
+        }
+    }
+};
+#endif
 
 #if defined(_WIN32) && !defined(__SWITCH__)
 struct WindowsSmbAuthResult {
@@ -475,6 +502,19 @@ ParsedShareTarget parse_share_target(const std::string& raw_share) {
     return parsed;
 }
 
+std::string make_smb2_path(const ParsedShareTarget& share_target, const std::string& relative_path) {
+    std::vector<std::string> segments = split_relative_segments(share_target.initial_relative_path);
+    const auto relative_segments = split_relative_segments(relative_path);
+    segments.insert(segments.end(), relative_segments.begin(), relative_segments.end());
+    const std::string effective_relative_path = join_segments(segments);
+
+    if (effective_relative_path.empty()) {
+        return {};
+    }
+
+    return effective_relative_path;
+}
+
 bool entry_name_less(const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
     if (lhs.is_directory != rhs.is_directory) {
         return lhs.is_directory && !rhs.is_directory;
@@ -714,11 +754,102 @@ SmbBrowserResult browse_smb_directory(
         return result;
     }
 #else
+#ifdef __SWITCH__
+    result.backend_available = true;
+
+    try {
+        const std::string host = trim_network_component(source.host);
+        const ParsedShareTarget share_target = parse_share_target(source.share);
+        if (host.empty() || share_target.share_name.empty()) {
+            result.error_message = "SMB source is missing host or share.";
+            return result;
+        }
+
+        std::unique_ptr<smb2_context, Smb2ContextDeleter> smb2(smb2_init_context());
+        if (!smb2) {
+            result.error_message = "Failed to initialize libsmb2 context.";
+            return result;
+        }
+
+        smb2_set_timeout(smb2.get(), 10);
+        smb2_set_security_mode(smb2.get(), SMB2_NEGOTIATE_SIGNING_ENABLED);
+
+        if (!source.username.empty()) {
+            smb2_set_user(smb2.get(), source.username.c_str());
+        }
+
+        if (!source.password.empty()) {
+            smb2_set_password(smb2.get(), source.password.c_str());
+        }
+
+        const int connect_result =
+            smb2_connect_share(smb2.get(), host.c_str(), share_target.share_name.c_str(),
+                               source.username.empty() ? nullptr : source.username.c_str());
+        if (connect_result < 0) {
+            result.error_message = smb2_get_error(smb2.get());
+            return result;
+        }
+
+        const std::string smb2_path = make_smb2_path(share_target, result.requested_path);
+        std::unique_ptr<smb2dir, Smb2DirectoryDeleter> directory(
+            smb2_opendir(smb2.get(), smb2_path.empty() ? "" : smb2_path.c_str()),
+            Smb2DirectoryDeleter{smb2.get()});
+        if (!directory) {
+            result.error_message = smb2_get_error(smb2.get());
+            smb2_disconnect_share(smb2.get());
+            return result;
+        }
+
+        while (auto* entry = smb2_readdir(smb2.get(), directory.get())) {
+            const std::string name = entry->name == nullptr ? "" : entry->name;
+            if (name.empty() || name == "." || name == "..") {
+                continue;
+            }
+
+            const bool is_directory = entry->st.smb2_type == SMB2_TYPE_DIRECTORY;
+            if (is_directory) {
+                result.entries.push_back({
+                    .name = name,
+                    .relative_path = smb_join_relative_path(result.requested_path, name),
+                    .is_directory = true,
+                    .playable = false,
+                    .size = 0,
+                });
+                continue;
+            }
+
+            if (!is_playable_extension(name, result.normalized_extensions)) {
+                continue;
+            }
+
+            result.entries.push_back({
+                .name = name,
+                .relative_path = smb_join_relative_path(result.requested_path, name),
+                .is_directory = false,
+                .playable = true,
+                .size = entry->st.smb2_size,
+            });
+        }
+
+        directory.reset();
+        smb2_disconnect_share(smb2.get());
+        std::sort(result.entries.begin(), result.entries.end(), entry_name_less);
+        result.success = true;
+        return result;
+    } catch (const std::exception& exception) {
+        result.error_message = std::string("SMB browse exception: ") + exception.what();
+        return result;
+    } catch (...) {
+        result.error_message = "SMB browse exception: unknown error";
+        return result;
+    }
+#else
     (void)source;
     (void)general;
     result.backend_available = false;
     result.error_message = "SMB browser backend is not available on this platform yet.";
     return result;
+#endif
 #endif
 }
 

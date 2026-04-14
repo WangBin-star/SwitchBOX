@@ -88,6 +88,9 @@ UI 框架：
 - 设置页修改会先保留在草稿状态，按 `+` 后写入 `switchbox.ini`
 - 设置页保存后会重建根界面，首页卡片会按最新配置立即刷新
 - 底部 `A / 确定`、`B / 返回` 提示已纳入简体中文切换范围
+- 首页 `SMB` 卡片已经接入真实浏览页
+- `Desktop` 与 `Switch` 两端当前都已经可以列出 SMB 目录与可播放文件
+- `Switch` 端 SMB 浏览已改为基于 `libsmb2` 的真实后端
 - 已完成一轮保守清理，移除了无用日志和部分 `CMake` 探测残留目录
 - `VS Code` 任务化构建已可直接使用
 - `VS Code` 工作区终端 `UTF-8` 配置已修正
@@ -100,10 +103,12 @@ UI 框架：
 - 首页是主入口，不再只是静态状态页
 - 首页当前不再承担“说明文档式”信息展示，而是直接展示来源入口卡片
 - `Settings` 已为真实页面
-- 其他三个模块仍主要作为后续功能入口
+- `SMB` 当前已进入真实目录浏览页
+- 点击 SMB 文件后当前仍进入播放占位页，真实播放链路仍待接入
+- `IPTV` 与 `Playback Test` 当前仍主要作为后续功能入口
 - 桌面端用于快速调试 UI 和应用流程
 - Switch 端已用于验证真实目标平台构建、打包和 `.nro` 产出链路
-- 当前还没有进入真实播放页面，仍处于“设置先行、播放待接入”的阶段
+- 当前整体仍处于“设置与浏览已接入、真实播放待接入”的阶段
 
 ### 当前 UI 约定
 
@@ -132,7 +137,8 @@ UI 框架：
 - 后续卡片先展开已启用的 `IPTV`，再展开已启用的 `SMB`
 - 禁用条目不会出现在首页
 - 当没有任何已启用来源时，首页显示“按 + 前往设置添加来源”的提示
-- 当前卡片点击后仍主要进入占位页，后续再逐步替换成真实模块页
+- 当前 `SMB` 卡片已进入真实浏览页
+- 当前 `播放历史` 与 `IPTV` 卡片仍主要进入占位页，后续再逐步替换成真实模块页
 
 ### 当前设置页交互约定
 
@@ -234,11 +240,11 @@ Switch 端配置查找顺序：
 接下来优先做以下内容：
 
 1. 继续稳定设置页，优先收敛语言即时生效链路
-2. 完成 IPTV / SMB 条目编辑与保存的稳定性验证
-3. 将 `Playback Test` 升级为真实播放器 Activity 骨架
-4. 给 `IPTV` 页面接入数据模型和列表壳
-5. 给 `SMB` 页面接入连接设置和浏览壳
-6. 在已打通的 `Desktop + Switch` 构建基础上推进播放状态管理
+2. 在 `Switch` 端把 SMB 从“能列目录”推进到“能打开并播放文件”
+3. 完成 IPTV 页面接入与数据流落地
+4. 将 `Playback Test` 升级为真实播放器 Activity 骨架
+5. 补齐播放状态管理与统一播放入口
+6. 接入播放历史，统一承接 IPTV / SMB 最近播放记录
 
 ## 开发环境
 
@@ -281,10 +287,11 @@ echo $env:DEVKITA64
 
 ### 当前必需的 devkitPro 包
 
-当前仓库的 Switch 构建已经依赖下面两个包：
+当前仓库的 Switch 构建已经依赖下面这些内容：
 
 - `switch-glm`
 - `ninja`
+- `libsmb2`（Switch 端口库）
 
 安装命令：
 
@@ -298,6 +305,15 @@ C:\devkitPro\msys2\usr\bin\pacman.exe -S switch-glm ninja
 C:\devkitPro\msys2\usr\bin\pacman.exe -Q switch-glm
 C:\devkitPro\msys2\usr\bin\ninja.exe --version
 ```
+
+`libsmb2` 说明：
+
+- 当前机器上的 `libsmb2` 不是通过 `pacman` 直接安装的
+- 本机是参考 `nxmp` 中的 `libsmb2` 补丁，手动编译并安装到 `devkitPro portlibs`
+- 当前构建会检查以下文件是否存在：
+  - `C:\devkitPro\portlibs\switch\include\smb2\libsmb2.h`
+  - `C:\devkitPro\portlibs\switch\lib\libsmb2.a`
+- 如果这两个文件缺失，`Switch` 构建会直接失败
 
 ### 环境说明
 
@@ -433,10 +449,14 @@ SwitchBOX/
 
 - 设置页：
   - `app/source/settings_activity.cpp`
+- SMB 浏览页：
+  - `app/source/smb_browser_activity.cpp`
 - 配置读写：
   - `core/source/app_config.cpp`
 - 语言解析：
   - `core/source/language.cpp`
+- SMB 浏览后端：
+  - `core/source/smb_browser.cpp`
 - 应用启动与语言初始化：
   - `app/source/application.cpp`
 - 语言切换后的 UI 重建入口：
