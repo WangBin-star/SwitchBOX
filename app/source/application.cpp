@@ -56,16 +56,19 @@ const StartupContext& Application::runtime_context() {
     return g_runtime_context;
 }
 
+void Application::reload_root_ui(bool reopen_settings) {
+    brls::delay(0, [reopen_settings]() {
+        rebuild_root_ui(g_runtime_context, reopen_settings);
+    });
+}
+
 void Application::apply_language_and_reload_ui(bool reopen_settings) {
     const auto& paths = switchbox::core::AppConfigStore::paths();
     const auto& config = switchbox::core::AppConfigStore::current();
     const auto language_state = switchbox::core::resolve_language_state(paths, config);
 
     apply_language_state(language_state);
-
-    brls::delay(0, [reopen_settings]() {
-        rebuild_root_ui(g_runtime_context, reopen_settings);
-    });
+    Application::reload_root_ui(reopen_settings);
 }
 
 int Application::run(const StartupContext& context) const {

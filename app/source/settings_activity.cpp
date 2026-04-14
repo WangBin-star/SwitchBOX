@@ -626,9 +626,9 @@ bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
     }
 
     state->saved_config = state->draft_config;
-    sync_dirty_state(state);
-    rebuild_right_panel(state);
-    brls::Application::notify(tr("settings_page/save_success"));
+    brls::delay(1, []() {
+        switchbox::app::Application::reload_root_ui(true);
+    });
     return true;
 }
 

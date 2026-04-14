@@ -11,52 +11,39 @@
             "delete": "Delete"
         },
         "home": {
-            "eyebrow": "MEDIA CONTROL SURFACE",
-            "header_subtitle": "Switch-first launcher for live, local and test playback",
-            "summary": "Bootstrap is complete. This screen now acts as the product hub that routes every media source into one shared playback experience.",
-            "info": {
-                "build_health": {
-                    "title": "Build health",
-                    "detail": "Desktop and Switch builds are green, including .nro output"
+            "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
+            "cards": {
+                "common": {
+                    "not_set": "Not set",
+                    "untitled_iptv": "Untitled IPTV",
+                    "untitled_smb": "Untitled SMB"
                 },
-                "current_focus": {
-                    "title": "Current focus",
-                    "detail": "Promote Playback Test into the first real player screen"
+                "history": {
+                    "eyebrow": "RECENT",
+                    "title": "Playback History",
+                    "subtitle": "This slot will later combine recent IPTV and SMB playback in one place",
+                    "detail": "Requirement recorded, not implemented yet"
                 },
-                "primary_promise": {
-                    "title": "Primary promise",
-                    "detail": "Every source should land in one consistent playback shell"
+                "iptv": {
+                    "eyebrow": "IPTV",
+                    "detail": "Live source"
                 },
-                "running_on": {
-                    "title": "Running on"
-                },
-                "runtime_mode": {
-                    "title": "Runtime mode",
-                    "desktop": "Desktop debug target",
-                    "switch": "Switch app target"
-                },
-                "build_version": {
-                    "title": "Build version"
+                "smb": {
+                    "eyebrow": "SMB",
+                    "detail": "Shared media source"
                 }
-            },
-            "modules": {
-                "title": "Launch modules",
-                "summary": "Playback is the first delivery target. IPTV and SMB are upstream entry flows that should converge into that same player.",
-                "player_detail": "Build the shared player shell, transport controls and test media flow",
-                "iptv_detail": "Add playlists, channel groups and live-entry handoff into the player",
-                "smb_detail": "Add saved shares, file browsing and seekable handoff into the player"
-            },
-            "note": {
-                "title": "Delivery note",
-                "summary": "The launcher can stay simple. The value of this project comes from stable playback, clean source handoff and reliable runtime diagnostics."
-            },
-            "system": {
-                "title": "System",
-                "summary": "Diagnostics and configuration stay here so the media entry modules can remain focused and predictable.",
-                "settings_detail": "Runtime checks, source configuration, diagnostics and build metadata"
             }
         },
         "sections": {
+            "history": {
+                "title": "Playback History",
+                "subtitle": "A future view for recent IPTV and SMB playback in one unified list",
+                "checkpoints": {
+                    "1": "Define one shared playback-history structure for IPTV and SMB",
+                    "2": "Show the recent-play list with source markers",
+                    "3": "Support returning directly to the selected item"
+                }
+            },
             "player": {
                 "title": "Playback Test",
                 "subtitle": "Shared player shell, transport controls and runtime state",

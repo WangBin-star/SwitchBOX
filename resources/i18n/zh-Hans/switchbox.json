@@ -11,52 +11,39 @@
             "delete": "\u5220\u9664"
         },
         "home": {
-            "eyebrow": "\u5a92\u4f53\u63a7\u5236\u4e2d\u5fc3",
-            "header_subtitle": "\u4ee5 Switch \u4e3a\u9996\u8981\u76ee\u6807\u7684\u76f4\u64ad\u3001\u672c\u5730\u4e0e\u6d4b\u8bd5\u64ad\u653e\u5165\u53e3",
-            "summary": "\u542f\u52a8\u58f3\u9636\u6bb5\u5df2\u7ecf\u5b8c\u6210\u3002\u8fd9\u4e2a\u9996\u9875\u73b0\u5728\u627f\u62c5\u4ea7\u54c1\u603b\u5165\u53e3\u804c\u8d23\uff0c\u628a\u6240\u6709\u5a92\u4f53\u6765\u6e90\u7edf\u4e00\u5bfc\u5411\u540c\u4e00\u5957\u64ad\u653e\u4f53\u9a8c\u3002",
-            "info": {
-                "build_health": {
-                    "title": "\u6784\u5efa\u72b6\u6001",
-                    "detail": "\u684c\u9762\u7aef\u4e0e Switch \u7aef\u6784\u5efa\u90fd\u5df2\u6253\u901a\uff0c\u5305\u542b .nro \u8f93\u51fa"
+            "no_sources_hint": "\u5f53\u524d\u6ca1\u6709\u5df2\u542f\u7528\u7684 IPTV \u6216 SMB \u6765\u6e90\uff0c\u6309 + \u524d\u5f80\u8bbe\u7f6e\u6dfb\u52a0\u3002",
+            "cards": {
+                "common": {
+                    "not_set": "\u672a\u8bbe\u7f6e",
+                    "untitled_iptv": "\u672a\u547d\u540d IPTV",
+                    "untitled_smb": "\u672a\u547d\u540d SMB"
                 },
-                "current_focus": {
-                    "title": "\u5f53\u524d\u91cd\u70b9",
-                    "detail": "\u628a\u201c\u64ad\u653e\u6d4b\u8bd5\u201d\u63a8\u8fdb\u6210\u7b2c\u4e00\u4e2a\u771f\u6b63\u53ef\u7528\u7684\u64ad\u653e\u5668\u754c\u9762"
+                "history": {
+                    "eyebrow": "\u6700\u8fd1\u64ad\u653e",
+                    "title": "\u64ad\u653e\u5386\u53f2",
+                    "subtitle": "\u4ee5\u540e\u4f1a\u5728\u8fd9\u91cc\u7edf\u4e00\u663e\u793a\u6700\u8fd1\u64ad\u653e\u7684 IPTV \u4e0e SMB \u5185\u5bb9",
+                    "detail": "\u9700\u6c42\u5df2\u8bb0\u5f55\uff0c\u6682\u672a\u63a5\u5165"
                 },
-                "primary_promise": {
-                    "title": "\u6838\u5fc3\u76ee\u6807",
-                    "detail": "\u6240\u6709\u6765\u6e90\u6700\u7ec8\u90fd\u8fdb\u5165\u540c\u4e00\u5957\u4e00\u81f4\u7684\u64ad\u653e\u58f3"
+                "iptv": {
+                    "eyebrow": "IPTV",
+                    "detail": "\u76f4\u64ad\u6e90"
                 },
-                "running_on": {
-                    "title": "\u5f53\u524d\u8fd0\u884c\u5e73\u53f0"
-                },
-                "runtime_mode": {
-                    "title": "\u8fd0\u884c\u6a21\u5f0f",
-                    "desktop": "\u684c\u9762\u8c03\u8bd5\u76ee\u6807",
-                    "switch": "Switch \u5e94\u7528\u76ee\u6807"
-                },
-                "build_version": {
-                    "title": "\u6784\u5efa\u7248\u672c"
+                "smb": {
+                    "eyebrow": "SMB",
+                    "detail": "\u5171\u4eab\u5a92\u4f53\u6e90"
                 }
-            },
-            "modules": {
-                "title": "\u529f\u80fd\u5165\u53e3",
-                "summary": "\u64ad\u653e\u80fd\u529b\u662f\u7b2c\u4e00\u4ea4\u4ed8\u76ee\u6807\u3002IPTV \u548c SMB \u90fd\u662f\u4e0a\u6e38\u5165\u53e3\uff0c\u6700\u7ec8\u5e94\u6c47\u805a\u5230\u540c\u4e00\u4e2a\u64ad\u653e\u5668\u3002",
-                "player_detail": "\u6784\u5efa\u7edf\u4e00\u64ad\u653e\u5668\u58f3\u3001\u4f20\u8f93\u63a7\u5236\u4e0e\u6d4b\u8bd5\u5a92\u4f53\u94fe\u8def",
-                "iptv_detail": "\u63a5\u5165\u64ad\u653e\u5217\u8868\u3001\u9891\u9053\u5206\u7ec4\uff0c\u5e76\u5c06\u76f4\u64ad\u5165\u53e3\u4ea4\u7ed9\u64ad\u653e\u5668",
-                "smb_detail": "\u63a5\u5165\u5df2\u4fdd\u5b58\u5171\u4eab\u3001\u6587\u4ef6\u6d4f\u89c8\uff0c\u5e76\u628a\u53ef\u64ad\u653e\u6587\u4ef6\u4ea4\u7ed9\u64ad\u653e\u5668"
-            },
-            "note": {
-                "title": "\u4ea4\u4ed8\u8bf4\u660e",
-                "summary": "\u542f\u52a8\u5668\u672c\u8eab\u53ef\u4ee5\u4fdd\u6301\u7b80\u6d01\u3002\u8fd9\u4e2a\u9879\u76ee\u771f\u6b63\u7684\u4ef7\u503c\u5728\u4e8e\u7a33\u5b9a\u64ad\u653e\u3001\u6e05\u6670\u6765\u6e90\u5207\u6362\u4e0e\u53ef\u9760\u8fd0\u884c\u8bca\u65ad\u3002"
-            },
-            "system": {
-                "title": "\u7cfb\u7edf",
-                "summary": "\u8bca\u65ad\u4e0e\u914d\u7f6e\u96c6\u4e2d\u653e\u5728\u8fd9\u91cc\uff0c\u907f\u514d\u5a92\u4f53\u5165\u53e3\u6a21\u5757\u627f\u62c5\u989d\u5916\u590d\u6742\u5ea6\u3002",
-                "settings_detail": "\u8fd0\u884c\u68c0\u67e5\u3001\u6765\u6e90\u914d\u7f6e\u3001\u8bca\u65ad\u4e0e\u6784\u5efa\u4fe1\u606f"
             }
         },
         "sections": {
+            "history": {
+                "title": "\u64ad\u653e\u5386\u53f2",
+                "subtitle": "\u4ee5\u540e\u5728\u8fd9\u91cc\u7edf\u4e00\u56de\u770b\u6700\u8fd1\u64ad\u653e\u7684 IPTV \u4e0e SMB \u5185\u5bb9",
+                "checkpoints": {
+                    "1": "\u8bb0\u5f55 IPTV \u548c SMB \u7684\u7edf\u4e00\u64ad\u653e\u5386\u53f2\u7ed3\u6784",
+                    "2": "\u5c55\u793a\u6700\u8fd1\u64ad\u653e\u5217\u8868\u4e0e\u6765\u6e90\u6807\u8bc6",
+                    "3": "\u652f\u6301\u4ece\u5386\u53f2\u76f4\u63a5\u56de\u5230\u5bf9\u5e94\u5185\u5bb9"
+                }
+            },
             "player": {
                 "title": "\u64ad\u653e\u6d4b\u8bd5",
                 "subtitle": "\u7edf\u4e00\u64ad\u653e\u5668\u58f3\u3001\u4f20\u8f93\u63a7\u5236\u4e0e\u8fd0\u884c\u65f6\u72b6\u6001",
