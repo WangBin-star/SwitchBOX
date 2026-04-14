@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <memory>
 #include <string_view>
+#include <sstream>
 #include <system_error>
 #include <string>
 #include <utility>
@@ -312,6 +313,8 @@ public:
         this->has_media = false;
         this->paused.store(false);
         this->frame_dirty.store(true);
+        this->playback_speed = 1.0;
+        this->playback_volume = std::clamp(switchbox::core::AppConfigStore::current().general.player_volume, 0, 100);
 
         append_debug_log("[open] locator=" + locator);
 
@@ -328,6 +331,8 @@ public:
             return false;
         }
 
+        this->set_speed(1.0);
+        this->set_volume(this->playback_volume);
         process_pending_events();
         return true;
     }
@@ -380,6 +385,105 @@ public:
         this->paused.store(next_pause_flag != 0);
         append_debug_log(std::string("[input] toggle_pause applied, pause=") + (next_pause_flag != 0 ? "true" : "false"));
         process_pending_events();
+    }
+
+    bool seek_relative_seconds(double delta_seconds) {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        std::ostringstream stream;
+        stream.setf(std::ios::fixed);
+        stream.precision(3);
+        stream << delta_seconds;
+        const std::string delta_text = stream.str();
+        const char* command[] = {"seek", delta_text.c_str(), "relative", "keyframes", nullptr};
+        const int rc = mpv_command_async(this->handle, 0, command);
+        if (rc < 0) {
+            this->last_error = std::string("Seek failed: ") + mpv_error_string(rc);
+            append_debug_log("[input] seek failed: " + this->last_error);
+            return false;
+        }
+
+        return true;
+    }
+
+    bool set_speed(double speed) {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        if (speed < 0.1) {
+            speed = 0.1;
+        }
+        if (speed > 8.0) {
+            speed = 8.0;
+        }
+
+        double value = speed;
+        const int rc = mpv_set_property(this->handle, "speed", MPV_FORMAT_DOUBLE, &value);
+        if (rc < 0) {
+            this->last_error = std::string("Set speed failed: ") + mpv_error_string(rc);
+            append_debug_log("[input] set_speed failed: " + this->last_error);
+            return false;
+        }
+
+        this->playback_speed = value;
+        return true;
+    }
+
+    double get_speed() const {
+        return this->playback_speed;
+    }
+
+    bool set_volume(int volume) {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        volume = std::clamp(volume, 0, 100);
+        double value = static_cast<double>(volume);
+        const int rc = mpv_set_property(this->handle, "volume", MPV_FORMAT_DOUBLE, &value);
+        if (rc < 0) {
+            this->last_error = std::string("Set volume failed: ") + mpv_error_string(rc);
+            append_debug_log("[input] set_volume failed: " + this->last_error);
+            return false;
+        }
+
+        this->playback_volume = volume;
+        return true;
+    }
+
+    int get_volume() const {
+        return this->playback_volume;
+    }
+
+    double get_position_seconds() {
+        if (this->handle == nullptr) {
+            return 0.0;
+        }
+
+        double position = 0.0;
+        const int rc = mpv_get_property(this->handle, "time-pos", MPV_FORMAT_DOUBLE, &position);
+        if (rc < 0 || position < 0.0) {
+            return 0.0;
+        }
+
+        return position;
+    }
+
+    double get_duration_seconds() {
+        if (this->handle == nullptr) {
+            return 0.0;
+        }
+
+        double duration = 0.0;
+        const int rc = mpv_get_property(this->handle, "duration", MPV_FORMAT_DOUBLE, &duration);
+        if (rc < 0 || duration <= 0.0) {
+            return 0.0;
+        }
+
+        return duration;
     }
 
     bool is_paused() const {
@@ -618,6 +722,8 @@ private:
     std::atomic<bool> session_active = false;
     std::atomic<bool> paused = false;
     std::atomic<bool> frame_dirty = false;
+    double playback_speed = 1.0;
+    int playback_volume = 80;
     std::string last_error;
     std::filesystem::path cache_file_path;
 
@@ -655,6 +761,34 @@ bool switch_mpv_has_media() {
 
 void switch_mpv_toggle_pause() {
     SwitchMpvPlayer::instance().toggle_pause();
+}
+
+bool switch_mpv_seek_relative_seconds(double delta_seconds) {
+    return SwitchMpvPlayer::instance().seek_relative_seconds(delta_seconds);
+}
+
+bool switch_mpv_set_speed(double speed) {
+    return SwitchMpvPlayer::instance().set_speed(speed);
+}
+
+double switch_mpv_get_speed() {
+    return SwitchMpvPlayer::instance().get_speed();
+}
+
+bool switch_mpv_set_volume(int volume) {
+    return SwitchMpvPlayer::instance().set_volume(volume);
+}
+
+int switch_mpv_get_volume() {
+    return SwitchMpvPlayer::instance().get_volume();
+}
+
+double switch_mpv_get_position_seconds() {
+    return SwitchMpvPlayer::instance().get_position_seconds();
+}
+
+double switch_mpv_get_duration_seconds() {
+    return SwitchMpvPlayer::instance().get_duration_seconds();
 }
 
 bool switch_mpv_is_paused() {
@@ -706,6 +840,34 @@ bool switch_mpv_has_media() {
 }
 
 void switch_mpv_toggle_pause() {
+}
+
+bool switch_mpv_seek_relative_seconds(double) {
+    return false;
+}
+
+bool switch_mpv_set_speed(double) {
+    return false;
+}
+
+double switch_mpv_get_speed() {
+    return 1.0;
+}
+
+bool switch_mpv_set_volume(int) {
+    return false;
+}
+
+int switch_mpv_get_volume() {
+    return 100;
+}
+
+double switch_mpv_get_position_seconds() {
+    return 0.0;
+}
+
+double switch_mpv_get_duration_seconds() {
+    return 0.0;
 }
 
 bool switch_mpv_is_paused() {

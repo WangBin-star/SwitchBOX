@@ -161,6 +161,8 @@ bool general_settings_equal(
            lhs.short_seek == rhs.short_seek &&
            lhs.long_seek == rhs.long_seek &&
            lhs.y_hold_speed_multiplier == rhs.y_hold_speed_multiplier &&
+           lhs.continuous_seek_interval_ms == rhs.continuous_seek_interval_ms &&
+           lhs.player_volume == rhs.player_volume &&
            lhs.use_preferred_audio_language == rhs.use_preferred_audio_language &&
            lhs.preferred_audio_language == rhs.preferred_audio_language &&
            lhs.use_preferred_subtitle_language == rhs.use_preferred_subtitle_language &&
@@ -908,6 +910,29 @@ void open_y_hold_speed_multiplier_editor(const std::shared_ptr<SettingsDraftStat
         0);
 }
 
+void open_continuous_seek_interval_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            try {
+                const int value = std::stoi(text);
+                if (value < 10) {
+                    throw std::runtime_error("invalid");
+                }
+
+                state->draft_config.general.continuous_seek_interval_ms = value;
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+            } catch (...) {
+                brls::Application::notify(tr("settings_page/general/validation/positive_integer"));
+            }
+        },
+        tr("settings_page/general/continuous_seek_interval_ms/title"),
+        tr("settings_page/general/continuous_seek_interval_ms/hint"),
+        16,
+        std::to_string(state->draft_config.general.continuous_seek_interval_ms),
+        0);
+}
+
 void open_preferred_audio_language_editor(const std::shared_ptr<SettingsDraftState>& state) {
     brls::Application::getImeManager()->openForText(
         [state](std::string text) {
@@ -1023,7 +1048,7 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/short_seek",
         tr("settings_page/general/short_seek/title"),
         tr("settings_page/general/seconds_value", std::to_string(general.short_seek)),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/short_seek");
             open_short_seek_editor(state);
@@ -1034,7 +1059,7 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/long_seek",
         tr("settings_page/general/long_seek/title"),
         tr("settings_page/general/seconds_value", std::to_string(general.long_seek)),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/long_seek");
             open_long_seek_editor(state);
@@ -1045,10 +1070,23 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/y_hold_speed_multiplier",
         tr("settings_page/general/y_hold_speed_multiplier/title"),
         tr("settings_page/general/multiplier_value", format_float_value(general.y_hold_speed_multiplier, 1)),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/y_hold_speed_multiplier");
             open_y_hold_speed_multiplier_editor(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/continuous_seek_interval_ms",
+        tr("settings_page/general/continuous_seek_interval_ms/title"),
+        tr(
+            "settings_page/general/milliseconds_value",
+            std::to_string(general.continuous_seek_interval_ms)),
+        true,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/continuous_seek_interval_ms");
+            open_continuous_seek_interval_editor(state);
             return true;
         });
 

@@ -23,6 +23,8 @@ struct GeneralSettings {
     int short_seek = 10;
     int long_seek = 60;
     float y_hold_speed_multiplier = 2.0f;
+    int continuous_seek_interval_ms = 100;
+    int player_volume = 80;
     bool use_preferred_audio_language = false;
     std::string preferred_audio_language = "eng";
     bool use_preferred_subtitle_language = false;

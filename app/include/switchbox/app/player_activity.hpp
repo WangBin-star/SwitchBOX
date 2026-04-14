@@ -1,7 +1,14 @@
 #pragma once
 
+#include <chrono>
+#include <string>
+#include <vector>
+
 #include <borealis.hpp>
 
+#include "switchbox/app/player_video_surface.hpp"
+#include "switchbox/core/app_config.hpp"
+#include "switchbox/core/smb_browser.hpp"
 #include "switchbox/core/playback_target.hpp"
 
 namespace switchbox::app {
@@ -10,9 +17,75 @@ class PlayerActivity : public brls::Activity {
 public:
     explicit PlayerActivity(switchbox::core::PlaybackTarget target);
     ~PlayerActivity() override;
+    void willAppear(bool resetState = false) override;
 
 private:
     bool handle_start_action(brls::View* view);
+
+#if defined(__SWITCH__)
+    void initialize_switch_player_state();
+    void start_playback_with_target(const switchbox::core::PlaybackTarget& next_target);
+    void save_player_volume_if_needed();
+
+    bool handle_a_action();
+    bool handle_b_action();
+    bool handle_x_action();
+    bool handle_y_press();
+    bool handle_plus_action();
+    bool handle_left_action();
+    bool handle_right_action();
+    bool handle_up_action();
+    bool handle_down_action();
+    bool handle_short_backward();
+    bool handle_short_forward();
+    bool handle_long_backward();
+    bool handle_long_forward();
+
+    void refresh_overlay_entries(bool keep_selection);
+    void sync_overlay_to_surface();
+    void move_overlay_selection(int delta);
+    void enter_overlay_selection();
+    void overlay_go_parent();
+    void toggle_overlay();
+    void toggle_controls_panel();
+    void move_controls_selection(int delta);
+    bool execute_controls_action(int action_index);
+    void tick_runtime_controls();
+    void apply_directional_input_fallback_if_needed();
+    void apply_controls_hold_action_if_needed();
+    void apply_continuous_seek_if_needed();
+    void apply_hold_speed_if_needed();
+    void adjust_volume(int delta);
+    bool seek_relative(double seconds);
+    void confirm_delete_current_file();
+    std::string find_next_focus_after_delete() const;
+    switchbox::core::SmbSourceSettings make_smb_source_from_target() const;
+
+    switchbox::core::SmbSourceSettings smb_source;
+    bool has_smb_source = false;
+    std::string current_relative_path;
+    std::string overlay_relative_path;
+    std::vector<switchbox::core::SmbBrowserEntry> overlay_entries;
+    int overlay_selected_index = -1;
+    bool overlay_visible = false;
+    std::string overlay_message;
+    bool controls_visible = false;
+    int controls_selected_index = 2;
+    PlayerVideoSurface* video_surface = nullptr;
+    bool player_volume_dirty = false;
+    int session_volume = 80;
+    double applied_speed = 1.0;
+    bool runtime_initialized = false;
+    brls::RepeatingTimer runtime_tick;
+    std::chrono::steady_clock::time_point last_continuous_seek_time = std::chrono::steady_clock::time_point::min();
+    int last_continuous_seek_mode = 0;
+    std::chrono::steady_clock::time_point last_controls_repeat_time = std::chrono::steady_clock::time_point::min();
+    int last_controls_repeat_action = -1;
+    bool dpad_left_stick_up_pressed = false;
+    bool dpad_left_stick_down_pressed = false;
+    bool dpad_left_stick_left_pressed = false;
+    bool dpad_left_stick_right_pressed = false;
+#endif
 
     switchbox::core::PlaybackTarget target;
 };

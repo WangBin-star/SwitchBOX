@@ -250,6 +250,20 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
     config.general.y_hold_speed_multiplier = parse_float(
         get_value(document, "general", "y_hold_speed_multiplier"),
         config.general.y_hold_speed_multiplier);
+    config.general.continuous_seek_interval_ms = parse_int(
+        get_value(document, "general", "continuous_seek_interval_ms"),
+        config.general.continuous_seek_interval_ms);
+    if (config.general.continuous_seek_interval_ms < 10) {
+        config.general.continuous_seek_interval_ms = 10;
+    }
+    config.general.player_volume = parse_int(
+        get_value(document, "general", "player_volume"),
+        config.general.player_volume);
+    if (config.general.player_volume < 0) {
+        config.general.player_volume = 0;
+    } else if (config.general.player_volume > 100) {
+        config.general.player_volume = 100;
+    }
     config.general.use_preferred_audio_language = parse_bool(
         get_value(document, "general", "use_preferred_audio_language"),
         config.general.use_preferred_audio_language);
@@ -373,6 +387,8 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "long_seek=" << config.general.long_seek << '\n';
     output << "; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell" << '\n';
     output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
+    output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
+    output << "continuous_seek_interval_ms=" << config.general.continuous_seek_interval_ms << '\n';
     output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
     output << "use_preferred_audio_language="
            << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
@@ -395,6 +411,8 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
     output << "; 是否允许触摸滑动快进，默认关闭 / Whether touch swipe seek is enabled, disabled by default" << '\n';
     output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
+    output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
+    output << "player_volume=" << config.general.player_volume << '\n';
     output << '\n';
 
     output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';

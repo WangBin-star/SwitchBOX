@@ -133,6 +133,10 @@
             "fallback_subtitle": "Playable target ready for the shared player shell",
             "summary": "This page now receives the resolved SMB playback target. The next implementation step is wiring a real playback backend into this handoff instead of routing through a placeholder view.",
             "not_available": "Not available",
+            "delete": {
+                "confirm_generic": "Delete the current file from this SMB share?",
+                "confirm_named": "Delete \"{0}\" from this SMB share?"
+            },
             "actions": {
                 "start": "Playback Test",
                 "toggle_pause": "Play/Pause"
@@ -196,6 +200,7 @@
                 "summary": "This page shows agreed runtime options and marks whether each option is already wired to real behavior in the current development stage.",
                 "seconds_value": "{0}s",
                 "multiplier_value": "{0}x",
+                "milliseconds_value": "{0} ms",
                 "groups": {
                     "basic": "Basic Settings",
                     "playback": "Playback Settings"
@@ -237,6 +242,10 @@
                 "y_hold_speed_multiplier": {
                     "title": "Hold-Y speed multiplier",
                     "hint": "Playback speed multiplier used when holding Y."
+                },
+                "continuous_seek_interval_ms": {
+                    "title": "Continuous seek interval",
+                    "hint": "Repeat interval in milliseconds for combo seek actions such as R+Left/Right and ZR+Left/Right."
                 },
                 "use_preferred_audio_language": {
                     "title": "Use preferred audio language"

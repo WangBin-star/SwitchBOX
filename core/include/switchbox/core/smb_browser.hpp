@@ -42,4 +42,9 @@ SmbBrowserResult browse_smb_directory(
     const GeneralSettings& general,
     const std::string& relative_path);
 
+bool delete_smb_file(
+    const SmbSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message);
+
 }  // namespace switchbox::core

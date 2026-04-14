@@ -853,4 +853,124 @@ SmbBrowserResult browse_smb_directory(
 #endif
 }
 
+bool delete_smb_file(
+    const SmbSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message) {
+    error_message.clear();
+    const std::string normalized_relative_path = join_segments(split_relative_segments(relative_path));
+    if (normalized_relative_path.empty()) {
+        error_message = "SMB file path is empty.";
+        return false;
+    }
+
+#if defined(_WIN32) && !defined(__SWITCH__)
+    try {
+        const std::string host = trim_network_component(source.host);
+        const ParsedShareTarget share_target = parse_share_target(source.share);
+        if (host.empty() || share_target.share_name.empty()) {
+            error_message = "SMB source is missing host or share.";
+            return false;
+        }
+
+        const WindowsSmbAuthResult auth_result = ensure_windows_smb_connection(
+            host,
+            share_target,
+            source.username,
+            source.password);
+        if (!auth_result.success() &&
+            auth_result.error_code != ERROR_SESSION_CREDENTIAL_CONFLICT) {
+            error_message = auth_result.message;
+            return false;
+        }
+
+        const std::string effective_relative_path =
+            smb_join_relative_path(share_target.initial_relative_path, normalized_relative_path);
+        const std::filesystem::path root_path =
+            path_from_utf8("\\\\" + host + "\\" + share_target.share_name);
+        const std::filesystem::path target_path =
+            append_relative_segments(root_path, split_relative_segments(effective_relative_path));
+
+        std::error_code remove_error;
+        const bool removed = std::filesystem::remove(target_path, remove_error);
+        if (!removed || remove_error) {
+            error_message = "Failed to delete SMB file: " + path_string(target_path);
+            return false;
+        }
+        return true;
+    } catch (const std::exception& exception) {
+        error_message = std::string("SMB delete exception: ") + exception.what();
+        return false;
+    } catch (...) {
+        error_message = "SMB delete exception: unknown error";
+        return false;
+    }
+#else
+#ifdef __SWITCH__
+    try {
+        const std::string host = trim_network_component(source.host);
+        const ParsedShareTarget share_target = parse_share_target(source.share);
+        if (host.empty() || share_target.share_name.empty()) {
+            error_message = "SMB source is missing host or share.";
+            return false;
+        }
+
+        std::unique_ptr<smb2_context, Smb2ContextDeleter> smb2(smb2_init_context());
+        if (!smb2) {
+            error_message = "Failed to initialize libsmb2 context.";
+            return false;
+        }
+
+        smb2_set_timeout(smb2.get(), 10);
+        smb2_set_security_mode(smb2.get(), SMB2_NEGOTIATE_SIGNING_ENABLED);
+        if (!source.username.empty()) {
+            smb2_set_user(smb2.get(), source.username.c_str());
+        }
+        if (!source.password.empty()) {
+            smb2_set_password(smb2.get(), source.password.c_str());
+        }
+
+        const int connect_result =
+            smb2_connect_share(
+                smb2.get(),
+                host.c_str(),
+                share_target.share_name.c_str(),
+                source.username.empty() ? nullptr : source.username.c_str());
+        if (connect_result < 0) {
+            error_message = smb2_get_error(smb2.get());
+            return false;
+        }
+
+        const std::string smb2_path = make_smb2_path(share_target, normalized_relative_path);
+        if (smb2_path.empty()) {
+            smb2_disconnect_share(smb2.get());
+            error_message = "SMB file path is empty.";
+            return false;
+        }
+
+        const int unlink_result = smb2_unlink(smb2.get(), smb2_path.c_str());
+        if (unlink_result < 0) {
+            error_message = smb2_get_error(smb2.get());
+            smb2_disconnect_share(smb2.get());
+            return false;
+        }
+
+        smb2_disconnect_share(smb2.get());
+        return true;
+    } catch (const std::exception& exception) {
+        error_message = std::string("SMB delete exception: ") + exception.what();
+        return false;
+    } catch (...) {
+        error_message = "SMB delete exception: unknown error";
+        return false;
+    }
+#else
+    (void)source;
+    (void)relative_path;
+    error_message = "SMB delete backend is not available on this platform.";
+    return false;
+#endif
+#endif
+}
+
 }  // namespace switchbox::core

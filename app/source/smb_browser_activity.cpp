@@ -155,9 +155,24 @@ std::string format_bytes(std::uintmax_t size) {
     return stream.str();
 }
 
-brls::View* create_smb_browser_content(
+struct SmbBrowserContentBuild {
+    brls::View* view = nullptr;
+    brls::View* focus_view = nullptr;
+};
+
+brls::ScrollingFrame* find_scrolling_frame_from_root(brls::View* root) {
+    auto* frame = dynamic_cast<brls::AppletFrame*>(root);
+    if (frame == nullptr) {
+        return nullptr;
+    }
+
+    return dynamic_cast<brls::ScrollingFrame*>(frame->getContentView());
+}
+
+SmbBrowserContentBuild create_smb_browser_content(
     const switchbox::core::SmbSourceSettings& source,
-    const std::string& relative_path) {
+    const std::string& relative_path,
+    const std::string& preferred_focus_relative_path = {}) {
     auto theme = brls::Application::getTheme();
     const auto& config = switchbox::core::AppConfigStore::current();
     const auto browse_result =
@@ -197,6 +212,7 @@ brls::View* create_smb_browser_content(
         content->addView(desktop_note);
 #endif
     } else {
+        brls::View* focus_view = nullptr;
         if (browse_result.entries.empty()) {
             auto* empty_label = create_label(
                 tr("smb_browser/empty"),
@@ -231,7 +247,33 @@ brls::View* create_smb_browser_content(
                 return true;
             });
             content->addView(cell);
+
+            if (!preferred_focus_relative_path.empty() &&
+                entry.relative_path == preferred_focus_relative_path) {
+                focus_view = cell;
+            }
         }
+
+        auto* scrolling_frame = new brls::ScrollingFrame();
+        scrolling_frame->setContentView(content);
+#ifndef __SWITCH__
+        scrolling_frame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
+#endif
+
+        auto* frame = new brls::AppletFrame(scrolling_frame);
+        apply_native_status_layout(frame, visible_smb_title(source));
+        apply_header_path(
+            frame,
+            switchbox::core::smb_display_path(source, relative_path),
+            theme["brls/text_disabled"]);
+        apply_footer_extensions_hint(
+            frame,
+            tr("smb_browser/extensions_hint", config.general.playable_extensions),
+            theme["brls/text_disabled"]);
+        return {
+            .view = frame,
+            .focus_view = focus_view,
+        };
     }
 
     auto* scrolling_frame = new brls::ScrollingFrame();
@@ -250,18 +292,59 @@ brls::View* create_smb_browser_content(
         frame,
         tr("smb_browser/extensions_hint", config.general.playable_extensions),
         theme["brls/text_disabled"]);
-    return frame;
+    return {
+        .view = frame,
+        .focus_view = nullptr,
+    };
 }
 
 }  // namespace
 
+void SmbBrowserActivity::request_focus_after_return(
+    const switchbox::core::SmbSourceSettings& source,
+    std::string directory_relative_path,
+    std::string focus_relative_path) {
+    (void)source;
+    (void)directory_relative_path;
+    (void)focus_relative_path;
+}
+
 SmbBrowserActivity::SmbBrowserActivity(
     switchbox::core::SmbSourceSettings source,
     std::string relative_path)
-    : brls::Activity(create_smb_browser_content(source, relative_path))
+    : brls::Activity(create_smb_browser_content(source, relative_path).view)
     , source(std::move(source))
     , relative_path(std::move(relative_path)) {
     registerExitAction();
+}
+
+void SmbBrowserActivity::refresh_after_player_delete(
+    const std::string& directory_relative_path,
+    const std::string& focus_relative_path) {
+    const std::string normalized_directory =
+        switchbox::core::smb_join_relative_path({}, directory_relative_path);
+    const std::string normalized_current =
+        switchbox::core::smb_join_relative_path({}, this->relative_path);
+
+    const bool keep_scroll = normalized_directory == normalized_current;
+    float previous_scroll_offset = 0.0f;
+    if (keep_scroll) {
+        if (auto* scrolling = find_scrolling_frame_from_root(this->getContentView())) {
+            previous_scroll_offset = scrolling->getContentOffsetY();
+        }
+    }
+
+    this->relative_path = normalized_directory;
+    auto rebuilt = create_smb_browser_content(this->source, this->relative_path, focus_relative_path);
+    setContentView(rebuilt.view);
+
+    if (auto* scrolling = find_scrolling_frame_from_root(this->getContentView())) {
+        scrolling->setContentOffsetY(keep_scroll ? previous_scroll_offset : 0.0f, false);
+    }
+
+    if (rebuilt.focus_view != nullptr) {
+        brls::Application::giveFocus(rebuilt.focus_view);
+    }
 }
 
 }  // namespace switchbox::app
