@@ -1,9 +1,12 @@
 #include "switchbox/core/app_config.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <string_view>
 #include <system_error>
 
@@ -119,16 +122,35 @@ AppPaths resolve_paths() {
 using IniSection = std::map<std::string, std::string>;
 using IniDocument = std::map<std::string, IniSection>;
 
+std::string read_utf8_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) {
+        return {};
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    std::string text = buffer.str();
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    if (text.size() >= utf8Bom.size() &&
+        std::memcmp(text.data(), utf8Bom.data(), utf8Bom.size()) == 0) {
+        text.erase(0, utf8Bom.size());
+    }
+
+    return text;
+}
+
 IniDocument parse_ini(const std::filesystem::path& path) {
     IniDocument document;
-    std::ifstream input(path);
-
-    if (!input.is_open()) {
+    const std::string text = read_utf8_text_file(path);
+    if (text.empty()) {
         return document;
     }
 
     std::string currentSection;
     std::string line;
+    std::istringstream input(text);
 
     while (std::getline(input, line)) {
         line = trim(line);
@@ -183,6 +205,8 @@ bool starts_with(std::string_view value, std::string_view prefix) {
 void load_config_from_document(const IniDocument& document, AppConfig& config) {
     config.general.language =
         get_value(document, "general", "language", config.general.language);
+    config.general.playable_extensions =
+        get_value(document, "general", "playable_extensions", config.general.playable_extensions);
 
     config.iptv_sources.clear();
     config.smb_sources.clear();
@@ -246,10 +270,13 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     std::error_code error;
     std::filesystem::create_directories(paths.base_directory, error);
 
-    std::ofstream output(paths.config_file, std::ios::trunc);
+    std::ofstream output(paths.config_file, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {
         return false;
     }
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    output.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
 
     output << "; SwitchBOX runtime configuration" << '\n';
     output << "; langs/ is searched relative to this file directory" << '\n';
@@ -257,6 +284,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
 
     output << "[general]" << '\n';
     output << "language=" << config.general.language << '\n';
+    output << "playable_extensions=" << config.general.playable_extensions << '\n';
     output << '\n';
 
     output << "; IPTV sources use sections named [iptv-xxx]" << '\n';

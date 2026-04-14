@@ -14,6 +14,7 @@
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/placeholder_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
+#include "switchbox/app/smb_browser_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 
 namespace switchbox::app {
@@ -290,7 +291,7 @@ std::vector<HomeCardModel> build_home_cards() {
             .accent_color = nvgRGB(94, 204, 151),
             .action =
                 [source]() {
-                    brls::Application::pushActivity(new PlaceholderActivity(make_smb_section(source)));
+                    brls::Application::pushActivity(new SmbBrowserActivity(source));
                 },
         });
     }

@@ -7,7 +7,11 @@ std::string BuildInfo::app_name() {
 }
 
 std::string BuildInfo::version_string() {
+#ifdef SWITCHBOX_APP_VERSION
+    return SWITCHBOX_APP_VERSION;
+#else
     return "0.1.0";
+#endif
 }
 
 }  // namespace switchbox::core

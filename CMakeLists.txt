@@ -13,6 +13,8 @@ set(SWITCHBOX_SWITCH_TITLE "SwitchBOX")
 set(SWITCHBOX_RESOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 set(SWITCHBOX_BOREALIS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/library/borealis")
 set(SWITCHBOX_BOREALIS_LIBRARY_DIR "${SWITCHBOX_BOREALIS_DIR}/library")
+set(SWITCHBOX_RELEASE_VERSION "${PROJECT_VERSION}" CACHE STRING "Version label used for packaged Switch releases")
+set(SWITCHBOX_RELEASES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/releases")
 
 option(SWITCHBOX_BUILD_DESKTOP "Build the desktop debug target" ON)
 option(SWITCHBOX_BUILD_SWITCH "Build the Nintendo Switch target" OFF)

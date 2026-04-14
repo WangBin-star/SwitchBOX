@@ -5,6 +5,7 @@ add_library(switchbox_app STATIC
     source/home_activity.cpp
     source/placeholder_activity.cpp
     source/settings_activity.cpp
+    source/smb_browser_activity.cpp
 )
 
 target_include_directories(switchbox_app
@@ -119,6 +120,17 @@ if (SWITCHBOX_BUILD_SWITCH)
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${CMAKE_CURRENT_BINARY_DIR}/langs"
     )
 
+    set(SWITCHBOX_RELEASE_ROOT "${SWITCHBOX_RELEASES_DIR}/${SWITCHBOX_RELEASE_VERSION}/switch")
+
+    add_custom_target(switchbox_switch_package
+        COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_RELEASE_ROOT}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_RELEASE_ROOT}"
+        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE_DIR:switchbox_switch>/switchbox_switch.nro" "${SWITCHBOX_RELEASE_ROOT}/SwitchBOX.nro"
+        COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/packaging/switch/switchbox.ini" "${SWITCHBOX_RELEASE_ROOT}/switchbox.ini"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${SWITCHBOX_RELEASE_ROOT}/langs"
+        COMMENT "Packaging Switch release to ${SWITCHBOX_RELEASE_ROOT}"
+    )
+
     nx_create_nro(switchbox_switch
         NACP "${SWITCHBOX_NACP_PATH}"
         ROMFS "${SWITCHBOX_SWITCH_ROMFS_DIR}"
@@ -126,4 +138,5 @@ if (SWITCHBOX_BUILD_SWITCH)
 
     add_dependencies(switchbox_switch_nro switchbox_switch_romfs_stage)
     add_dependencies(switchbox_switch switchbox_switch_runtime_assets)
+    add_dependencies(switchbox_switch_package switchbox_switch_nro switchbox_switch_runtime_assets)
 endif ()

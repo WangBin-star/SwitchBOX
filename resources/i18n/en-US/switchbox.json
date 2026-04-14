@@ -10,6 +10,28 @@
             "disable": "Disable",
             "delete": "Delete"
         },
+        "smb_browser": {
+            "extensions_hint": "Visible extensions: {0}",
+            "backend_unavailable": "The SMB browser backend is not available on this platform yet. This page shell is ready, but the Switch-side transport still needs to be connected.",
+            "open_failed": "Failed to open this SMB location.",
+            "desktop_note": "Desktop v1 now tries the username and password saved in Settings. If Windows already holds another session for this SMB host, you may need to disconnect that existing session first.",
+            "empty": "This directory does not contain visible folders or files that match the current extension filter.",
+            "parent": {
+                "title": "[Up]",
+                "detail": "Return to the previous directory"
+            },
+            "folder_prefix": "[Folder] {0}",
+            "file_prefix": "[Media] {0}",
+            "folder_detail": "Directory",
+            "file_detail": "Playable file · {0}",
+            "player_stub": {
+                "checkpoints": {
+                    "1": "Open the selected SMB file through a real stream handle",
+                    "2": "Pass the resolved source into the shared player shell",
+                    "3": "Add resume and exit flow back to the SMB browser"
+                }
+            }
+        },
         "home": {
             "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
             "cards": {
@@ -117,7 +139,12 @@
             },
             "general": {
                 "title": "Basic Settings",
-                "summary": "The current phase only exposes UI language. IPTV and SMB settings will be added here next."
+                "summary": "The current phase exposes interface language and playable file extensions.",
+                "playable_extensions": {
+                    "title": "Playable file extensions",
+                    "placeholder": "Example: mp4,mkv,m3u8,flac",
+                    "hint": "Use commas to separate extensions. The default value is based on nxmp and is used to filter visible SMB media files."
+                }
             },
             "apply": {
                 "title": "Apply changes",

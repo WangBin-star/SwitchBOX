@@ -136,7 +136,8 @@ void configure_applet_frame(brls::AppletFrame* frame, const std::string& title) 
 bool general_settings_equal(
     const switchbox::core::GeneralSettings& lhs,
     const switchbox::core::GeneralSettings& rhs) {
-    return lhs.language == rhs.language;
+    return lhs.language == rhs.language &&
+           lhs.playable_extensions == rhs.playable_extensions;
 }
 
 bool iptv_source_equal(
@@ -307,6 +308,18 @@ std::string summarize_smb_source(const switchbox::core::SmbSourceSettings& sourc
     }
 
     return tr("settings_page/common/not_set");
+}
+
+std::string summarize_detail_text(const std::string& value, size_t max_length = 56) {
+    if (value.size() <= max_length) {
+        return value;
+    }
+
+    if (max_length <= 3) {
+        return value.substr(0, max_length);
+    }
+
+    return value.substr(0, max_length - 3) + "...";
 }
 
 void sync_dirty_state(const std::shared_ptr<SettingsDraftState>& state) {
@@ -620,14 +633,14 @@ bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
     if (language_changed) {
         state->saved_config = state->draft_config;
         brls::delay(1, []() {
-            switchbox::app::Application::apply_language_and_reload_ui(true);
+            switchbox::app::Application::apply_language_and_reload_ui(false);
         });
         return true;
     }
 
     state->saved_config = state->draft_config;
     brls::delay(1, []() {
-        switchbox::app::Application::reload_root_ui(true);
+        switchbox::app::Application::reload_root_ui(false);
     });
     return true;
 }
@@ -660,6 +673,21 @@ void open_language_dropdown(const std::shared_ptr<SettingsDraftState>& state) {
     brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
+void open_playable_extensions_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    auto& value = state->draft_config.general.playable_extensions;
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            state->draft_config.general.playable_extensions = std::move(text);
+            sync_dirty_state(state);
+            rebuild_right_panel(state);
+        },
+        tr("settings_page/general/playable_extensions/title"),
+        tr("settings_page/general/playable_extensions/hint"),
+        512,
+        value,
+        0);
+}
+
 void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     auto* container = state->right_content_box;
     auto theme = brls::Application::getTheme();
@@ -670,6 +698,15 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         theme["brls/list/listItem_value_color"],
         [state](brls::View*) {
             open_language_dropdown(state);
+            return true;
+        }));
+
+    container->addView(create_action_cell(
+        tr("settings_page/general/playable_extensions/title"),
+        summarize_detail_text(state->draft_config.general.playable_extensions),
+        theme["brls/list/listItem_value_color"],
+        [state](brls::View*) {
+            open_playable_extensions_editor(state);
             return true;
         }));
 }

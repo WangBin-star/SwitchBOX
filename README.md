@@ -4,7 +4,7 @@
 
 让 `Nintendo Switch` 可以像电视盒子一样使用，支持两类核心能力：
 
-- 播放 `NAS / SMB` 共享视频
+- 播放 `SMB` 共享视频
 - 播放 `IPTV` 电视节目
 
 注意：
@@ -319,12 +319,14 @@ C:\devkitPro\msys2\usr\bin\ninja.exe --version
 - `switchbox: run desktop`
 - `switchbox: configure switch`
 - `switchbox: build switch`
+- `switchbox: package switch`
 
 最常用的是：
 
 - 桌面编译：`switchbox: build desktop`
 - 桌面运行：`switchbox: run desktop`
 - Switch 编译：`switchbox: build switch`
+- Switch 打包：`switchbox: package switch`
 
 ### 方式二：PowerShell 直接执行
 
@@ -377,6 +379,16 @@ $env:DEVKITA64 = "/opt/devkitpro/devkitA64"
 C:\devkitPro\msys2\usr\bin\cmake.exe --build .
 ```
 
+Switch 打包：
+
+```powershell
+cd .\build\switch
+$env:Path = "C:\devkitPro\msys2\usr\bin;" + $env:Path
+$env:DEVKITPRO = "/opt/devkitpro"
+$env:DEVKITA64 = "/opt/devkitpro/devkitA64"
+C:\devkitPro\msys2\usr\bin\cmake.exe --build . --target switchbox_switch_package
+```
+
 ## 当前产物位置
 
 桌面端：
@@ -388,6 +400,19 @@ Switch 端：
 - `build/switch/app/switchbox_switch.elf`
 - `build/switch/app/switchbox_switch.nacp`
 - `build/switch/app/switchbox_switch.nro`
+
+Switch 打包目录：
+
+- `build/releases/<版本号>/switch/SwitchBOX.nro`
+- `build/releases/<版本号>/switch/switchbox.ini`
+- `build/releases/<版本号>/switch/langs/`
+
+当前约定：
+
+- 当需要“打包”时，使用当前项目版本号作为发布目录名
+- 打包结果统一输出到 `build/releases/<版本号>/switch/`
+- 该目录中的三项内容可直接复制到设备的 `switch/SwitchBOX/` 下
+- 后续如果增加更多平台，则在同一版本号目录下并列增加对应平台文件夹
 
 ## 当前项目结构
 

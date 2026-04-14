@@ -97,6 +97,27 @@
       },
       "problemMatcher": [],
       "dependsOn": "switchbox: configure switch"
+    },
+    {
+      "label": "switchbox: package switch",
+      "type": "shell",
+      "command": "C:\\devkitPro\\msys2\\usr\\bin\\cmake.exe",
+      "args": [
+        "--build",
+        ".",
+        "--target",
+        "switchbox_switch_package"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/build/switch",
+        "env": {
+          "PATH": "C:\\devkitPro\\msys2\\usr\\bin;${env:PATH}",
+          "DEVKITPRO": "/opt/devkitpro",
+          "DEVKITA64": "/opt/devkitpro/devkitA64"
+        }
+      },
+      "problemMatcher": [],
+      "dependsOn": "switchbox: configure switch"
     }
   ]
 }
