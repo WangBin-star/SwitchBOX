@@ -112,6 +112,7 @@ brls::BooleanCell* create_bool_cell(
 void configure_applet_frame(brls::AppletFrame* frame, const std::string& title) {
     frame->setTitle(title);
 
+#ifndef __SWITCH__
     if (auto* content = frame->getContentView()) {
         content->getAppletFrameItem()->setHintView(new HeaderStatusHint());
     }
@@ -127,6 +128,7 @@ void configure_applet_frame(brls::AppletFrame* frame, const std::string& title) 
     if (auto* battery_view = frame->getView("brls/battery")) {
         battery_view->setVisibility(brls::Visibility::GONE);
     }
+#endif
 
     if (auto* hints = dynamic_cast<brls::Hints*>(frame->getView("brls/hints"))) {
         hints->setAllowAButtonTouch(true);
@@ -282,7 +284,7 @@ std::string visible_entry_title(const std::string& title) {
     return tr("settings_page/common/untitled_entry");
 }
 
-std::string status_prefixed_title(bool enabled, const std::string& title) {
+[[maybe_unused]] std::string status_prefixed_title(bool enabled, const std::string& title) {
     return std::string(enabled ? "● " : "○ ") + visible_entry_title(title);
 }
 
@@ -320,6 +322,10 @@ std::string summarize_detail_text(const std::string& value, size_t max_length = 
     }
 
     return value.substr(0, max_length - 3) + "...";
+}
+
+std::string status_icon_title(bool enabled, const std::string& title) {
+    return std::string(enabled ? "● " : "○ ") + visible_entry_title(title);
 }
 
 void sync_dirty_state(const std::shared_ptr<SettingsDraftState>& state) {
@@ -717,7 +723,7 @@ void rebuild_iptv_panel(const std::shared_ptr<SettingsDraftState>& state) {
 
     for (const auto& source : state->draft_config.iptv_sources) {
         auto* cell = create_action_cell(
-            status_prefixed_title(source.enabled, source.title),
+            status_icon_title(source.enabled, source.title),
             summarize_iptv_source(source),
             source.enabled ? theme["brls/list/listItem_value_color"] : theme["brls/text_disabled"],
             [state, key = source.key](brls::View*) {
@@ -791,7 +797,7 @@ void rebuild_smb_panel(const std::shared_ptr<SettingsDraftState>& state) {
 
     for (const auto& source : state->draft_config.smb_sources) {
         auto* cell = create_action_cell(
-            status_prefixed_title(source.enabled, source.title),
+            status_icon_title(source.enabled, source.title),
             summarize_smb_source(source),
             source.enabled ? theme["brls/list/listItem_value_color"] : theme["brls/text_disabled"],
             [state, key = source.key](brls::View*) {

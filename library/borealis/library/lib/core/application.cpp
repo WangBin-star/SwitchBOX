@@ -68,6 +68,20 @@
 namespace brls
 {
 
+namespace {
+
+TransitionAnimation normalizeTransitionAnimation(TransitionAnimation animation)
+{
+#ifdef __SWITCH__
+    if (animation == TransitionAnimation::FADE)
+        return TransitionAnimation::NONE;
+#endif
+
+    return animation;
+}
+
+} // namespace
+
 bool Application::init()
 {
     Application::inited        = false;
@@ -900,6 +914,8 @@ void Application::giveFocus(View* view)
 
 bool Application::popActivity(TransitionAnimation animation, std::function<void(void)> cb, bool free)
 {
+    animation = normalizeTransitionAnimation(animation);
+
     if (Application::activitiesStack.size() <= 1) // never pop the first activity
         return false;
 
@@ -979,6 +995,8 @@ void Application::clearActivities()
 
 void Application::pushActivity(Activity* activity, TransitionAnimation animation)
 {
+    animation = normalizeTransitionAnimation(animation);
+
     Application::blockInputs();
 
     // Focus

@@ -23,6 +23,10 @@
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/dialog.hpp>
 #include <borealis/views/hint.hpp>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 using namespace brls::literals;
 
@@ -72,11 +76,47 @@ const std::string appletFrameXML = R"xml(
             </brls:Box>
 
             <brls:Box
-                id="brls/applet_frame/hint_box"
                 width="auto"
                 height="auto"
                 marginTop="@style/brls/applet_frame/header_title_top_offset"
-                axis="row"/>
+                axis="row"
+                alignItems="center">
+
+                <brls:Box
+                    id="brls/applet_frame/hint_box"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    alignItems="center"/>
+
+                <brls:Box
+                    id="brls/applet_frame/status_box"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    alignItems="center"
+                    marginLeft="16">
+
+                    <brls:Label
+                        id="brls/hints/time"
+                        width="auto"
+                        height="auto"
+                        verticalAlign="center"
+                        fontSize="21.5"
+                        marginRight="21" />
+
+                    <brls:Wireless
+                        id="brls/wireless"
+                        marginRight="21"
+                        marginBottom="5"/>
+
+                    <brls:Battery
+                        id="brls/battery"
+                        marginBottom="5"/>
+
+                </brls:Box>
+
+            </brls:Box>
 
         </brls:Box>
 
@@ -122,6 +162,15 @@ AppletFrame::AppletFrame()
             this->contentViewStack.back()->dismiss();
             return true; },
         false, false, SOUND_BACK);
+
+#ifdef __SWITCH__
+    Platform* platform = Application::getPlatform();
+    statusBox->setVisibility(Visibility::VISIBLE);
+    battery->setVisibility(platform->canShowBatteryLevel() ? Visibility::VISIBLE : Visibility::GONE);
+    wireless->setVisibility(platform->canShowWirelessLevel() ? Visibility::VISIBLE : Visibility::GONE);
+#else
+    statusBox->setVisibility(Visibility::GONE);
+#endif
 }
 
 AppletFrame::AppletFrame(View* contentView)
@@ -157,6 +206,23 @@ void AppletFrame::setFooterVisibility(Visibility visibility)
 void AppletFrame::setTitle(std::string title)
 {
     this->title->setText(title);
+}
+
+void AppletFrame::updateStatusText()
+{
+#ifdef __SWITCH__
+    auto timeNow   = std::chrono::system_clock::now();
+    auto in_time_t = std::chrono::system_clock::to_time_t(timeNow);
+    auto tm        = *std::localtime(&in_time_t);
+
+    std::stringstream ss;
+    ss << std::put_time(&tm, "%H:%M:%S");
+    if (ss.str() != statusTimeText)
+    {
+        statusTimeText = ss.str();
+        time->setText(statusTimeText);
+    }
+#endif
 }
 
 void AppletFrame::pushContentView(View* view)
@@ -214,6 +280,12 @@ void AppletFrame::setContentView(View* view)
     this->addView(this->contentView, 1);
 
     this->updateAppletFrameItem();
+}
+
+void AppletFrame::draw(NVGcontext* vg, float x, float y, float width, float height, Style style, FrameContext* ctx)
+{
+    updateStatusText();
+    Box::draw(vg, x, y, width, height, style, ctx);
 }
 
 void AppletFrame::handleXMLElement(tinyxml2::XMLElement* element)

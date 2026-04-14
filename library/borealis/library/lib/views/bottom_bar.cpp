@@ -48,40 +48,23 @@ const std::string bottomBarXML = R"xml(
             height="@style/brls/applet_frame/footer_height"
             axis="row"
             grow="1"
-            direction="rightToLeft"
-            justifyContent="spaceBetween"
+            justifyContent="flexStart"
+            alignItems="center"
             paddingTop="@style/brls/hints/footer_padding_top_bottom"
             paddingBottom="@style/brls/hints/footer_padding_top_bottom" >
+
+            <brls:Box
+                id="brls/footer/left_box"
+                width="auto"
+                height="auto"
+                grow="1"
+                axis="column"
+                alignItems="flexStart"
+                justifyContent="center"/>
 
             <brls:Hints
                 width="auto"
                 height="auto"/>
-
-            <brls:Box
-                width="auto"
-                height="auto"
-                axis="row"
-                alignItems="center"
-                direction="leftToRight" >
-
-                <brls:Battery
-                    id="brls/battery"
-                    marginRight="21"
-                    marginBottom="5"/>
-
-                <brls:Wireless
-                    id="brls/wireless"
-                    marginRight="21"
-                    marginBottom="5"/>
-
-                <brls:Label
-                    id="brls/hints/time"
-                    width="auto"
-                    height="auto"
-                    verticalAlign="center"
-                    fontSize="21.5" />
-
-            </brls:Box>
 
         </brls:Box>
     </brls:Box>
@@ -91,47 +74,19 @@ const std::string bottomBarXML = R"xml(
 BottomBar::BottomBar()
 {
     this->inflateFromXMLString(bottomBarXML);
+}
 
-    Platform* platform = Application::getPlatform();
-    battery->setVisibility(platform->canShowBatteryLevel() ? Visibility::VISIBLE : Visibility::GONE);
-    wireless->setVisibility(platform->canShowWirelessLevel() ? Visibility::VISIBLE : Visibility::GONE);
+void BottomBar::setLeftView(View* view)
+{
+    leftBox->clearViews();
+
+    if (view)
+        leftBox->addView(view);
 }
 
 void BottomBar::draw(NVGcontext* vg, float x, float y, float width, float height, Style style, FrameContext* ctx)
 {
-    this->updateText();
     Box::draw(vg, x, y, width, height, style, ctx);
-}
-
-void BottomBar::updateText()
-{
-#ifdef PS4
-    OrbisDateTime lt{};
-    if (sceRtcGetCurrentClockLocalTime)
-        sceRtcGetCurrentClockLocalTime(&lt);
-    tm tm{};
-    tm.tm_hour = lt.hour;
-    tm.tm_min = lt.minute;
-    tm.tm_sec = lt.second;
-#else
-    auto timeNow   = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(timeNow);
-    auto tm = *std::localtime(&in_time_t);
-#endif
-    std::stringstream ss;
-    ss << std::put_time(&tm, "%H:%M:%S");
-    if (ss.str() != bottomText)
-    {
-        bottomText = ss.str();
-        if (Application::getFPSStatus())
-        {
-            time->setText(bottomText + " | FPS:" + std::to_string(Application::getFPS()));
-        }
-        else
-        {
-            time->setText(bottomText);
-        }
-    }
 }
 
 View* BottomBar::create()

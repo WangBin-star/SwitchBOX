@@ -353,7 +353,7 @@ bool AppConfigStore::initialize() {
 
     store.paths = resolve_paths();
 
-    if (std::filesystem::exists(store.paths.config_file)) {
+    if (path_exists(store.paths.config_file)) {
         const IniDocument document = parse_ini(store.paths.config_file);
         load_config_from_document(document, store.config);
         store.loadedFromDisk = true;

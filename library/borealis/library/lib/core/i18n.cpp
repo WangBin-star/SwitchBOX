@@ -60,20 +60,45 @@ static nlohmann::json normalizeLocaleJson(const std::string& name, nlohmann::jso
 
 static void loadLocaleDirectory(const fs::path& localePath, std::string locale, nlohmann::json* target)
 {
-    if (!fs::exists(localePath))
+    std::error_code error;
+
+    if (!fs::exists(localePath, error) || error)
     {
         return;
     }
-    else if (!fs::is_directory(localePath))
+    else if (!fs::is_directory(localePath, error) || error)
     {
-        Logger::error("Cannot load locale {}: {} isn't a directory", locale, localePath.string());
+        Logger::error("Cannot load locale {}: {} isn't a readable directory", locale, localePath.string());
         return;
     }
 
-    for (const fs::directory_entry& entry : fs::directory_iterator(localePath))
+    fs::directory_iterator iterator(localePath, error);
+    fs::directory_iterator end;
+
+    if (error)
     {
-        if (fs::is_directory(entry))
+        Logger::error("Cannot iterate locale {} directory {}: {}", locale, localePath.string(), error.message());
+        return;
+    }
+
+    for (; iterator != end; iterator.increment(error))
+    {
+        if (error)
+        {
+            Logger::error("Error while iterating locale {} directory {}: {}", locale, localePath.string(), error.message());
+            break;
+        }
+
+        const fs::directory_entry& entry = *iterator;
+
+        if (fs::is_directory(entry.path(), error))
+        {
+            if (error)
+            {
+                error.clear();
+            }
             continue;
+        }
 
         std::string name = entry.path().filename().string();
         if (!endsWith(name, ".json"))

@@ -46,6 +46,7 @@ brls::DetailCell* create_checkpoint_cell(
 void apply_native_status_layout(brls::AppletFrame* frame, const std::string& title) {
     frame->setTitle(title);
 
+#ifndef __SWITCH__
     if (auto* timeView = frame->getView("brls/hints/time")) {
         timeView->setVisibility(brls::Visibility::GONE);
     }
@@ -57,6 +58,7 @@ void apply_native_status_layout(brls::AppletFrame* frame, const std::string& tit
     if (auto* batteryView = frame->getView("brls/battery")) {
         batteryView->setVisibility(brls::Visibility::GONE);
     }
+#endif
 }
 
 brls::View* create_placeholder_content(const PlaceholderSection& section) {
@@ -119,7 +121,9 @@ brls::View* create_placeholder_content(const PlaceholderSection& section) {
 
     auto* scrollingFrame = new brls::ScrollingFrame();
     scrollingFrame->setContentView(container);
+#ifndef __SWITCH__
     scrollingFrame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
+#endif
 
     auto* frame = new brls::AppletFrame(scrollingFrame);
     apply_native_status_layout(frame, section.title);

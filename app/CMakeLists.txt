@@ -95,6 +95,7 @@ if (SWITCHBOX_BUILD_SWITCH)
 
     set(SWITCHBOX_NACP_PATH "${CMAKE_CURRENT_BINARY_DIR}/switchbox_switch.nacp")
     set(SWITCHBOX_SWITCH_ROMFS_DIR "${DEVKITPRO}/tmp/switchbox-switch-romfs")
+    set(SWITCHBOX_DEKO3D_SHADER_DIR "${CMAKE_SOURCE_DIR}/library/borealis/library/lib/extern/nanovg/deko3d/shaders")
 
     file(REMOVE_RECURSE "${SWITCHBOX_SWITCH_ROMFS_DIR}")
     file(MAKE_DIRECTORY "${SWITCHBOX_SWITCH_ROMFS_DIR}")
@@ -109,11 +110,23 @@ if (SWITCHBOX_BUILD_SWITCH)
 
     # elf2nro can fail on Windows workspaces with non-ASCII source paths.
     # Stage romfs assets under an ASCII-only path before packaging the NRO.
-    add_custom_target(switchbox_switch_romfs_stage
-        COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_SWITCH_ROMFS_DIR}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_SWITCH_ROMFS_DIR}"
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${SWITCHBOX_SWITCH_ROMFS_DIR}"
-    )
+    if (SWITCHBOX_SWITCH_USE_DEKO3D)
+        add_custom_target(switchbox_switch_romfs_stage
+            COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_SWITCH_ROMFS_DIR}/shaders"
+            COMMAND "${NX_UAM_EXE}" -s vert -o "${SWITCHBOX_SWITCH_ROMFS_DIR}/shaders/fill_vsh.dksh" "${SWITCHBOX_DEKO3D_SHADER_DIR}/fill_vsh.glsl"
+            COMMAND "${NX_UAM_EXE}" -s frag -o "${SWITCHBOX_SWITCH_ROMFS_DIR}/shaders/fill_aa_fsh.dksh" "${SWITCHBOX_DEKO3D_SHADER_DIR}/fill_aa_fsh.glsl"
+            COMMAND "${NX_UAM_EXE}" -s frag -o "${SWITCHBOX_SWITCH_ROMFS_DIR}/shaders/fill_fsh.dksh" "${SWITCHBOX_DEKO3D_SHADER_DIR}/fill_fsh.glsl"
+        )
+    else ()
+        add_custom_target(switchbox_switch_romfs_stage
+            COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${SWITCHBOX_SWITCH_ROMFS_DIR}"
+        )
+    endif ()
 
     add_custom_target(switchbox_switch_runtime_assets
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/langs"

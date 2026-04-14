@@ -108,19 +108,6 @@ PlaceholderSection make_iptv_section(const switchbox::core::IptvSourceSettings& 
     };
 }
 
-PlaceholderSection make_smb_section(const switchbox::core::SmbSourceSettings& source) {
-    return {
-        .title = visible_smb_title(source),
-        .subtitle = summarize_smb_source(source),
-        .checkpoints =
-            {
-                tr("sections/smb/checkpoints/1"),
-                tr("sections/smb/checkpoints/2"),
-                tr("sections/smb/checkpoints/3"),
-            },
-    };
-}
-
 struct HomeCardModel {
     std::string eyebrow;
     std::string title;
@@ -136,9 +123,15 @@ public:
         : brls::Box(brls::Axis::COLUMN)
         , model(std::move(model)) {
         setFocusable(true);
+#ifdef __SWITCH__
+        setDimensions(344, 420);
+        setMargins(0, 22, 0, 22);
+        setPadding(32, 30, 30, 30);
+#else
         setDimensions(320, 404);
         setMargins(0, 18, 0, 18);
         setPadding(30, 28, 28, 28);
+#endif
         setCornerRadius(30.0f);
         setHighlightCornerRadius(34.0f);
         setHideHighlightBackground(true);
@@ -231,6 +224,7 @@ private:
 void apply_native_status_layout(brls::AppletFrame* frame) {
     frame->setTitle(tr("brand/app_name"));
 
+#ifndef __SWITCH__
     if (auto* time_view = frame->getView("brls/hints/time")) {
         time_view->setVisibility(brls::Visibility::GONE);
     }
@@ -242,6 +236,7 @@ void apply_native_status_layout(brls::AppletFrame* frame) {
     if (auto* battery_view = frame->getView("brls/battery")) {
         battery_view->setVisibility(brls::Visibility::GONE);
     }
+#endif
 }
 
 std::vector<HomeCardModel> build_home_cards() {
@@ -303,14 +298,22 @@ brls::View* create_home_content() {
     auto theme = brls::Application::getTheme();
     const std::vector<HomeCardModel> cards = build_home_cards();
     const bool has_source_cards = cards.size() > 1;
-
     auto* root = new brls::Box(brls::Axis::COLUMN);
     root->setPadding(14, 0, 28, 0);
     root->setJustifyContent(brls::JustifyContent::CENTER);
+    root->setBackgroundColor(theme["brls/background"]);
+
+#ifdef __SWITCH__
+    root->setPadding(10, 0, 24, 0);
+#endif
 
     auto* cards_row = new brls::Box(brls::Axis::ROW);
     cards_row->setPadding(54, 56, 54, 56);
     cards_row->setAlignItems(brls::AlignItems::CENTER);
+
+#ifdef __SWITCH__
+    cards_row->setPadding(42, 44, 42, 44);
+#endif
 
     for (const auto& card : cards) {
         cards_row->addView(new HomeSourceCard(card));
@@ -331,7 +334,9 @@ brls::View* create_home_content() {
         root->addView(empty_hint);
     }
 
+#ifndef __SWITCH__
     root->getAppletFrameItem()->setHintView(new HeaderStatusHint());
+#endif
 
     auto* frame = new brls::AppletFrame(root);
     frame->registerAction(

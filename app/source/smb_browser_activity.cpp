@@ -64,6 +64,7 @@ brls::DetailCell* create_detail_cell(
 void apply_native_status_layout(brls::AppletFrame* frame, const std::string& title) {
     frame->setTitle(title);
 
+#ifndef __SWITCH__
     if (auto* time_view = frame->getView("brls/hints/time")) {
         time_view->setVisibility(brls::Visibility::GONE);
     }
@@ -75,6 +76,7 @@ void apply_native_status_layout(brls::AppletFrame* frame, const std::string& tit
     if (auto* battery_view = frame->getView("brls/battery")) {
         battery_view->setVisibility(brls::Visibility::GONE);
     }
+#endif
 }
 
 void apply_header_path(
@@ -114,33 +116,19 @@ void apply_footer_extensions_hint(
     }
 
     auto* footer = frame->getFooter();
-    if (footer == nullptr || footer->getChildren().empty()) {
+    if (footer == nullptr) {
         return;
     }
 
-    auto* outer_box = dynamic_cast<brls::Box*>(footer->getChildren().front());
-    if (outer_box == nullptr || outer_box->getChildren().empty()) {
+    auto* bottom_bar = dynamic_cast<brls::BottomBar*>(footer);
+    if (bottom_bar == nullptr) {
         return;
     }
-
-    auto* footer_row = dynamic_cast<brls::Box*>(outer_box->getChildren().front());
-    if (footer_row == nullptr || footer_row->getChildren().size() < 2) {
-        return;
-    }
-
-    auto* left_status_box = dynamic_cast<brls::Box*>(footer_row->getChildren()[1]);
-    if (left_status_box == nullptr) {
-        return;
-    }
-
-    left_status_box->setAxis(brls::Axis::COLUMN);
-    left_status_box->setAlignItems(brls::AlignItems::FLEX_START);
-    left_status_box->setJustifyContent(brls::JustifyContent::CENTER);
 
     auto* extensions_label = create_label(text, 14.0f, color, false);
     extensions_label->setMaxWidth(560.0f);
     extensions_label->setLineHeight(18.0f);
-    left_status_box->addView(extensions_label, 0);
+    bottom_bar->setLeftView(extensions_label);
 }
 
 std::string format_bytes(std::uintmax_t size) {
@@ -262,7 +250,9 @@ brls::View* create_smb_browser_content(
 
     auto* scrolling_frame = new brls::ScrollingFrame();
     scrolling_frame->setContentView(content);
+#ifndef __SWITCH__
     scrolling_frame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
+#endif
 
     auto* frame = new brls::AppletFrame(scrolling_frame);
     apply_native_status_layout(frame, visible_smb_title(source));

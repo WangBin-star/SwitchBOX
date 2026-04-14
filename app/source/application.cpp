@@ -4,6 +4,8 @@
 
 #include <borealis.hpp>
 #include <borealis/core/thread.hpp>
+#include <borealis/views/applet_frame.hpp>
+#include <borealis/views/label.hpp>
 
 #include "switchbox/app/config_missing_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
@@ -26,6 +28,14 @@ void apply_language_state(const switchbox::core::LanguageState& language_state) 
     }
 
     brls::reloadTranslations();
+}
+
+void prepare_language_override(const switchbox::core::LanguageState& language_state) {
+    if (language_state.using_auto) {
+        brls::Application::clearLocaleOverride();
+    } else {
+        brls::Application::setLocaleOverride(language_state.active_language);
+    }
 }
 
 void rebuild_root_ui(const StartupContext& context, bool reopen_settings) {
@@ -74,7 +84,7 @@ void Application::apply_language_and_reload_ui(bool reopen_settings) {
 int Application::run(const StartupContext& context) const {
     Application::set_runtime_context(context);
     switchbox::core::AppConfigStore::set_runtime_executable_path(context.executable_path);
-    bool configReady = switchbox::core::AppConfigStore::initialize();
+    const bool configReady = switchbox::core::AppConfigStore::initialize();
     switchbox::core::LanguageState languageState{};
     const auto& paths = switchbox::core::AppConfigStore::paths();
 
@@ -83,7 +93,7 @@ int Application::run(const StartupContext& context) const {
     if (configReady) {
         const auto& config = switchbox::core::AppConfigStore::current();
         languageState = switchbox::core::resolve_language_state(paths, config);
-        apply_language_state(languageState);
+        prepare_language_override(languageState);
     }
 
     brls::Logger::setLogLevel(brls::LogLevel::LOG_INFO);
@@ -91,6 +101,14 @@ int Application::run(const StartupContext& context) const {
     if (!brls::Application::init()) {
         brls::Logger::error("Unable to init Borealis application");
         return EXIT_FAILURE;
+    }
+
+#ifdef __SWITCH__
+    brls::Application::getPlatform()->exitToHomeMode(true);
+#endif
+
+    if (configReady) {
+        apply_language_state(languageState);
     }
 
     if (!configReady) {

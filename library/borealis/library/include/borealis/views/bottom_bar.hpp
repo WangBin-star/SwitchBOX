@@ -19,8 +19,6 @@
 #include <borealis/core/application.hpp>
 #include <borealis/core/bind.hpp>
 #include <borealis/core/box.hpp>
-#include <borealis/views/image.hpp>
-#include <borealis/views/label.hpp>
 
 namespace brls
 {
@@ -30,15 +28,17 @@ class BottomBar : public Box
   public:
     BottomBar();
     void draw(NVGcontext* vg, float x, float y, float width, float height, Style style, FrameContext* ctx) override;
+    Box* getLeftBox()
+    {
+        return leftBox;
+    }
+
+    void setLeftView(View* view);
+
     static View* create();
 
   private:
-    void updateText();
-    std::string bottomText;
-    BRLS_BIND(Box, hints, "brls/hints");
-    BRLS_BIND(Label, time, "brls/hints/time");
-    BRLS_BIND(View, battery, "brls/battery");
-    BRLS_BIND(View, wireless, "brls/wireless");
+    BRLS_BIND(Box, leftBox, "brls/footer/left_box");
 };
 
 } // namespace brls

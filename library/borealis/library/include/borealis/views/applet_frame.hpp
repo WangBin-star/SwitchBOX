@@ -59,6 +59,7 @@ class AppletFrame : public Box
 
     void setHeaderStyle(HeaderStyle style);
     void updateAppletFrameItem();
+    void draw(NVGcontext* vg, float x, float y, float width, float height, Style style, FrameContext* ctx) override;
 
     View* getContentView()
     {
@@ -85,8 +86,15 @@ class AppletFrame : public Box
     BRLS_BIND(Label, title, "brls/applet_frame/title_label");
     BRLS_BIND(Image, icon, "brls/applet_frame/title_icon");
     BRLS_BIND(Box, hintBox, "brls/applet_frame/hint_box");
+    BRLS_BIND(Box, statusBox, "brls/applet_frame/status_box");
+    BRLS_BIND(Label, time, "brls/hints/time");
+    BRLS_BIND(View, wireless, "brls/wireless");
+    BRLS_BIND(View, battery, "brls/battery");
 
     HeaderStyle style = HeaderStyle::REGULAR;
+    std::string statusTimeText;
+
+    void updateStatusText();
 
   protected:
     std::vector<View*> contentViewStack;
