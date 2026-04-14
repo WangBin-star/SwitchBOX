@@ -1,0 +1,145 @@
+{
+    "switchbox": {
+        "brand": {
+            "app_name": "SwitchBOX"
+        },
+        "actions": {
+            "settings": "Settings"
+        },
+        "home": {
+            "eyebrow": "MEDIA CONTROL SURFACE",
+            "header_subtitle": "Switch-first launcher for live, local and test playback",
+            "summary": "Bootstrap is complete. This screen now acts as the product hub that routes every media source into one shared playback experience.",
+            "info": {
+                "build_health": {
+                    "title": "Build health",
+                    "detail": "Desktop and Switch builds are green, including .nro output"
+                },
+                "current_focus": {
+                    "title": "Current focus",
+                    "detail": "Promote Playback Test into the first real player screen"
+                },
+                "primary_promise": {
+                    "title": "Primary promise",
+                    "detail": "Every source should land in one consistent playback shell"
+                },
+                "running_on": {
+                    "title": "Running on"
+                },
+                "runtime_mode": {
+                    "title": "Runtime mode",
+                    "desktop": "Desktop debug target",
+                    "switch": "Switch app target"
+                },
+                "build_version": {
+                    "title": "Build version"
+                }
+            },
+            "modules": {
+                "title": "Launch modules",
+                "summary": "Playback is the first delivery target. IPTV and SMB are upstream entry flows that should converge into that same player.",
+                "player_detail": "Build the shared player shell, transport controls and test media flow",
+                "iptv_detail": "Add playlists, channel groups and live-entry handoff into the player",
+                "smb_detail": "Add saved shares, file browsing and seekable handoff into the player"
+            },
+            "note": {
+                "title": "Delivery note",
+                "summary": "The launcher can stay simple. The value of this project comes from stable playback, clean source handoff and reliable runtime diagnostics."
+            },
+            "system": {
+                "title": "System",
+                "summary": "Diagnostics and configuration stay here so the media entry modules can remain focused and predictable.",
+                "settings_detail": "Runtime checks, source configuration, diagnostics and build metadata"
+            }
+        },
+        "sections": {
+            "player": {
+                "title": "Playback Test",
+                "subtitle": "Shared player shell, transport controls and runtime state",
+                "checkpoints": {
+                    "1": "Define player layout, overlays and playback state model",
+                    "2": "Add fixed desktop and Switch media entry points",
+                    "3": "Wire buffering, transport controls and exit flow"
+                }
+            },
+            "iptv": {
+                "title": "IPTV",
+                "subtitle": "Live channels, playlist intake and grouped navigation",
+                "checkpoints": {
+                    "1": "Add source profiles, sample playlists and refresh flow",
+                    "2": "Build grouped channel navigation with metadata rows",
+                    "3": "Pass live channel selection into the shared player activity"
+                }
+            },
+            "smb": {
+                "title": "SMB / NAS",
+                "subtitle": "Saved shares, browsing flow and seekable media access",
+                "checkpoints": {
+                    "1": "Add saved servers, credentials and share targets",
+                    "2": "Validate directory listing, probing and seekable reads",
+                    "3": "Pass selected files into the shared player activity"
+                }
+            },
+            "settings": {
+                "title": "Settings",
+                "subtitle": "Runtime checks, source config and diagnostics surface",
+                "checkpoints": {
+                    "1": "Surface runtime target, build info and health checks",
+                    "2": "Reserve IPTV and SMB configuration sections",
+                    "3": "Prepare logging, storage and environment validation"
+                }
+            }
+        },
+        "placeholder": {
+            "eyebrow": "DELIVERY PANEL",
+            "summary": "This page already occupies a real product slot. The next step is replacing the shell with the smallest working flow that proves the module.",
+            "current_state": {
+                "title": "Current state",
+                "detail": "Shell page is live and ready for implementation"
+            },
+            "first_deliverable": {
+                "title": "First deliverable"
+            },
+            "exit_condition": {
+                "title": "Exit condition"
+            },
+            "path": {
+                "title": "Delivery path",
+                "summary": "These checkpoints define the smallest useful path from shell page to working module.",
+                "step_label": "Step {0}"
+            },
+            "fallbacks": {
+                "first_task": "Define first task",
+                "ship_slice": "Ship first working slice"
+            }
+        },
+        "settings_page": {
+            "eyebrow": "SYSTEM PREFERENCES",
+            "header_subtitle": "Basic runtime preferences stored in switchbox.ini",
+            "summary": "Language selection is the first live settings item. Changes are saved immediately and take effect after restart.",
+            "general": {
+                "title": "Basic Settings",
+                "summary": "The current phase only exposes UI language. IPTV and SMB settings will be added here next."
+            },
+            "language": {
+                "title": "Interface language",
+                "current_title": "Active language",
+                "config_title": "Config file",
+                "save_success": "Language saved. Restart the app to apply it.",
+                "save_failed": "Failed to save language setting.",
+                "options": {
+                    "auto": "Automatic ({0})"
+                },
+                "names": {
+                    "en-US": "English (US)",
+                    "zh-Hans": "Simplified Chinese",
+                    "zh-Hant": "Traditional Chinese",
+                    "ja": "Japanese",
+                    "ko": "Korean",
+                    "fr": "French",
+                    "ru": "Russian"
+                }
+            }
+        }
+    }
+}

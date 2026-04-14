@@ -42,6 +42,60 @@ namespace brls
 
 static nlohmann::json defaultLocale = {};
 static nlohmann::json currentLocale = {};
+static std::vector<std::string> translationSearchPaths = {};
+
+static nlohmann::json normalizeLocaleJson(const std::string& name, nlohmann::json strings)
+{
+    if (strings.is_object())
+    {
+        auto sameNameRoot = strings.find(name);
+        if (sameNameRoot != strings.end())
+        {
+            return *sameNameRoot;
+        }
+    }
+
+    return strings;
+}
+
+static void loadLocaleDirectory(const fs::path& localePath, std::string locale, nlohmann::json* target)
+{
+    if (!fs::exists(localePath))
+    {
+        return;
+    }
+    else if (!fs::is_directory(localePath))
+    {
+        Logger::error("Cannot load locale {}: {} isn't a directory", locale, localePath.string());
+        return;
+    }
+
+    for (const fs::directory_entry& entry : fs::directory_iterator(localePath))
+    {
+        if (fs::is_directory(entry))
+            continue;
+
+        std::string name = entry.path().filename().string();
+        if (!endsWith(name, ".json"))
+            continue;
+
+        std::ifstream jsonStream(entry.path().string());
+        nlohmann::json strings;
+
+        try
+        {
+            jsonStream >> strings;
+        }
+        catch (const std::exception& e)
+        {
+            Logger::error("Error while loading \"{}\": {}", entry.path().string(), e.what());
+            continue;
+        }
+
+        const std::string key = name.substr(0, name.length() - 5);
+        (*target)[key]        = normalizeLocaleJson(key, std::move(strings));
+    }
+}
 
 static void loadLocale(std::string locale, nlohmann::json* target)
 {
@@ -61,63 +115,56 @@ static void loadLocale(std::string locale, nlohmann::json* target)
         if (!endsWith(name, ".json"))
             continue;
 
-        (*target)[name.substr(0, name.length() - 5)] = nlohmann::json::parse(romfs::get(path).string());
+        const std::string key = name.substr(0, name.length() - 5);
+        (*target)[key]        = normalizeLocaleJson(key, nlohmann::json::parse(romfs::get(path).string()));
     }
 #else
-    std::string localePath = BRLS_ASSET("i18n/" + locale);
-
-    if (!fs::exists(localePath))
-    {
-        Logger::error("Cannot load locale {}: directory {} doesn't exist", locale, localePath);
-        return;
-    }
-    else if (!fs::is_directory(localePath))
-    {
-        Logger::error("Cannot load locale {}: {} isn't a directory", locale, localePath);
-        return;
-    }
-
-    // Iterate over all JSON files in the directory
-    for (const fs::directory_entry& entry : fs::directory_iterator(localePath))
-    {
-        if (fs::is_directory(entry))
-            continue;
-
-        std::string name = entry.path().filename().string();
-
-        if (!endsWith(name, ".json"))
-            continue;
-
-        std::string path = entry.path().string();
-
-        nlohmann::json strings;
-
-        std::ifstream jsonStream;
-        jsonStream.open(path);
-
-        try
-        {
-            jsonStream >> strings;
-        }
-        catch (const std::exception& e)
-        {
-            Logger::error("Error while loading \"{}\": {}", path, e.what());
-        }
-
-        jsonStream.close();
-
-        (*target)[name.substr(0, name.length() - 5)] = strings;
-    }
+    loadLocaleDirectory(BRLS_ASSET("i18n/" + locale), locale, target);
 #endif /* USE_LIBROMFS */
+
+    for (const std::string& basePath : translationSearchPaths)
+    {
+        loadLocaleDirectory(fs::path(basePath) / locale, locale, target);
+    }
 }
 
 void loadTranslations()
 {
+    clearTranslations();
     loadLocale(LOCALE_DEFAULT, &defaultLocale);
 
     std::string currentLocaleName = Application::getLocale();
     if (currentLocaleName != LOCALE_DEFAULT)
         loadLocale(currentLocaleName, &currentLocale);
+}
+
+void reloadTranslations()
+{
+    loadTranslations();
+}
+
+void clearTranslations()
+{
+    defaultLocale = nlohmann::json::object();
+    currentLocale = nlohmann::json::object();
+}
+
+void setTranslationSearchPaths(const std::vector<std::string>& searchPaths)
+{
+    translationSearchPaths.clear();
+    translationSearchPaths.reserve(searchPaths.size());
+
+    for (const std::string& searchPath : searchPaths)
+    {
+        if (!searchPath.empty())
+            translationSearchPaths.push_back(searchPath);
+    }
+}
+
+void addTranslationSearchPath(const std::string& searchPath)
+{
+    if (!searchPath.empty())
+        translationSearchPaths.push_back(searchPath);
 }
 
 namespace internal

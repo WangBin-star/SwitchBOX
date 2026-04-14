@@ -20,6 +20,7 @@
 
 #include <borealis/core/logger.hpp>
 #include <string>
+#include <vector>
 
 namespace brls
 {
@@ -84,6 +85,10 @@ std::string getStr(std::string stringName, Args&&... args)
  * Must be called before trying to get a translation!
  */
 void loadTranslations();
+void reloadTranslations();
+void clearTranslations();
+void setTranslationSearchPaths(const std::vector<std::string>& searchPaths);
+void addTranslationSearchPath(const std::string& searchPath);
 
 inline namespace literals
 {

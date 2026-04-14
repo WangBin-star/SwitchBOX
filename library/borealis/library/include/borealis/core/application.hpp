@@ -303,6 +303,8 @@ class Application
      * Returns the current system locale.
      */
     static std::string getLocale();
+    static void setLocaleOverride(std::string locale);
+    static void clearLocaleOverride();
 
     static void addToFreeQueue(View* view);
 
@@ -427,6 +429,7 @@ class Application
     inline static Event<bool> windowFocusChangedEvent;
 
     inline static std::unordered_map<std::string, XMLViewCreator> xmlViewsRegister;
+    inline static std::string localeOverride;
 
     static void navigate(FocusDirection direction, bool repeating);
 

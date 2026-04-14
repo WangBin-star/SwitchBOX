@@ -9,12 +9,12 @@
 
 namespace {
 
-void align_working_directory_with_resources() {
+std::filesystem::path align_working_directory_with_resources() {
     std::wstring modulePath(MAX_PATH, L'\0');
     const DWORD pathLength = GetModuleFileNameW(nullptr, modulePath.data(), static_cast<DWORD>(modulePath.size()));
 
     if (pathLength == 0 || pathLength == modulePath.size()) {
-        return;
+        return {};
     }
 
     modulePath.resize(pathLength);
@@ -26,22 +26,25 @@ void align_working_directory_with_resources() {
     const std::filesystem::path siblingResources = executableDir / "resources" / "font" / "switch_font.ttf";
     if (std::filesystem::exists(siblingResources)) {
         std::filesystem::current_path(executableDir);
-        return;
+        return executablePath;
     }
 
     const std::filesystem::path parentResources = buildDir / "resources" / "font" / "switch_font.ttf";
     if (std::filesystem::exists(parentResources)) {
         std::filesystem::current_path(buildDir);
     }
+
+    return executablePath;
 }
 
 }  // namespace
 
 int main() {
-    align_working_directory_with_resources();
+    const std::filesystem::path executablePath = align_working_directory_with_resources();
 
     switchbox::app::StartupContext context{
         .platform_name = switchbox::platform::desktop::platform_name(),
+        .executable_path = executablePath.string(),
         .switch_target = false,
         .debug_host = true,
     };

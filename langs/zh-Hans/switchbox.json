@@ -1,0 +1,145 @@
+{
+    "switchbox": {
+        "brand": {
+            "app_name": "SwitchBOX"
+        },
+        "actions": {
+            "settings": "\u8bbe\u7f6e"
+        },
+        "home": {
+            "eyebrow": "\u5a92\u4f53\u63a7\u5236\u4e2d\u5fc3",
+            "header_subtitle": "\u4ee5 Switch \u4e3a\u9996\u8981\u76ee\u6807\u7684\u76f4\u64ad\u3001\u672c\u5730\u4e0e\u6d4b\u8bd5\u64ad\u653e\u5165\u53e3",
+            "summary": "\u542f\u52a8\u58f3\u9636\u6bb5\u5df2\u7ecf\u5b8c\u6210\u3002\u8fd9\u4e2a\u9996\u9875\u73b0\u5728\u627f\u62c5\u4ea7\u54c1\u603b\u5165\u53e3\u804c\u8d23\uff0c\u628a\u6240\u6709\u5a92\u4f53\u6765\u6e90\u7edf\u4e00\u5bfc\u5411\u540c\u4e00\u5957\u64ad\u653e\u4f53\u9a8c\u3002",
+            "info": {
+                "build_health": {
+                    "title": "\u6784\u5efa\u72b6\u6001",
+                    "detail": "\u684c\u9762\u7aef\u4e0e Switch \u7aef\u6784\u5efa\u90fd\u5df2\u6253\u901a\uff0c\u5305\u542b .nro \u8f93\u51fa"
+                },
+                "current_focus": {
+                    "title": "\u5f53\u524d\u91cd\u70b9",
+                    "detail": "\u628a\u201c\u64ad\u653e\u6d4b\u8bd5\u201d\u63a8\u8fdb\u6210\u7b2c\u4e00\u4e2a\u771f\u6b63\u53ef\u7528\u7684\u64ad\u653e\u5668\u754c\u9762"
+                },
+                "primary_promise": {
+                    "title": "\u6838\u5fc3\u76ee\u6807",
+                    "detail": "\u6240\u6709\u6765\u6e90\u6700\u7ec8\u90fd\u8fdb\u5165\u540c\u4e00\u5957\u4e00\u81f4\u7684\u64ad\u653e\u58f3"
+                },
+                "running_on": {
+                    "title": "\u5f53\u524d\u8fd0\u884c\u5e73\u53f0"
+                },
+                "runtime_mode": {
+                    "title": "\u8fd0\u884c\u6a21\u5f0f",
+                    "desktop": "\u684c\u9762\u8c03\u8bd5\u76ee\u6807",
+                    "switch": "Switch \u5e94\u7528\u76ee\u6807"
+                },
+                "build_version": {
+                    "title": "\u6784\u5efa\u7248\u672c"
+                }
+            },
+            "modules": {
+                "title": "\u529f\u80fd\u5165\u53e3",
+                "summary": "\u64ad\u653e\u80fd\u529b\u662f\u7b2c\u4e00\u4ea4\u4ed8\u76ee\u6807\u3002IPTV \u548c SMB \u90fd\u662f\u4e0a\u6e38\u5165\u53e3\uff0c\u6700\u7ec8\u5e94\u6c47\u805a\u5230\u540c\u4e00\u4e2a\u64ad\u653e\u5668\u3002",
+                "player_detail": "\u6784\u5efa\u7edf\u4e00\u64ad\u653e\u5668\u58f3\u3001\u4f20\u8f93\u63a7\u5236\u4e0e\u6d4b\u8bd5\u5a92\u4f53\u94fe\u8def",
+                "iptv_detail": "\u63a5\u5165\u64ad\u653e\u5217\u8868\u3001\u9891\u9053\u5206\u7ec4\uff0c\u5e76\u5c06\u76f4\u64ad\u5165\u53e3\u4ea4\u7ed9\u64ad\u653e\u5668",
+                "smb_detail": "\u63a5\u5165\u5df2\u4fdd\u5b58\u5171\u4eab\u3001\u6587\u4ef6\u6d4f\u89c8\uff0c\u5e76\u628a\u53ef\u64ad\u653e\u6587\u4ef6\u4ea4\u7ed9\u64ad\u653e\u5668"
+            },
+            "note": {
+                "title": "\u4ea4\u4ed8\u8bf4\u660e",
+                "summary": "\u542f\u52a8\u5668\u672c\u8eab\u53ef\u4ee5\u4fdd\u6301\u7b80\u6d01\u3002\u8fd9\u4e2a\u9879\u76ee\u771f\u6b63\u7684\u4ef7\u503c\u5728\u4e8e\u7a33\u5b9a\u64ad\u653e\u3001\u6e05\u6670\u6765\u6e90\u5207\u6362\u4e0e\u53ef\u9760\u8fd0\u884c\u8bca\u65ad\u3002"
+            },
+            "system": {
+                "title": "\u7cfb\u7edf",
+                "summary": "\u8bca\u65ad\u4e0e\u914d\u7f6e\u96c6\u4e2d\u653e\u5728\u8fd9\u91cc\uff0c\u907f\u514d\u5a92\u4f53\u5165\u53e3\u6a21\u5757\u627f\u62c5\u989d\u5916\u590d\u6742\u5ea6\u3002",
+                "settings_detail": "\u8fd0\u884c\u68c0\u67e5\u3001\u6765\u6e90\u914d\u7f6e\u3001\u8bca\u65ad\u4e0e\u6784\u5efa\u4fe1\u606f"
+            }
+        },
+        "sections": {
+            "player": {
+                "title": "\u64ad\u653e\u6d4b\u8bd5",
+                "subtitle": "\u7edf\u4e00\u64ad\u653e\u5668\u58f3\u3001\u4f20\u8f93\u63a7\u5236\u4e0e\u8fd0\u884c\u65f6\u72b6\u6001",
+                "checkpoints": {
+                    "1": "\u5b9a\u4e49\u64ad\u653e\u5668\u5e03\u5c40\u3001\u8986\u76d6\u5c42\u4e0e\u64ad\u653e\u72b6\u6001\u6a21\u578b",
+                    "2": "\u8865\u4e0a\u684c\u9762\u7aef\u4e0e Switch \u7aef\u7684\u56fa\u5b9a\u6d4b\u8bd5\u5a92\u4f53\u5165\u53e3",
+                    "3": "\u6253\u901a\u7f13\u51b2\u3001\u4f20\u8f93\u63a7\u5236\u4e0e\u9000\u51fa\u6d41\u7a0b"
+                }
+            },
+            "iptv": {
+                "title": "IPTV",
+                "subtitle": "\u76f4\u64ad\u9891\u9053\u3001\u64ad\u653e\u5217\u8868\u63a5\u5165\u4e0e\u5206\u7ec4\u5bfc\u822a",
+                "checkpoints": {
+                    "1": "\u52a0\u5165\u6765\u6e90\u914d\u7f6e\u3001\u793a\u4f8b\u64ad\u653e\u5217\u8868\u4e0e\u5237\u65b0\u6d41\u7a0b",
+                    "2": "\u6784\u5efa\u5e26\u5143\u6570\u636e\u7684\u9891\u9053\u5206\u7ec4\u5bfc\u822a",
+                    "3": "\u628a\u76f4\u64ad\u9891\u9053\u9009\u62e9\u63a5\u5165\u7edf\u4e00\u64ad\u653e\u5668\u9875\u9762"
+                }
+            },
+            "smb": {
+                "title": "SMB / NAS",
+                "subtitle": "\u5df2\u4fdd\u5b58\u5171\u4eab\u3001\u6d4f\u89c8\u6d41\u7a0b\u4e0e\u53ef seek \u8bfb\u53d6\u80fd\u529b",
+                "checkpoints": {
+                    "1": "\u52a0\u5165\u5df2\u4fdd\u5b58\u670d\u52a1\u5668\u3001\u51ed\u636e\u4e0e\u5171\u4eab\u76ee\u6807",
+                    "2": "\u9a8c\u8bc1\u76ee\u5f55\u6d4f\u89c8\u3001\u63a2\u6d4b\u4e0e\u53ef seek \u8bfb\u53d6",
+                    "3": "\u628a\u9009\u4e2d\u7684\u6587\u4ef6\u63a5\u5165\u7edf\u4e00\u64ad\u653e\u5668\u9875\u9762"
+                }
+            },
+            "settings": {
+                "title": "\u8bbe\u7f6e",
+                "subtitle": "\u8fd0\u884c\u68c0\u67e5\u3001\u6765\u6e90\u914d\u7f6e\u4e0e\u8bca\u65ad\u5165\u53e3",
+                "checkpoints": {
+                    "1": "\u5c55\u793a\u8fd0\u884c\u76ee\u6807\u3001\u6784\u5efa\u4fe1\u606f\u4e0e\u5065\u5eb7\u68c0\u67e5",
+                    "2": "\u9884\u7559 IPTV \u4e0e SMB \u914d\u7f6e\u533a\u5757",
+                    "3": "\u51c6\u5907\u65e5\u5fd7\u3001\u5b58\u50a8\u4e0e\u73af\u5883\u6821\u9a8c"
+                }
+            }
+        },
+        "placeholder": {
+            "eyebrow": "\u4ea4\u4ed8\u9762\u677f",
+            "summary": "\u8fd9\u4e2a\u9875\u9762\u5df2\u7ecf\u5360\u636e\u4e86\u771f\u5b9e\u4ea7\u54c1\u4f4d\u7f6e\u3002\u4e0b\u4e00\u6b65\u662f\u7528\u6700\u5c0f\u53ef\u5de5\u4f5c\u6d41\u7a0b\u66ff\u6362\u5916\u58f3\u9875\u9762\uff0c\u8bc1\u660e\u8be5\u6a21\u5757\u6210\u7acb\u3002",
+            "current_state": {
+                "title": "\u5f53\u524d\u72b6\u6001",
+                "detail": "\u58f3\u9875\u9762\u5df2\u4e0a\u7ebf\uff0c\u53ef\u76f4\u63a5\u8fdb\u5165\u529f\u80fd\u5b9e\u73b0"
+            },
+            "first_deliverable": {
+                "title": "\u7b2c\u4e00\u9879\u4ea4\u4ed8"
+            },
+            "exit_condition": {
+                "title": "\u5b8c\u6210\u6761\u4ef6"
+            },
+            "path": {
+                "title": "\u4ea4\u4ed8\u8def\u5f84",
+                "summary": "\u8fd9\u4e9b\u68c0\u67e5\u70b9\u5b9a\u4e49\u4e86\u4ece\u58f3\u9875\u9762\u8d70\u5230\u53ef\u7528\u6a21\u5757\u7684\u6700\u5c0f\u8def\u5f84\u3002",
+                "step_label": "\u6b65\u9aa4 {0}"
+            },
+            "fallbacks": {
+                "first_task": "\u5b9a\u4e49\u7b2c\u4e00\u9879\u4efb\u52a1",
+                "ship_slice": "\u4ea4\u4ed8\u7b2c\u4e00\u5757\u53ef\u7528\u529f\u80fd"
+            }
+        },
+        "settings_page": {
+            "eyebrow": "\u7cfb\u7edf\u504f\u597d",
+            "header_subtitle": "\u5f53\u524d\u57fa\u7840\u8fd0\u884c\u8bbe\u7f6e\u5c06\u5199\u5165 switchbox.ini",
+            "summary": "\u8bed\u8a00\u5207\u6362\u662f\u7b2c\u4e00\u4e2a\u6b63\u5f0f\u53ef\u7528\u7684\u8bbe\u7f6e\u9879\u3002\u4fdd\u5b58\u540e\u9700\u8981\u91cd\u542f\u5e94\u7528\u624d\u4f1a\u751f\u6548\u3002",
+            "general": {
+                "title": "\u57fa\u7840\u8bbe\u7f6e",
+                "summary": "\u5f53\u524d\u9636\u6bb5\u5148\u5f00\u653e\u754c\u9762\u8bed\u8a00\uff0cIPTV \u548c SMB \u8bbe\u7f6e\u7a0d\u540e\u63a5\u5165\u8fd9\u4e2a\u9875\u9762\u3002"
+            },
+            "language": {
+                "title": "\u754c\u9762\u8bed\u8a00",
+                "current_title": "\u5f53\u524d\u751f\u6548",
+                "config_title": "\u914d\u7f6e\u6587\u4ef6",
+                "save_success": "\u8bed\u8a00\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff0c\u91cd\u542f\u5e94\u7528\u540e\u751f\u6548\u3002",
+                "save_failed": "\u8bed\u8a00\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25\u3002",
+                "options": {
+                    "auto": "\u81ea\u52a8\uff08{0}\uff09"
+                },
+                "names": {
+                    "en-US": "English (US)",
+                    "zh-Hans": "\u7b80\u4f53\u4e2d\u6587",
+                    "zh-Hant": "\u7e41\u9ad4\u4e2d\u6587",
+                    "ja": "\u65e5\u672c\u8a9e",
+                    "ko": "\ud55c\uad6d\uc5b4",
+                    "fr": "Fran\u00e7ais",
+                    "ru": "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"
+                }
+            }
+        }
+    }
+}

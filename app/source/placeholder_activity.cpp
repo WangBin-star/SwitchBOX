@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include <borealis/core/i18n.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/cells/cell_detail.hpp>
 #include <borealis/views/header.hpp>
@@ -13,6 +14,10 @@
 namespace switchbox::app {
 
 namespace {
+
+std::string tr(const std::string& key) {
+    return brls::getStr("switchbox/" + key);
+}
 
 brls::Label* create_label(
     const std::string& text,
@@ -57,14 +62,14 @@ void apply_native_status_layout(brls::AppletFrame* frame, const std::string& tit
 brls::View* create_placeholder_content(const PlaceholderSection& section) {
     auto theme = brls::Application::getTheme();
     const std::string firstCheckpoint =
-        section.checkpoints.empty() ? "Define first task" : section.checkpoints.front();
+        section.checkpoints.empty() ? tr("placeholder/fallbacks/first_task") : section.checkpoints.front();
     const std::string finalCheckpoint =
-        section.checkpoints.empty() ? "Ship first working slice" : section.checkpoints.back();
+        section.checkpoints.empty() ? tr("placeholder/fallbacks/ship_slice") : section.checkpoints.back();
 
     auto* container = new brls::Box(brls::Axis::COLUMN);
     container->setPadding(30, 40, 30, 40);
 
-    auto* eyebrow = create_label("DELIVERY PANEL", 15.0f, theme["brls/highlight/color2"], true);
+    auto* eyebrow = create_label(tr("placeholder/eyebrow"), 15.0f, theme["brls/highlight/color2"], true);
     eyebrow->setMargins(0, 0, 8, 0);
     container->addView(eyebrow);
 
@@ -74,31 +79,31 @@ brls::View* create_placeholder_content(const PlaceholderSection& section) {
     container->addView(header);
 
     auto* summary = create_label(
-        "This page already occupies a real product slot. The next step is replacing the shell with the smallest working flow that proves the module.",
+        tr("placeholder/summary"),
         18.0f,
         theme["brls/text"]);
     summary->setMargins(0, 0, 12, 0);
     container->addView(summary);
 
     container->addView(create_checkpoint_cell(
-        "Current state",
-        "Shell page is live and ready for implementation",
+        tr("placeholder/current_state/title"),
+        tr("placeholder/current_state/detail"),
         theme["brls/highlight/color2"]));
     container->addView(create_checkpoint_cell(
-        "First deliverable",
+        tr("placeholder/first_deliverable/title"),
         firstCheckpoint,
         theme["brls/list/listItem_value_color"]));
     container->addView(create_checkpoint_cell(
-        "Exit condition",
+        tr("placeholder/exit_condition/title"),
         finalCheckpoint,
         theme["brls/text"]));
 
-    auto* checklistLabel = create_label("Delivery path", 22.0f, theme["brls/text"], true);
+    auto* checklistLabel = create_label(tr("placeholder/path/title"), 22.0f, theme["brls/text"], true);
     checklistLabel->setMargins(10, 0, 4, 0);
     container->addView(checklistLabel);
 
     auto* checklistSummary = create_label(
-        "These checkpoints define the smallest useful path from shell page to working module.",
+        tr("placeholder/path/summary"),
         16.0f,
         theme["brls/header/subtitle"]);
     checklistSummary->setMargins(0, 0, 10, 0);
@@ -106,7 +111,7 @@ brls::View* create_placeholder_content(const PlaceholderSection& section) {
 
     for (size_t index = 0; index < section.checkpoints.size(); index++) {
         auto* checkpointCell = create_checkpoint_cell(
-            "Step " + std::to_string(index + 1),
+            brls::getStr("switchbox/placeholder/path/step_label", index + 1),
             section.checkpoints[index],
             theme["brls/list/listItem_value_color"]);
         container->addView(checkpointCell);

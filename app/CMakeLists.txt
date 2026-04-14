@@ -1,8 +1,10 @@
 add_library(switchbox_app STATIC
     source/application.cpp
+    source/config_missing_activity.cpp
     source/header_status_hint.cpp
     source/home_activity.cpp
     source/placeholder_activity.cpp
+    source/settings_activity.cpp
 )
 
 target_include_directories(switchbox_app
@@ -55,6 +57,8 @@ if (SWITCHBOX_BUILD_DESKTOP)
 
     add_custom_target(switchbox_desktop_resources
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${CMAKE_BINARY_DIR}/resources"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/langs"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${CMAKE_BINARY_DIR}/langs"
     )
 
     add_dependencies(switchbox_desktop switchbox_desktop_resources)
@@ -110,10 +114,16 @@ if (SWITCHBOX_BUILD_SWITCH)
         COMMAND "${CMAKE_COMMAND}" -E copy_directory "${SWITCHBOX_RESOURCES_DIR}" "${SWITCHBOX_SWITCH_ROMFS_DIR}"
     )
 
+    add_custom_target(switchbox_switch_runtime_assets
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/langs"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${CMAKE_CURRENT_BINARY_DIR}/langs"
+    )
+
     nx_create_nro(switchbox_switch
         NACP "${SWITCHBOX_NACP_PATH}"
         ROMFS "${SWITCHBOX_SWITCH_ROMFS_DIR}"
     )
 
     add_dependencies(switchbox_switch_nro switchbox_switch_romfs_stage)
+    add_dependencies(switchbox_switch switchbox_switch_runtime_assets)
 endif ()

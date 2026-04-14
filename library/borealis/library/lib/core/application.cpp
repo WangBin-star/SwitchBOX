@@ -1047,7 +1047,20 @@ ImeManager* Application::getImeManager()
 
 std::string Application::getLocale()
 {
+    if (!Application::localeOverride.empty())
+        return Application::localeOverride;
+
     return Application::getPlatform()->getLocale();
+}
+
+void Application::setLocaleOverride(std::string locale)
+{
+    Application::localeOverride = std::move(locale);
+}
+
+void Application::clearLocaleOverride()
+{
+    Application::localeOverride.clear();
 }
 
 void Application::addToFreeQueue(View* view)

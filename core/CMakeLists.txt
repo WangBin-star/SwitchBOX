@@ -1,5 +1,7 @@
 add_library(switchbox_core STATIC
+    source/app_config.cpp
     source/build_info.cpp
+    source/language.cpp
 )
 
 target_include_directories(switchbox_core

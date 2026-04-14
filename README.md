@@ -1,22 +1,5 @@
 # SwitchBOX
 
-## 2026-04-13 UI约定补充
-
-以下界面约定当前已经确认，后续默认按此继续开发：
-
-- 顶部保留 `Borealis AppletFrame` 标题栏，不再改成自定义整页头部
-- 底部保留 `Borealis` 按键提示栏，不再移除
-- 底部原生时间、WiFi、电量显示继续隐藏
-- 右上角使用自定义状态区显示时间和 WiFi 状态
-- 当前右上角时间格式为 `HH:MM:SS`
-- 当前右上角时间字号为 `14`
-- 当前首页底部 `+` 按键提示保留，提示文字为 `设置`
-
-当前实现约定：
-
-- 首页的 `+ = 设置` 动作注册在首页根 `AppletFrame`
-- 全局 `BUTTON_START = 退出` 已关闭，避免覆盖首页底部的 `设置` 提示
-
 ## 本项目的目的
 
 让 `Nintendo Switch` 可以像电视盒子一样使用，支持两类核心能力：
@@ -26,9 +9,9 @@
 
 注意：
 
-- 本项目是 `Switch-first`，`Windows` 仅作为开发和调试目标
-- 当前阶段优先打通应用壳、构建链路和播放链路
-- 项目默认面向已具备基础 Homebrew 环境的 Switch 设备
+- 请在**大气层虚拟系统**环境中使用，因为开发的时候只考虑了支持这种使用状况
+- 请在**大气层虚拟系统**环境中使用，因为开发的时候只考虑了支持这种使用状况
+- 请在**大气层虚拟系统**环境中使用，因为开发的时候只考虑了支持这种使用状况
 
 ## 参考项目 & 感谢
 
@@ -49,6 +32,15 @@ UI 框架：
 
 ## 项目说明
 
+截至 `2026-04-14`，项目已经从仓库骨架阶段进入“设置页与语言系统已可用”的基础功能阶段。
+
+当前已确认的总体方向：
+
+- `Switch` 是主目标平台
+- `Windows` 仅用于开发和调试
+- 当前优先把应用壳、设置、语言、播放入口逐步补齐
+- 在播放器真正接入前，先保证 `Desktop + Switch` 双端构建和页面流转稳定
+
 ### 当前项目目标
 
 当前开发按下面顺序推进：
@@ -63,39 +55,104 @@ UI 框架：
 ### 当前已完成
 
 - 基础 `CMake` 多模块工程骨架
-- `Desktop` 调试目标
-- `Switch` 交叉编译配置
-- `Switch` 构建链路切换到 `Ninja`
-- `.nro` 生成链路已在当前机器复验通过
-- `Borealis` 以 vendored 方式接入项目
-- `resources/` 资源目录接入构建
-- `HomeActivity` 已升级为主入口壳
-- 已加入 `IPTV / SMB / Playback Test / Settings` 四个模块入口
-- 已加入可复用的占位页面 `PlaceholderActivity`
-- 桌面端应用壳启动与页面展示
-- Switch 端 `ELF / NACP / NRO` 产物已成功生成
-- VS Code 任务化构建
-- VS Code 工作区终端 `UTF-8` 配置修正
+- `Desktop` 调试目标已建立
+- `Switch` 交叉编译配置已建立
+- `Switch` 构建链路已切换到 `Ninja`
+- 当前机器已成功生成 `.elf / .nacp / .nro`
+- `Borealis` 已以 vendored 方式接入项目
+- 应用首页主壳已经可运行
+- 当前首页已提供 4 个入口：
+  - `Playback Test`
+  - `IPTV`
+  - `SMB / NAS`
+  - `Settings`
+- `Settings` 已从占位页升级为真实设置页
+- 设置页当前已支持界面语言选择
+- 语言设置会写入 `switchbox.ini`
+- 当前语言切换规则为“保存后重启生效”
+- 底部 `A / 确定`、`B / 返回` 提示已纳入简体中文切换范围
+- 已完成一轮保守清理，移除了无用日志和部分 `CMake` 探测残留目录
+- `VS Code` 任务化构建已可直接使用
+- `VS Code` 工作区终端 `UTF-8` 配置已修正
 
 ### 当前界面状态
 
-当前程序还不是播放器主体，现阶段是一个可启动的应用壳：
+当前程序还不是播放器主体，现阶段是“可启动、可切页、可改语言”的应用壳：
 
 - 启动后进入 `HomeActivity`
-- 首页现在是主入口，不再只是静态状态页
-- 当前提供 4 个入口：`IPTV`、`SMB / NAS`、`Playback Test`、`Settings`
-- 每个入口都会进入对应的占位 Activity，供后续逐步替换为真实功能
+- 首页是主入口，不再只是静态状态页
+- `Settings` 已为真实页面
+- 其他三个模块仍主要作为后续功能入口
 - 桌面端用于快速调试 UI 和应用流程
 - Switch 端已用于验证真实目标平台构建、打包和 `.nro` 产出链路
+
+### 当前 UI 约定
+
+以下界面约定当前已经确认，后续默认按此继续开发：
+
+- 顶部保留 `Borealis AppletFrame` 标题栏，不再改成自定义整页头部
+- 底部保留 `Borealis` 按键提示栏，不再移除
+- 底部原生时间、WiFi、电量显示继续隐藏
+- 右上角使用自定义状态区显示时间和 WiFi 状态
+- 当前右上角时间格式为 `HH:MM:SS`
+- 当前右上角时间字号为 `14`
+- 当前首页底部 `+` 按键提示保留，提示文字为 `设置`
+
+当前实现约定：
+
+- 首页的 `+ = 设置` 动作注册在首页根 `AppletFrame`
+- 全局 `BUTTON_START = 退出` 已关闭，避免覆盖首页底部的 `设置` 提示
+
+### 配置与语言资源约定
+
+Desktop 端当前按开发便利方式工作：
+
+- 配置文件路径：
+  - `build/desktop-vs/switchbox.ini`
+- 外部语言目录：
+  - `build/desktop-vs/langs/`
+- 若缺少 `switchbox.ini`，桌面端允许自动生成默认文件
+
+Switch 端当前按“安装包完整复制”方式工作：
+
+- 安装时需要同时复制：
+  - `.nro`
+  - `switchbox.ini`
+  - `langs/`
+- Switch 端缺少配置时不自动创建 `switchbox.ini`
+
+Switch 端配置查找顺序：
+
+1. `sdmc:/switch/SwitchBOX/switchbox.ini`
+2. `<nro 所在目录>/switchbox.ini`
+
+如果两个位置都找不到：
+
+- 不自动创建配置
+- 启动缺失配置提示页
+- 提示安装不完整
+
+当前语言系统约定：
+
+- 内置资源路径：
+  - `resources/i18n/<locale>/`
+- 外部资源路径：
+  - `langs/<locale>/`
+- 当前已提供：
+  - `en-US`
+  - `zh-Hans`
+- 当前项目文案由 `switchbox.json` 维护
+- 当前语言切换已验证可用，但仍需要重启应用后生效
 
 ### 下一阶段
 
 接下来优先做以下内容：
 
-1. 将 `Playback Test` 升级为真实播放器 Activity 骨架
-2. 给 `IPTV` 页面接入数据模型和列表壳
-3. 给 `SMB / NAS` 页面接入连接设置和浏览壳
-4. 在已打通的 `Desktop + Switch` 构建基础上推进播放状态管理
+1. 继续扩展 `Settings` 页，补上 `IPTV` 源设置和 `SMB` 路径设置
+2. 将 `Playback Test` 升级为真实播放器 Activity 骨架
+3. 给 `IPTV` 页面接入数据模型和列表壳
+4. 给 `SMB / NAS` 页面接入连接设置和浏览壳
+5. 在已打通的 `Desktop + Switch` 构建基础上推进播放状态管理
 
 ## 开发环境
 
@@ -236,21 +293,11 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build .
 
 ## 当前产物位置
 
-桌面可执行文件：
+桌面端：
 
 - `build/desktop-vs/app/switchbox_desktop.exe`
 
-当前桌面端最新构建也已经确认成功：
-
-- `build/desktop-vs/app/switchbox_desktop.exe`
-
-Switch 构建成功后应生成：
-
-- `build/switch/app/switchbox_switch.elf`
-- `build/switch/app/switchbox_switch.nacp`
-- `build/switch/app/switchbox_switch.nro`
-
-当前已经确认生成成功：
+Switch 端：
 
 - `build/switch/app/switchbox_switch.elf`
 - `build/switch/app/switchbox_switch.nacp`
@@ -261,14 +308,34 @@ Switch 构建成功后应生成：
 ```text
 SwitchBOX/
 ├─ app/            应用层与页面逻辑
-├─ core/           通用核心信息
+├─ core/           配置、语言、构建信息等核心能力
 ├─ platform/       桌面 / Switch 平台适配
-├─ resources/      字体、图片、i18n 等资源
+├─ resources/      内置资源
+├─ langs/          外部语言资源
 ├─ library/        第三方库，目前包含 Borealis
 ├─ cmake/          工具链与构建配置
 ├─ .vscode/        VS Code 任务与工作区配置
 └─ build/          本地构建输出目录
 ```
+
+## 当前关键源码点
+
+- 设置页：
+  - `app/source/settings_activity.cpp`
+- 配置读写：
+  - `core/source/app_config.cpp`
+- 语言解析：
+  - `core/source/language.cpp`
+- 应用启动与语言初始化：
+  - `app/source/application.cpp`
+- Borealis i18n 兼容修正：
+  - `library/borealis/library/lib/core/i18n.cpp`
+
+## 当前协作约定
+
+- 代码修改与本地提交由助手负责
+- 推送由用户自行完成
+- 提交信息默认使用中文
 
 ## 终端乱码说明
 

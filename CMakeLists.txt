@@ -72,6 +72,10 @@ add_subdirectory("${SWITCHBOX_BOREALIS_LIBRARY_DIR}" "${CMAKE_BINARY_DIR}/vendor
 if (SWITCHBOX_BUILD_SWITCH)
     set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "${DEVKITPRO}/portlibs/switch/include")
 
+    if (EXISTS "/opt/devkitpro/portlibs/switch/include/glm/vec2.hpp")
+        set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "/opt/devkitpro/portlibs/switch/include")
+    endif ()
+
     if (NOT EXISTS "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}/glm/vec2.hpp")
         message(FATAL_ERROR "switch-glm headers not found under ${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}. Install the switch-glm package first.")
     endif ()

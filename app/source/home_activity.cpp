@@ -1,7 +1,9 @@
 #include "switchbox/app/home_activity.hpp"
 
+#include <functional>
 #include <utility>
 
+#include <borealis/core/i18n.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/cells/cell_detail.hpp>
 #include <borealis/views/header.hpp>
@@ -10,11 +12,16 @@
 
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/placeholder_activity.hpp"
+#include "switchbox/app/settings_activity.hpp"
 #include "switchbox/core/build_info.hpp"
 
 namespace switchbox::app {
 
 namespace {
+
+std::string tr(const std::string& key) {
+    return brls::getStr("switchbox/" + key);
+}
 
 brls::Label* create_label(
     const std::string& text,
@@ -42,73 +49,72 @@ brls::DetailCell* create_info_cell(
 
 PlaceholderSection make_iptv_section() {
     return {
-        .title = "IPTV",
-        .subtitle = "Live channels, playlist intake and grouped navigation",
+        .title = tr("sections/iptv/title"),
+        .subtitle = tr("sections/iptv/subtitle"),
         .checkpoints =
             {
-                "Add source profiles, sample playlists and refresh flow",
-                "Build grouped channel navigation with metadata rows",
-                "Pass live channel selection into the shared player activity",
+                tr("sections/iptv/checkpoints/1"),
+                tr("sections/iptv/checkpoints/2"),
+                tr("sections/iptv/checkpoints/3"),
             },
     };
 }
 
 PlaceholderSection make_smb_section() {
     return {
-        .title = "SMB / NAS",
-        .subtitle = "Saved shares, browsing flow and seekable media access",
+        .title = tr("sections/smb/title"),
+        .subtitle = tr("sections/smb/subtitle"),
         .checkpoints =
             {
-                "Add saved servers, credentials and share targets",
-                "Validate directory listing, probing and seekable reads",
-                "Pass selected files into the shared player activity",
+                tr("sections/smb/checkpoints/1"),
+                tr("sections/smb/checkpoints/2"),
+                tr("sections/smb/checkpoints/3"),
             },
     };
 }
 
 PlaceholderSection make_player_section() {
     return {
-        .title = "Playback Test",
-        .subtitle = "Shared player shell, transport controls and runtime state",
+        .title = tr("sections/player/title"),
+        .subtitle = tr("sections/player/subtitle"),
         .checkpoints =
             {
-                "Define player layout, overlays and playback state model",
-                "Add fixed desktop and Switch media entry points",
-                "Wire buffering, transport controls and exit flow",
+                tr("sections/player/checkpoints/1"),
+                tr("sections/player/checkpoints/2"),
+                tr("sections/player/checkpoints/3"),
             },
     };
 }
 
-PlaceholderSection make_settings_section() {
-    return {
-        .title = "Settings",
-        .subtitle = "Runtime checks, source config and diagnostics surface",
-        .checkpoints =
-            {
-                "Surface runtime target, build info and health checks",
-                "Reserve IPTV and SMB configuration sections",
-                "Prepare logging, storage and environment validation",
-            },
-    };
+brls::DetailCell* create_action_cell(
+    const std::string& title,
+    const std::string& detail,
+    std::function<void()> action) {
+    auto* cell = new brls::DetailCell();
+    cell->setText(title);
+    cell->setDetailText(detail);
+    cell->registerClickAction(
+        [action = std::move(action)](brls::View*) {
+            action();
+            return true;
+        });
+    return cell;
 }
 
 brls::DetailCell* create_nav_cell(
     const std::string& title,
     const std::string& detail,
     PlaceholderSection section) {
-    auto* cell = new brls::DetailCell();
-    cell->setText(title);
-    cell->setDetailText(detail);
-    cell->registerClickAction(
-        [section = std::move(section)](brls::View*) {
+    return create_action_cell(
+        title,
+        detail,
+        [section = std::move(section)]() {
             brls::Application::pushActivity(new PlaceholderActivity(section));
-            return true;
         });
-    return cell;
 }
 
 void apply_native_status_layout(brls::AppletFrame* frame) {
-    frame->setTitle("SwitchBOX");
+    frame->setTitle(tr("brand/app_name"));
 
     if (auto* timeView = frame->getView("brls/hints/time")) {
         timeView->setVisibility(brls::Visibility::GONE);
@@ -129,99 +135,101 @@ brls::View* create_home_content(const StartupContext& context) {
     auto* container = new brls::Box(brls::Axis::COLUMN);
     container->setPadding(30, 40, 30, 40);
 
-    auto* eyebrow = create_label("MEDIA CONTROL SURFACE", 15.0f, theme["brls/highlight/color2"], true);
+    auto* eyebrow = create_label(tr("home/eyebrow"), 15.0f, theme["brls/highlight/color2"], true);
     eyebrow->setMargins(0, 0, 8, 0);
     container->addView(eyebrow);
 
     auto* header = new brls::Header();
-    header->setTitle("SwitchBOX");
-    header->setSubtitle("Switch-first launcher for live, local and test playback");
+    header->setTitle(tr("brand/app_name"));
+    header->setSubtitle(tr("home/header_subtitle"));
     container->addView(header);
 
     auto* summary = create_label(
-        "Bootstrap is complete. This screen now acts as the product hub that routes every media source into one shared playback experience.",
+        tr("home/summary"),
         19.0f,
         theme["brls/text"]);
     summary->setMargins(0, 0, 14, 0);
     container->addView(summary);
 
     container->addView(create_info_cell(
-        "Build health",
-        "Desktop and Switch builds are green, including .nro output",
+        tr("home/info/build_health/title"),
+        tr("home/info/build_health/detail"),
         theme["brls/highlight/color2"]));
     container->addView(create_info_cell(
-        "Current focus",
-        "Promote Playback Test into the first real player screen",
+        tr("home/info/current_focus/title"),
+        tr("home/info/current_focus/detail"),
         theme["brls/list/listItem_value_color"]));
     container->addView(create_info_cell(
-        "Primary promise",
-        "Every source should land in one consistent playback shell",
+        tr("home/info/primary_promise/title"),
+        tr("home/info/primary_promise/detail"),
         theme["brls/text"]));
     container->addView(create_info_cell(
-        "Running on",
+        tr("home/info/running_on/title"),
         context.platform_name,
         theme["brls/text"]));
     container->addView(create_info_cell(
-        "Runtime mode",
-        context.switch_target ? "Switch app target" : "Desktop debug target",
+        tr("home/info/runtime_mode/title"),
+        context.switch_target ? tr("home/info/runtime_mode/switch") : tr("home/info/runtime_mode/desktop"),
         theme["brls/text"]));
     container->addView(create_info_cell(
-        "Build version",
+        tr("home/info/build_version/title"),
         switchbox::core::BuildInfo::version_string(),
         theme["brls/text"]));
 
-    auto* sectionLabel = create_label("Launch modules", 24.0f, theme["brls/text"], true);
+    auto* sectionLabel = create_label(tr("home/modules/title"), 24.0f, theme["brls/text"], true);
     sectionLabel->setMargins(14, 0, 4, 0);
     container->addView(sectionLabel);
 
     auto* sectionSummary = create_label(
-        "Playback is the first delivery target. IPTV and SMB are upstream entry flows that should converge into that same player.",
+        tr("home/modules/summary"),
         17.0f,
         theme["brls/header/subtitle"]);
     sectionSummary->setMargins(0, 0, 10, 0);
     container->addView(sectionSummary);
 
     container->addView(create_nav_cell(
-        "Playback Test",
-        "Build the shared player shell, transport controls and test media flow",
+        tr("sections/player/title"),
+        tr("home/modules/player_detail"),
         make_player_section()));
 
     container->addView(create_nav_cell(
-        "IPTV",
-        "Add playlists, channel groups and live-entry handoff into the player",
+        tr("sections/iptv/title"),
+        tr("home/modules/iptv_detail"),
         make_iptv_section()));
 
     container->addView(create_nav_cell(
-        "SMB / NAS",
-        "Add saved shares, file browsing and seekable handoff into the player",
+        tr("sections/smb/title"),
+        tr("home/modules/smb_detail"),
         make_smb_section()));
 
-    auto* noteLabel = create_label("Delivery note", 24.0f, theme["brls/text"], true);
+    auto* noteLabel = create_label(tr("home/note/title"), 24.0f, theme["brls/text"], true);
     noteLabel->setMargins(14, 0, 4, 0);
     container->addView(noteLabel);
 
     auto* noteSummary = create_label(
-        "The launcher can stay simple. The value of this project comes from stable playback, clean source handoff and reliable runtime diagnostics.",
+        tr("home/note/summary"),
         17.0f,
         theme["brls/header/subtitle"]);
     noteSummary->setMargins(0, 0, 10, 0);
     container->addView(noteSummary);
 
-    auto* systemLabel = create_label("System", 24.0f, theme["brls/text"], true);
+    auto* systemLabel = create_label(tr("home/system/title"), 24.0f, theme["brls/text"], true);
     systemLabel->setMargins(14, 0, 4, 0);
     container->addView(systemLabel);
 
     auto* systemSummary = create_label(
-        "Diagnostics and configuration stay here so the media entry modules can remain focused and predictable.",
+        tr("home/system/summary"),
         17.0f,
         theme["brls/header/subtitle"]);
     systemSummary->setMargins(0, 0, 10, 0);
     container->addView(systemSummary);
 
-    container->addView(create_nav_cell(
-        "Settings",
-        "Runtime checks, source configuration, diagnostics and build metadata",
-        make_settings_section()));
+    container->addView(create_action_cell(
+        tr("sections/settings/title"),
+        tr("home/system/settings_detail"),
+        []() {
+            brls::Application::pushActivity(new SettingsActivity());
+        }));
 
     auto* scrollingFrame = new brls::ScrollingFrame();
     scrollingFrame->setContentView(container);
@@ -229,10 +237,10 @@ brls::View* create_home_content(const StartupContext& context) {
 
     auto* frame = new brls::AppletFrame(scrollingFrame);
     frame->registerAction(
-        "设置",
+        tr("actions/settings"),
         brls::BUTTON_START,
         [](brls::View*) {
-            brls::Application::pushActivity(new PlaceholderActivity(make_settings_section()));
+            brls::Application::pushActivity(new SettingsActivity());
             return true;
         },
         false,
