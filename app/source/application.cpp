@@ -3,8 +3,10 @@
 #include <cstdlib>
 
 #include <borealis.hpp>
+#include <borealis/core/thread.hpp>
 
 #include "switchbox/app/config_missing_activity.hpp"
+#include "switchbox/app/settings_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/build_info.hpp"
 #include "switchbox/core/language.hpp"
@@ -12,7 +14,62 @@
 
 namespace switchbox::app {
 
+namespace {
+
+StartupContext g_runtime_context{};
+
+void apply_language_state(const switchbox::core::LanguageState& language_state) {
+    if (language_state.using_auto) {
+        brls::Application::clearLocaleOverride();
+    } else {
+        brls::Application::setLocaleOverride(language_state.active_language);
+    }
+
+    brls::reloadTranslations();
+}
+
+void rebuild_root_ui(const StartupContext& context, bool reopen_settings) {
+    const bool config_ready = switchbox::core::AppConfigStore::loaded_from_disk();
+    const auto& paths = switchbox::core::AppConfigStore::paths();
+
+    brls::Application::clearActivities();
+
+    if (!config_ready && context.switch_target) {
+        brls::Application::pushActivity(new ConfigMissingActivity(paths.config_search_candidates));
+        return;
+    }
+
+    brls::Application::pushActivity(new HomeActivity(context));
+
+    if (reopen_settings) {
+        brls::Application::pushActivity(new SettingsActivity());
+    }
+}
+
+}  // namespace
+
+void Application::set_runtime_context(const StartupContext& context) {
+    g_runtime_context = context;
+}
+
+const StartupContext& Application::runtime_context() {
+    return g_runtime_context;
+}
+
+void Application::apply_language_and_reload_ui(bool reopen_settings) {
+    const auto& paths = switchbox::core::AppConfigStore::paths();
+    const auto& config = switchbox::core::AppConfigStore::current();
+    const auto language_state = switchbox::core::resolve_language_state(paths, config);
+
+    apply_language_state(language_state);
+
+    brls::delay(0, [reopen_settings]() {
+        rebuild_root_ui(g_runtime_context, reopen_settings);
+    });
+}
+
 int Application::run(const StartupContext& context) const {
+    Application::set_runtime_context(context);
     switchbox::core::AppConfigStore::set_runtime_executable_path(context.executable_path);
     bool configReady = switchbox::core::AppConfigStore::initialize();
     switchbox::core::LanguageState languageState{};
@@ -23,12 +80,7 @@ int Application::run(const StartupContext& context) const {
     if (configReady) {
         const auto& config = switchbox::core::AppConfigStore::current();
         languageState = switchbox::core::resolve_language_state(paths, config);
-
-        if (languageState.using_auto) {
-            brls::Application::clearLocaleOverride();
-        } else {
-            brls::Application::setLocaleOverride(languageState.active_language);
-        }
+        apply_language_state(languageState);
     }
 
     brls::Logger::setLogLevel(brls::LogLevel::LOG_INFO);

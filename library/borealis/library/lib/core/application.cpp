@@ -966,6 +966,17 @@ std::vector<Activity*> Application::getActivitiesStack()
     return activitiesStack;
 }
 
+void Application::clearActivities()
+{
+    Application::currentFocus = nullptr;
+    Application::focusStack.clear();
+    Application::currentTouchState.clear();
+    Application::currentMouseState.view = nullptr;
+    Application::repetitionOldFocus = nullptr;
+    Application::getGlobalHintsUpdateEvent()->fire();
+    Application::clear();
+}
+
 void Application::pushActivity(Activity* activity, TransitionAnimation animation)
 {
     Application::blockInputs();

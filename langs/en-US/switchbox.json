@@ -4,7 +4,11 @@
             "app_name": "SwitchBOX"
         },
         "actions": {
-            "settings": "Settings"
+            "settings": "Settings",
+            "save": "Save",
+            "enable": "Enable",
+            "disable": "Disable",
+            "delete": "Delete"
         },
         "home": {
             "eyebrow": "MEDIA CONTROL SURFACE",
@@ -72,7 +76,7 @@
                 }
             },
             "smb": {
-                "title": "SMB / NAS",
+                "title": "SMB",
                 "subtitle": "Saved shares, browsing flow and seekable media access",
                 "checkpoints": {
                     "1": "Add saved servers, credentials and share targets",
@@ -116,16 +120,26 @@
         "settings_page": {
             "eyebrow": "SYSTEM PREFERENCES",
             "header_subtitle": "Basic runtime preferences stored in switchbox.ini",
-            "summary": "Language selection is the first live settings item. Changes are saved immediately and take effect after restart.",
+            "summary": "Changes first stay on this page as a draft. After choosing a value and returning from the dropdown, press + to save and apply it. Press B to cancel and leave.",
+            "save_success": "Settings saved.",
+            "save_failed": "Failed to save settings.",
+            "common": {
+                "not_set": "Not set",
+                "edit_section": "Edit current entry",
+                "untitled_entry": "Untitled entry"
+            },
             "general": {
                 "title": "Basic Settings",
                 "summary": "The current phase only exposes UI language. IPTV and SMB settings will be added here next."
             },
+            "apply": {
+                "title": "Apply changes",
+                "detail_clean": "No pending changes",
+                "detail_dirty": "Press + to save to switchbox.ini and apply now"
+            },
             "language": {
                 "title": "Interface language",
-                "current_title": "Active language",
-                "config_title": "Config file",
-                "save_success": "Language saved. Restart the app to apply it.",
+                "save_success": "Language saved and applied.",
                 "save_failed": "Failed to save language setting.",
                 "options": {
                     "auto": "Automatic ({0})"
@@ -138,6 +152,64 @@
                     "ko": "Korean",
                     "fr": "French",
                     "ru": "Russian"
+                }
+            },
+            "iptv": {
+                "summary": "Manage IPTV address entries here, including editing existing ones and creating new ones.",
+                "editor_title": "IPTV Entry",
+                "list_empty": "No IPTV entries yet.",
+                "add_entry": "Add IPTV entry",
+                "add_entry_detail": "Create a new IPTV address profile",
+                "delete_confirm": "Delete IPTV entry \"{0}\"?",
+                "default_title": "New IPTV entry",
+                "fields": {
+                    "key": "Entry ID",
+                    "enabled": "Enabled",
+                    "title": "Title",
+                    "url": "Address"
+                },
+                "placeholders": {
+                    "title": "Enter display name",
+                    "url": "Enter IPTV playlist URL"
+                },
+                "hints": {
+                    "title": "This name will be shown in the IPTV source list",
+                    "url": "Example: http://example.com/playlist.m3u"
+                }
+            },
+            "smb": {
+                "summary": "Manage SMB share entries here, including editing existing ones and creating new ones.",
+                "editor_title": "SMB Entry",
+                "list_empty": "No SMB entries yet.",
+                "add_entry": "Add SMB entry",
+                "add_entry_detail": "Create a new SMB share profile",
+                "delete_confirm": "Delete SMB entry \"{0}\"?",
+                "default_title": "New SMB entry",
+                "fields": {
+                    "key": "Entry ID",
+                    "enabled": "Enabled",
+                    "title": "Title",
+                    "host": "Device address",
+                    "share": "Shared folder name",
+                    "username": "Username",
+                    "password": "Password",
+                    "base_path": "Base path"
+                },
+                "placeholders": {
+                    "title": "Enter display name",
+                    "host": "Enter device address or IP",
+                    "share": "Enter shared folder name",
+                    "username": "Enter username",
+                    "password": "Enter password",
+                    "base_path": "Example: /movies"
+                },
+                "hints": {
+                    "title": "This name will be shown in the SMB source list",
+                    "host": "Example: 192.168.1.10 or NAS",
+                    "share": "Example: video",
+                    "username": "Leave empty for guest or fill later",
+                    "password": "Fill when needed",
+                    "base_path": "Example: /movies or /tv"
                 }
             }
         }

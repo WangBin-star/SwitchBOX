@@ -31,7 +31,6 @@ struct SmbSourceSettings {
     std::string share;
     std::string username;
     std::string password;
-    std::string base_path;
     bool enabled = true;
 };
 

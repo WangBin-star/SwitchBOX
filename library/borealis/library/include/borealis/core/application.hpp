@@ -113,6 +113,7 @@ class Application
     static void setWindowPosition(int xPos, int yPos);
 
     static std::vector<Activity*> getActivitiesStack();
+    static void clearActivities();
 
     /**
      * Pushes a view on this applications's view stack.

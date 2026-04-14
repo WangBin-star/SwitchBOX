@@ -208,7 +208,6 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
             source.share = get_value(document, sectionName, "share");
             source.username = get_value(document, sectionName, "username");
             source.password = get_value(document, sectionName, "password");
-            source.base_path = get_value(document, sectionName, "base_path");
             source.enabled = parse_bool(
                 get_value(document, sectionName, "enabled"),
                 source.enabled);
@@ -237,7 +236,6 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         legacySource.share = get_value(document, "smb", "share");
         legacySource.username = get_value(document, "smb", "username");
         legacySource.password = get_value(document, "smb", "password");
-        legacySource.base_path = get_value(document, "smb", "base_path");
         if (!legacySource.host.empty() || !legacySource.share.empty()) {
             config.smb_sources.push_back(std::move(legacySource));
         }
@@ -289,7 +287,6 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; share=video" << '\n';
     output << "; username=user" << '\n';
     output << "; password=pass" << '\n';
-    output << "; base_path=/movies" << '\n';
     output << "; enabled=true" << '\n';
     output << '\n';
 
@@ -304,7 +301,6 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << "share=" << source.share << '\n';
         output << "username=" << source.username << '\n';
         output << "password=" << source.password << '\n';
-        output << "base_path=" << source.base_path << '\n';
         output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
         output << '\n';
     }
