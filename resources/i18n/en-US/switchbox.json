@@ -126,6 +126,54 @@
                 "ship_slice": "Ship first working slice"
             }
         },
+        "player_page": {
+            "title": "Player",
+            "eyebrow": "PLAYBACK HANDOFF",
+            "fallback_title": "Untitled media",
+            "fallback_subtitle": "Playable target ready for the shared player shell",
+            "summary": "This page now receives the resolved SMB playback target. The next implementation step is wiring a real playback backend into this handoff instead of routing through a placeholder view.",
+            "not_available": "Not available",
+            "actions": {
+                "start": "Playback Test",
+                "toggle_pause": "Play/Pause"
+            },
+            "launch_started": "Playback request sent.",
+            "status": {
+                "title": "Current status",
+                "detail": "SMB playback target is resolved, but the playback backend is not integrated yet",
+                "ready_desktop": "Desktop launch test is ready. Press A to send the playback request.",
+                "missing_locator": "This target does not expose an openable locator yet.",
+                "backend_missing_switch": "The Switch build does not include a real playback backend yet.",
+                "backend_missing_platform": "This platform does not include a playback backend yet.",
+                "started_primary": "Launch request sent using the direct locator.",
+                "started_fallback": "Launch request sent using the fallback path.",
+                "start_failed": "Unable to start playback."
+            },
+            "source": {
+                "title": "Source"
+            },
+            "locator": {
+                "title": "Direct-open candidate"
+            },
+            "fallback_locator": {
+                "title": "Desktop fallback path"
+            },
+            "next_steps": {
+                "title": "Next steps",
+                "1": {
+                    "title": "Playback backend",
+                    "detail": "Attach libmpv or another real player backend to this page"
+                },
+                "2": {
+                    "title": "First validation",
+                    "detail": "Try the direct SMB locator first and confirm open plus seek behavior"
+                },
+                "3": {
+                    "title": "Fallback path",
+                    "detail": "If direct SMB open is unstable, replace it with a custom SMB stream adapter"
+                }
+            }
+        },
         "settings_page": {
             "eyebrow": "SYSTEM PREFERENCES",
             "header_subtitle": "Basic runtime preferences stored in switchbox.ini",
@@ -135,15 +183,74 @@
             "common": {
                 "not_set": "Not set",
                 "edit_section": "Edit current entry",
-                "untitled_entry": "Untitled entry"
+                "untitled_entry": "Untitled entry",
+                "enabled": "Enabled",
+                "disabled": "Disabled"
+            },
+            "integration": {
+                "integrated": "[Integrated]",
+                "not_integrated": "[Planned]"
             },
             "general": {
                 "title": "Basic Settings",
-                "summary": "The current phase exposes interface language and playable file extensions.",
+                "summary": "This page shows agreed runtime options and marks whether each option is already wired to real behavior in the current development stage.",
+                "seconds_value": "{0}s",
+                "multiplier_value": "{0}x",
+                "groups": {
+                    "basic": "Basic Settings",
+                    "playback": "Playback Settings"
+                },
+                "validation": {
+                    "positive_integer": "Please enter a positive integer.",
+                    "positive_float": "Please enter a number greater than 0."
+                },
                 "playable_extensions": {
                     "title": "Playable file extensions",
                     "placeholder": "Example: mp4,mkv,m3u8,flac",
                     "hint": "Use commas to separate extensions. The default value is based on nxmp and is used to filter visible SMB media files."
+                },
+                "show_hidden": {
+                    "title": "Show hidden files"
+                },
+                "sort_order": {
+                    "title": "Sort order",
+                    "options": {
+                        "name_asc": "Name (A-Z)",
+                        "name_desc": "Name (Z-A)",
+                        "date_asc": "Date (Oldest first)",
+                        "date_desc": "Date (Newest first)",
+                        "size_asc": "Size (Smallest first)",
+                        "size_desc": "Size (Largest first)"
+                    }
+                },
+                "hardware_decode": {
+                    "title": "Hardware decode"
+                },
+                "short_seek": {
+                    "title": "Short seek step",
+                    "hint": "Seek step in seconds for short jump operations."
+                },
+                "long_seek": {
+                    "title": "Long seek step",
+                    "hint": "Seek step in seconds for long jump operations."
+                },
+                "y_hold_speed_multiplier": {
+                    "title": "Hold-Y speed multiplier",
+                    "hint": "Playback speed multiplier used when holding Y."
+                },
+                "use_preferred_audio_language": {
+                    "title": "Use preferred audio language"
+                },
+                "preferred_audio_language": {
+                    "title": "Preferred audio language code",
+                    "hint": "Example: eng, jpn, chi"
+                },
+                "use_preferred_subtitle_language": {
+                    "title": "Use preferred subtitle language"
+                },
+                "preferred_subtitle_language": {
+                    "title": "Preferred subtitle language code",
+                    "hint": "Example: eng, jpn, chi"
                 }
             },
             "apply": {

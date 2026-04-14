@@ -13,8 +13,9 @@
 #include <borealis/views/scrolling_frame.hpp>
 
 #include "switchbox/app/header_status_hint.hpp"
-#include "switchbox/app/placeholder_activity.hpp"
+#include "switchbox/app/player_activity.hpp"
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/playback_target.hpp"
 #include "switchbox/core/smb_browser.hpp"
 
 namespace switchbox::app {
@@ -154,21 +155,6 @@ std::string format_bytes(std::uintmax_t size) {
     return stream.str();
 }
 
-PlaceholderSection make_media_placeholder_section(
-    const switchbox::core::SmbSourceSettings& source,
-    const switchbox::core::SmbBrowserEntry& entry) {
-    return {
-        .title = entry.name,
-        .subtitle = switchbox::core::smb_display_path(source, entry.relative_path),
-        .checkpoints =
-            {
-                tr("smb_browser/player_stub/checkpoints/1"),
-                tr("smb_browser/player_stub/checkpoints/2"),
-                tr("smb_browser/player_stub/checkpoints/3"),
-            },
-    };
-}
-
 brls::View* create_smb_browser_content(
     const switchbox::core::SmbSourceSettings& source,
     const std::string& relative_path) {
@@ -240,8 +226,8 @@ brls::View* create_smb_browser_content(
                     return true;
                 }
 
-                brls::Application::pushActivity(
-                    new PlaceholderActivity(make_media_placeholder_section(source, entry)));
+                brls::Application::pushActivity(new PlayerActivity(
+                    switchbox::core::make_smb_playback_target(source, entry.relative_path)));
                 return true;
             });
             content->addView(cell);

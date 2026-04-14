@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,6 +48,8 @@ struct SettingsDraftState {
     bool ui_ready = false;
     brls::Sidebar* sidebar = nullptr;
     brls::Box* right_content_box = nullptr;
+    brls::ScrollingFrame* right_scrolling_frame = nullptr;
+    std::string focus_restore_id;
 };
 
 std::string tr(const std::string& key) {
@@ -73,9 +77,15 @@ brls::DetailCell* create_info_cell(
     const std::string& title,
     const std::string& detail,
     NVGcolor detail_color) {
+    constexpr size_t kDetailMaxChars = 40;
+    std::string clipped_detail = detail;
+    if (clipped_detail.size() > kDetailMaxChars) {
+        clipped_detail = clipped_detail.substr(0, kDetailMaxChars - 3) + "...";
+    }
+
     auto* cell = new brls::DetailCell();
     cell->setText(title);
-    cell->setDetailText(detail);
+    cell->setDetailText(clipped_detail);
     cell->setDetailTextColor(detail_color);
     return cell;
 }
@@ -84,8 +94,12 @@ brls::DetailCell* create_action_cell(
     const std::string& title,
     const std::string& detail,
     NVGcolor detail_color,
-    std::function<bool(brls::View*)> action) {
+    std::function<bool(brls::View*)> action,
+    const std::string& view_id = "") {
     auto* cell = create_info_cell(title, detail, detail_color);
+    if (!view_id.empty()) {
+        cell->setId(view_id);
+    }
     cell->registerClickAction(std::move(action));
     return cell;
 }
@@ -140,7 +154,22 @@ bool general_settings_equal(
     const switchbox::core::GeneralSettings& lhs,
     const switchbox::core::GeneralSettings& rhs) {
     return lhs.language == rhs.language &&
-           lhs.playable_extensions == rhs.playable_extensions;
+           lhs.playable_extensions == rhs.playable_extensions &&
+           lhs.show_hidden == rhs.show_hidden &&
+           lhs.sort_order == rhs.sort_order &&
+           lhs.hardware_decode == rhs.hardware_decode &&
+           lhs.short_seek == rhs.short_seek &&
+           lhs.long_seek == rhs.long_seek &&
+           lhs.y_hold_speed_multiplier == rhs.y_hold_speed_multiplier &&
+           lhs.use_preferred_audio_language == rhs.use_preferred_audio_language &&
+           lhs.preferred_audio_language == rhs.preferred_audio_language &&
+           lhs.use_preferred_subtitle_language == rhs.use_preferred_subtitle_language &&
+           lhs.preferred_subtitle_language == rhs.preferred_subtitle_language &&
+           lhs.demux_cache_sec == rhs.demux_cache_sec &&
+           lhs.resume_start_percent == rhs.resume_start_percent &&
+           lhs.resume_stop_percent == rhs.resume_stop_percent &&
+           lhs.touch_enable == rhs.touch_enable &&
+           lhs.touch_swipe_seek == rhs.touch_swipe_seek;
 }
 
 bool iptv_source_equal(
@@ -323,6 +352,53 @@ std::string summarize_detail_text(const std::string& value, size_t max_length = 
     }
 
     return value.substr(0, max_length - 3) + "...";
+}
+
+std::string bool_display_text(bool value) {
+    return value ? tr("settings_page/common/enabled") : tr("settings_page/common/disabled");
+}
+
+std::string integration_badge(bool integrated) {
+    return integrated ? tr("settings_page/integration/integrated")
+                      : tr("settings_page/integration/not_integrated");
+}
+
+std::string with_integration_badge(
+    const std::string& value,
+    bool integrated,
+    size_t max_length = 56) {
+    return integration_badge(integrated) + " | " + summarize_detail_text(value, max_length);
+}
+
+std::string sort_order_display_name(const std::string& sort_order) {
+    if (sort_order == "name_desc") {
+        return tr("settings_page/general/sort_order/options/name_desc");
+    }
+    if (sort_order == "date_asc") {
+        return tr("settings_page/general/sort_order/options/date_asc");
+    }
+    if (sort_order == "date_desc") {
+        return tr("settings_page/general/sort_order/options/date_desc");
+    }
+    if (sort_order == "size_asc") {
+        return tr("settings_page/general/sort_order/options/size_asc");
+    }
+    if (sort_order == "size_desc") {
+        return tr("settings_page/general/sort_order/options/size_desc");
+    }
+    return tr("settings_page/general/sort_order/options/name_asc");
+}
+
+std::string format_float_value(float value, int precision = 1) {
+    std::ostringstream stream;
+    stream.setf(std::ios::fixed);
+    stream.precision(precision);
+    stream << value;
+    return stream.str();
+}
+
+void request_focus_restore(const std::shared_ptr<SettingsDraftState>& state, const std::string& view_id) {
+    state->focus_restore_id = view_id;
 }
 
 std::string status_icon_title(bool enabled, const std::string& title) {
@@ -616,6 +692,9 @@ void open_smb_editor(
 void select_section(const std::shared_ptr<SettingsDraftState>& state, SettingsSection section) {
     state->active_section = section;
     rebuild_right_panel(state);
+    if (state->right_scrolling_frame != nullptr) {
+        state->right_scrolling_frame->setContentOffsetY(0.0f, false);
+    }
 }
 
 bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
@@ -697,27 +776,325 @@ void open_playable_extensions_editor(const std::shared_ptr<SettingsDraftState>& 
         0);
 }
 
+void toggle_show_hidden(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.show_hidden = !state->draft_config.general.show_hidden;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_hardware_decode(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.hardware_decode = !state->draft_config.general.hardware_decode;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_preferred_audio_language(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.use_preferred_audio_language =
+        !state->draft_config.general.use_preferred_audio_language;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_preferred_subtitle_language(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.use_preferred_subtitle_language =
+        !state->draft_config.general.use_preferred_subtitle_language;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void open_sort_order_dropdown(const std::shared_ptr<SettingsDraftState>& state) {
+    const std::vector<std::string> values = {
+        "name_asc",
+        "name_desc",
+        "date_asc",
+        "date_desc",
+        "size_asc",
+        "size_desc",
+    };
+    std::vector<std::string> labels;
+    labels.reserve(values.size());
+    int selected_index = 0;
+
+    for (size_t index = 0; index < values.size(); ++index) {
+        labels.push_back(sort_order_display_name(values[index]));
+        if (values[index] == state->draft_config.general.sort_order) {
+            selected_index = static_cast<int>(index);
+        }
+    }
+
+    auto* dropdown = new brls::Dropdown(
+        tr("settings_page/general/sort_order/title"),
+        labels,
+        [](int) {},
+        selected_index,
+        [state, values](int selection) {
+            if (selection < 0 || selection >= static_cast<int>(values.size())) {
+                return;
+            }
+
+            state->draft_config.general.sort_order = values[selection];
+            sync_dirty_state(state);
+            rebuild_right_panel(state);
+        });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
+}
+
+void open_short_seek_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            try {
+                const int value = std::stoi(text);
+                if (value <= 0) {
+                    throw std::runtime_error("invalid");
+                }
+
+                state->draft_config.general.short_seek = value;
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+            } catch (...) {
+                brls::Application::notify(tr("settings_page/general/validation/positive_integer"));
+            }
+        },
+        tr("settings_page/general/short_seek/title"),
+        tr("settings_page/general/short_seek/hint"),
+        16,
+        std::to_string(state->draft_config.general.short_seek),
+        0);
+}
+
+void open_long_seek_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            try {
+                const int value = std::stoi(text);
+                if (value <= 0) {
+                    throw std::runtime_error("invalid");
+                }
+
+                state->draft_config.general.long_seek = value;
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+            } catch (...) {
+                brls::Application::notify(tr("settings_page/general/validation/positive_integer"));
+            }
+        },
+        tr("settings_page/general/long_seek/title"),
+        tr("settings_page/general/long_seek/hint"),
+        16,
+        std::to_string(state->draft_config.general.long_seek),
+        0);
+}
+
+void open_y_hold_speed_multiplier_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            try {
+                const float value = std::stof(text);
+                if (value <= 0.0f) {
+                    throw std::runtime_error("invalid");
+                }
+
+                state->draft_config.general.y_hold_speed_multiplier = value;
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+            } catch (...) {
+                brls::Application::notify(tr("settings_page/general/validation/positive_float"));
+            }
+        },
+        tr("settings_page/general/y_hold_speed_multiplier/title"),
+        tr("settings_page/general/y_hold_speed_multiplier/hint"),
+        16,
+        format_float_value(state->draft_config.general.y_hold_speed_multiplier, 1),
+        0);
+}
+
+void open_preferred_audio_language_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            state->draft_config.general.preferred_audio_language = std::move(text);
+            sync_dirty_state(state);
+            rebuild_right_panel(state);
+        },
+        tr("settings_page/general/preferred_audio_language/title"),
+        tr("settings_page/general/preferred_audio_language/hint"),
+        16,
+        state->draft_config.general.preferred_audio_language,
+        0);
+}
+
+void open_preferred_subtitle_language_editor(const std::shared_ptr<SettingsDraftState>& state) {
+    brls::Application::getImeManager()->openForText(
+        [state](std::string text) {
+            state->draft_config.general.preferred_subtitle_language = std::move(text);
+            sync_dirty_state(state);
+            rebuild_right_panel(state);
+        },
+        tr("settings_page/general/preferred_subtitle_language/title"),
+        tr("settings_page/general/preferred_subtitle_language/hint"),
+        16,
+        state->draft_config.general.preferred_subtitle_language,
+        0);
+}
+
 void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     auto* container = state->right_content_box;
     auto theme = brls::Application::getTheme();
+    const auto& general = state->draft_config.general;
 
-    container->addView(create_action_cell(
+    const auto add_group_label = [&](const std::string& text) {
+        auto* label = create_label(text, 17.0f, theme["brls/text_disabled"], true);
+        label->setMargins(6, 6, 10, 0);
+        container->addView(label);
+    };
+
+    const auto add_setting_cell = [&](const std::string& view_id,
+                                      const std::string& title,
+                                      const std::string& value,
+                                      bool integrated,
+                                      std::function<bool(brls::View*)> action) {
+        container->addView(create_action_cell(
+            title,
+            with_integration_badge(value, integrated, 44),
+            integrated ? theme["brls/list/listItem_value_color"] : theme["brls/text_disabled"],
+            std::move(action),
+            view_id));
+    };
+
+    add_group_label(tr("settings_page/general/groups/basic"));
+
+    add_setting_cell(
+        "settings/general/language",
         tr("settings_page/language/title"),
         selected_language_display_name(state),
-        theme["brls/list/listItem_value_color"],
+        true,
         [state](brls::View*) {
+            request_focus_restore(state, "settings/general/language");
             open_language_dropdown(state);
             return true;
-        }));
+        });
 
-    container->addView(create_action_cell(
+    add_setting_cell(
+        "settings/general/playable_extensions",
         tr("settings_page/general/playable_extensions/title"),
-        summarize_detail_text(state->draft_config.general.playable_extensions),
-        theme["brls/list/listItem_value_color"],
+        general.playable_extensions,
+        true,
         [state](brls::View*) {
+            request_focus_restore(state, "settings/general/playable_extensions");
             open_playable_extensions_editor(state);
             return true;
-        }));
+        });
+
+    add_setting_cell(
+        "settings/general/show_hidden",
+        tr("settings_page/general/show_hidden/title"),
+        bool_display_text(general.show_hidden),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/show_hidden");
+            toggle_show_hidden(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/sort_order",
+        tr("settings_page/general/sort_order/title"),
+        sort_order_display_name(general.sort_order),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/sort_order");
+            open_sort_order_dropdown(state);
+            return true;
+        });
+
+    add_group_label(tr("settings_page/general/groups/playback"));
+
+    add_setting_cell(
+        "settings/general/hardware_decode",
+        tr("settings_page/general/hardware_decode/title"),
+        bool_display_text(general.hardware_decode),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/hardware_decode");
+            toggle_hardware_decode(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/short_seek",
+        tr("settings_page/general/short_seek/title"),
+        tr("settings_page/general/seconds_value", std::to_string(general.short_seek)),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/short_seek");
+            open_short_seek_editor(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/long_seek",
+        tr("settings_page/general/long_seek/title"),
+        tr("settings_page/general/seconds_value", std::to_string(general.long_seek)),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/long_seek");
+            open_long_seek_editor(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/y_hold_speed_multiplier",
+        tr("settings_page/general/y_hold_speed_multiplier/title"),
+        tr("settings_page/general/multiplier_value", format_float_value(general.y_hold_speed_multiplier, 1)),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/y_hold_speed_multiplier");
+            open_y_hold_speed_multiplier_editor(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/use_preferred_audio_language",
+        tr("settings_page/general/use_preferred_audio_language/title"),
+        bool_display_text(general.use_preferred_audio_language),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/use_preferred_audio_language");
+            toggle_preferred_audio_language(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/preferred_audio_language",
+        tr("settings_page/general/preferred_audio_language/title"),
+        general.preferred_audio_language,
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/preferred_audio_language");
+            open_preferred_audio_language_editor(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/use_preferred_subtitle_language",
+        tr("settings_page/general/use_preferred_subtitle_language/title"),
+        bool_display_text(general.use_preferred_subtitle_language),
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/use_preferred_subtitle_language");
+            toggle_preferred_subtitle_language(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/preferred_subtitle_language",
+        tr("settings_page/general/preferred_subtitle_language/title"),
+        general.preferred_subtitle_language,
+        false,
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/preferred_subtitle_language");
+            open_preferred_subtitle_language_editor(state);
+            return true;
+        });
 }
 
 void rebuild_iptv_panel(const std::shared_ptr<SettingsDraftState>& state) {
@@ -874,17 +1251,8 @@ void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
     }
 
     sync_dirty_state(state);
-
-    brls::View* current_focus = brls::Application::getCurrentFocus();
-    while (current_focus != nullptr) {
-        if (current_focus == state->right_content_box) {
-            if (state->sidebar != nullptr) {
-                brls::Application::giveFocus(state->sidebar);
-            }
-            break;
-        }
-        current_focus = current_focus->getParent();
-    }
+    const std::string focus_restore_id = state->focus_restore_id;
+    state->focus_restore_id.clear();
 
     state->right_content_box->clearViews();
 
@@ -898,6 +1266,12 @@ void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
         case SettingsSection::Smb:
             rebuild_smb_panel(state);
             break;
+    }
+
+    if (!focus_restore_id.empty()) {
+        if (auto* target = state->right_content_box->getView(focus_restore_id)) {
+            brls::Application::giveFocus(target);
+        }
     }
 }
 
@@ -936,6 +1310,7 @@ brls::View* create_settings_content() {
     auto* right_frame = new brls::ScrollingFrame();
     right_frame->setContentView(right_content);
     right_frame->setGrow(1.0f);
+    state->right_scrolling_frame = right_frame;
     root->addView(right_frame);
 
     rebuild_right_panel(state);
