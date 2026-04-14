@@ -4,15 +4,13 @@
 
 #include <borealis.hpp>
 #include <borealis/core/thread.hpp>
-#include <borealis/views/applet_frame.hpp>
-#include <borealis/views/label.hpp>
 
 #include "switchbox/app/config_missing_activity.hpp"
+#include "switchbox/app/home_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/build_info.hpp"
 #include "switchbox/core/language.hpp"
-#include "switchbox/app/home_activity.hpp"
 
 namespace switchbox::app {
 
@@ -87,7 +85,6 @@ int Application::run(const StartupContext& context) const {
     const bool configReady = switchbox::core::AppConfigStore::initialize();
     switchbox::core::LanguageState languageState{};
     const auto& paths = switchbox::core::AppConfigStore::paths();
-
     brls::setTranslationSearchPaths({paths.languages_directory.string()});
 
     if (configReady) {
@@ -95,7 +92,6 @@ int Application::run(const StartupContext& context) const {
         languageState = switchbox::core::resolve_language_state(paths, config);
         prepare_language_override(languageState);
     }
-
     brls::Logger::setLogLevel(brls::LogLevel::LOG_INFO);
 
     if (!brls::Application::init()) {

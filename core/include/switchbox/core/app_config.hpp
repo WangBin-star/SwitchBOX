@@ -16,7 +16,22 @@ struct AppPaths {
 struct GeneralSettings {
     std::string language = "auto";
     std::string playable_extensions =
-        "8svx,aac,ac3,aif,asf,avi,dv,flv,m2ts,m2v,m4a,mkv,mov,mp3,mp4,mpeg,mpg,mts,ogg,rmvb,swf,ts,vob,wav,wma,wmv,flac,m3u,m3u8,webm,iso";
+        "8svx,aac,ac3,aif,asf,avi,dv,flv,m2ts,m2v,m4a,mkv,mov,mp3,mp4,mpeg,mpg,mts,ogg,rmvb,swf,ts,vob,wav,wma,wmv,flac,m3u,m3u8,webm,jpg,gif,png,iso";
+    bool show_hidden = false;
+    std::string sort_order = "name_asc";
+    bool hardware_decode = true;
+    int short_seek = 10;
+    int long_seek = 60;
+    float y_hold_speed_multiplier = 2.0f;
+    bool use_preferred_audio_language = false;
+    std::string preferred_audio_language = "eng";
+    bool use_preferred_subtitle_language = false;
+    std::string preferred_subtitle_language = "eng";
+    int demux_cache_sec = 20;
+    int resume_start_percent = 5;
+    int resume_stop_percent = 5;
+    bool touch_enable = false;
+    bool touch_swipe_seek = false;
 };
 
 struct IptvSourceSettings {

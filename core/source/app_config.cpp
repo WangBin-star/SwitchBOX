@@ -58,6 +58,32 @@ bool parse_bool(const std::string& value, bool fallback) {
     return fallback;
 }
 
+int parse_int(const std::string& value, int fallback) {
+    const std::string normalized = trim(value);
+    if (normalized.empty()) {
+        return fallback;
+    }
+
+    try {
+        return std::stoi(normalized);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+float parse_float(const std::string& value, float fallback) {
+    const std::string normalized = trim(value);
+    if (normalized.empty()) {
+        return fallback;
+    }
+
+    try {
+        return std::stof(normalized);
+    } catch (...) {
+        return fallback;
+    }
+}
+
 AppPaths make_paths(const std::filesystem::path& baseDirectory) {
     return {
         .base_directory = baseDirectory,
@@ -207,6 +233,54 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         get_value(document, "general", "language", config.general.language);
     config.general.playable_extensions =
         get_value(document, "general", "playable_extensions", config.general.playable_extensions);
+    config.general.show_hidden = parse_bool(
+        get_value(document, "general", "show_hidden"),
+        config.general.show_hidden);
+    config.general.sort_order =
+        get_value(document, "general", "sort_order", config.general.sort_order);
+    config.general.hardware_decode = parse_bool(
+        get_value(document, "general", "hardware_decode"),
+        config.general.hardware_decode);
+    config.general.short_seek = parse_int(
+        get_value(document, "general", "short_seek"),
+        config.general.short_seek);
+    config.general.long_seek = parse_int(
+        get_value(document, "general", "long_seek"),
+        config.general.long_seek);
+    config.general.y_hold_speed_multiplier = parse_float(
+        get_value(document, "general", "y_hold_speed_multiplier"),
+        config.general.y_hold_speed_multiplier);
+    config.general.use_preferred_audio_language = parse_bool(
+        get_value(document, "general", "use_preferred_audio_language"),
+        config.general.use_preferred_audio_language);
+    config.general.preferred_audio_language = get_value(
+        document,
+        "general",
+        "preferred_audio_language",
+        config.general.preferred_audio_language);
+    config.general.use_preferred_subtitle_language = parse_bool(
+        get_value(document, "general", "use_preferred_subtitle_language"),
+        config.general.use_preferred_subtitle_language);
+    config.general.preferred_subtitle_language = get_value(
+        document,
+        "general",
+        "preferred_subtitle_language",
+        config.general.preferred_subtitle_language);
+    config.general.demux_cache_sec = parse_int(
+        get_value(document, "general", "demux_cache_sec"),
+        config.general.demux_cache_sec);
+    config.general.resume_start_percent = parse_int(
+        get_value(document, "general", "resume_start_percent"),
+        config.general.resume_start_percent);
+    config.general.resume_stop_percent = parse_int(
+        get_value(document, "general", "resume_stop_percent"),
+        config.general.resume_stop_percent);
+    config.general.touch_enable = parse_bool(
+        get_value(document, "general", "touch_enable"),
+        config.general.touch_enable);
+    config.general.touch_swipe_seek = parse_bool(
+        get_value(document, "general", "touch_swipe_seek"),
+        config.general.touch_swipe_seek);
 
     config.iptv_sources.clear();
     config.smb_sources.clear();
@@ -278,19 +352,55 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
     output.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
 
-    output << "; SwitchBOX runtime configuration" << '\n';
-    output << "; langs/ is searched relative to this file directory" << '\n';
+    output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
+    output << "; langs/ 会相对当前 ini 所在目录查找 / langs/ is searched relative to this ini file" << '\n';
     output << '\n';
 
     output << "[general]" << '\n';
+    output << "; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page" << '\n';
     output << "language=" << config.general.language << '\n';
+    output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
     output << "playable_extensions=" << config.general.playable_extensions << '\n';
+    output << "; 是否显示隐藏文件 / Whether hidden files are shown" << '\n';
+    output << "show_hidden=" << (config.general.show_hidden ? "true" : "false") << '\n';
+    output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
+    output << "sort_order=" << config.general.sort_order << '\n';
+    output << "; 是否启用硬件解码 / Whether hardware decoding is enabled" << '\n';
+    output << "hardware_decode=" << (config.general.hardware_decode ? "true" : "false") << '\n';
+    output << "; 短按快进/快退秒数 / Short seek step in seconds" << '\n';
+    output << "short_seek=" << config.general.short_seek << '\n';
+    output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
+    output << "long_seek=" << config.general.long_seek << '\n';
+    output << "; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell" << '\n';
+    output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
+    output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
+    output << "use_preferred_audio_language="
+           << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
+    output << "; 音轨语言代码，建议使用 ISO 639 风格，例如 eng、jpn、chi / Preferred audio language code, ISO 639 style recommended, for example: eng, jpn, chi" << '\n';
+    output << "preferred_audio_language=" << config.general.preferred_audio_language << '\n';
+    output << "; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled" << '\n';
+    output << "use_preferred_subtitle_language="
+           << (config.general.use_preferred_subtitle_language ? "true" : "false") << '\n';
+    output << "; 字幕语言代码，建议使用 ISO 639 风格 / Preferred subtitle language code, ISO 639 style recommended" << '\n';
+    output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
+    output << '\n';
+    output << "; 以下为当前仅建议在 ini 中修改的高级设置 / Advanced settings that are currently intended for ini editing only" << '\n';
+    output << "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
+    output << "demux_cache_sec=" << config.general.demux_cache_sec << '\n';
+    output << "; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent" << '\n';
+    output << "resume_start_percent=" << config.general.resume_start_percent << '\n';
+    output << "; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent" << '\n';
+    output << "resume_stop_percent=" << config.general.resume_stop_percent << '\n';
+    output << "; 是否启用触摸操作，默认关闭 / Whether touch controls are enabled, disabled by default" << '\n';
+    output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
+    output << "; 是否允许触摸滑动快进，默认关闭 / Whether touch swipe seek is enabled, disabled by default" << '\n';
+    output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
     output << '\n';
 
-    output << "; IPTV sources use sections named [iptv-xxx]" << '\n';
-    output << "; Example:" << '\n';
+    output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';
+    output << "; 示例 / Example:" << '\n';
     output << "; [iptv-main]" << '\n';
-    output << "; title=Main IPTV" << '\n';
+    output << "; title=主 IPTV / Main IPTV" << '\n';
     output << "; url=http://example.com/playlist.m3u" << '\n';
     output << "; enabled=true" << '\n';
     output << '\n';
@@ -307,10 +417,10 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << '\n';
     }
 
-    output << "; SMB sources use sections named [smb-xxx]" << '\n';
-    output << "; Example:" << '\n';
+    output << "; SMB 源使用 [smb-xxx] 形式的分组名 / SMB sources use sections named [smb-xxx]" << '\n';
+    output << "; 示例 / Example:" << '\n';
     output << "; [smb-media]" << '\n';
-    output << "; title=Home NAS" << '\n';
+    output << "; title=家庭 NAS / Home NAS" << '\n';
     output << "; host=192.168.1.10" << '\n';
     output << "; share=video" << '\n';
     output << "; username=user" << '\n';

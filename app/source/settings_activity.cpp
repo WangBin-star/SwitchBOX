@@ -43,6 +43,7 @@ struct SettingsDraftState {
     switchbox::core::AppConfig draft_config;
     SettingsSection active_section = SettingsSection::General;
     bool dirty = false;
+    bool ui_ready = false;
     brls::Sidebar* sidebar = nullptr;
     brls::Box* right_content_box = nullptr;
 };
@@ -330,7 +331,9 @@ std::string status_icon_title(bool enabled, const std::string& title) {
 
 void sync_dirty_state(const std::shared_ptr<SettingsDraftState>& state) {
     state->dirty = !app_config_equal(state->draft_config, state->saved_config);
-    brls::Application::getGlobalHintsUpdateEvent()->fire();
+    if (state->ui_ready) {
+        brls::Application::getGlobalHintsUpdateEvent()->fire();
+    }
 }
 
 switchbox::core::IptvSourceSettings* find_iptv_source(
@@ -948,7 +951,8 @@ brls::View* create_settings_content() {
         false,
         false,
         brls::SOUND_CLICK);
-
+    state->ui_ready = true;
+    brls::Application::getGlobalHintsUpdateEvent()->fire();
     return frame;
 }
 

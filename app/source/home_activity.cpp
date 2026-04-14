@@ -334,11 +334,12 @@ brls::View* create_home_content() {
         root->addView(empty_hint);
     }
 
-#ifndef __SWITCH__
-    root->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-#endif
-
     auto* frame = new brls::AppletFrame(root);
+#ifndef __SWITCH__
+    if (auto* content = frame->getContentView()) {
+        content->getAppletFrameItem()->setHintView(new HeaderStatusHint());
+    }
+#endif
     frame->registerAction(
         tr("actions/settings"),
         brls::BUTTON_START,
