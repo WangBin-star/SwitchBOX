@@ -16,7 +16,6 @@
             "extensions_hint": "Visible extensions: {0}",
             "backend_unavailable": "The SMB browser backend is not available on this platform yet. This page shell is ready, but the Switch-side transport still needs to be connected.",
             "open_failed": "Failed to open this SMB location.",
-            "desktop_note": "Desktop v1 now tries the username and password saved in Settings. If Windows already holds another session for this SMB host, you may need to disconnect that existing session first.",
             "empty": "This directory does not contain visible folders or files that match the current extension filter.",
             "parent": {
                 "title": "[Up]",
@@ -74,7 +73,7 @@
                 "subtitle": "Shared player shell, transport controls and runtime state",
                 "checkpoints": {
                     "1": "Define player layout, overlays and playback state model",
-                    "2": "Add fixed desktop and Switch media entry points",
+                    "2": "Add fixed Switch media entry points",
                     "3": "Wire buffering, transport controls and exit flow"
                 }
             },
@@ -158,12 +157,11 @@
             "status": {
                 "title": "Current status",
                 "detail": "SMB playback target is resolved, but the playback backend is not integrated yet",
-                "ready_desktop": "Desktop launch test is ready. Press A to send the playback request.",
                 "missing_locator": "This target does not expose an openable locator yet.",
                 "backend_missing_switch": "The Switch build does not include a real playback backend yet.",
                 "backend_missing_platform": "This platform does not include a playback backend yet.",
                 "started_primary": "Launch request sent using the direct locator.",
-                "started_fallback": "Launch request sent using the fallback path.",
+                "started_fallback": "Launch request sent using the fallback locator.",
                 "start_failed": "Unable to start playback."
             },
             "source": {
@@ -173,7 +171,7 @@
                 "title": "Direct-open candidate"
             },
             "fallback_locator": {
-                "title": "Desktop fallback path"
+                "title": "Fallback locator"
             },
             "next_steps": {
                 "title": "Next steps",

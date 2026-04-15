@@ -8,8 +8,6 @@
 #include <borealis/views/label.hpp>
 #include <borealis/views/scrolling_frame.hpp>
 
-#include "switchbox/app/header_status_hint.hpp"
-
 namespace switchbox::app {
 
 namespace {
@@ -36,20 +34,6 @@ brls::DetailCell* create_info_cell(const std::string& title, const std::string& 
 
 void apply_native_status_layout(brls::AppletFrame* frame) {
     frame->setTitle("SwitchBOX");
-
-#ifndef __SWITCH__
-    if (auto* timeView = frame->getView("brls/hints/time")) {
-        timeView->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* wirelessView = frame->getView("brls/wireless")) {
-        wirelessView->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* batteryView = frame->getView("brls/battery")) {
-        batteryView->setVisibility(brls::Visibility::GONE);
-    }
-#endif
 }
 
 brls::View* create_missing_config_content(const std::vector<std::filesystem::path>& searchedPaths) {
@@ -88,9 +72,6 @@ brls::View* create_missing_config_content(const std::vector<std::filesystem::pat
 
     auto* scrollingFrame = new brls::ScrollingFrame();
     scrollingFrame->setContentView(container);
-#ifndef __SWITCH__
-    scrollingFrame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-#endif
 
     auto* frame = new brls::AppletFrame(scrollingFrame);
     apply_native_status_layout(frame);

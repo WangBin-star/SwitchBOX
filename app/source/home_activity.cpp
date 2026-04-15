@@ -11,7 +11,6 @@
 #include <borealis/views/h_scrolling_frame.hpp>
 #include <borealis/views/label.hpp>
 
-#include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/placeholder_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
@@ -123,15 +122,9 @@ public:
         : brls::Box(brls::Axis::COLUMN)
         , model(std::move(model)) {
         setFocusable(true);
-#ifdef __SWITCH__
         setDimensions(344, 420);
         setMargins(0, 22, 0, 22);
         setPadding(32, 30, 30, 30);
-#else
-        setDimensions(320, 404);
-        setMargins(0, 18, 0, 18);
-        setPadding(30, 28, 28, 28);
-#endif
         setCornerRadius(30.0f);
         setHighlightCornerRadius(34.0f);
         setHideHighlightBackground(true);
@@ -223,20 +216,6 @@ private:
 
 void apply_native_status_layout(brls::AppletFrame* frame) {
     frame->setTitle(tr("brand/app_name"));
-
-#ifndef __SWITCH__
-    if (auto* time_view = frame->getView("brls/hints/time")) {
-        time_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* wireless_view = frame->getView("brls/wireless")) {
-        wireless_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* battery_view = frame->getView("brls/battery")) {
-        battery_view->setVisibility(brls::Visibility::GONE);
-    }
-#endif
 }
 
 std::vector<HomeCardModel> build_home_cards() {
@@ -302,18 +281,12 @@ brls::View* create_home_content() {
     root->setPadding(14, 0, 28, 0);
     root->setJustifyContent(brls::JustifyContent::CENTER);
     root->setBackgroundColor(theme["brls/background"]);
-
-#ifdef __SWITCH__
     root->setPadding(10, 0, 24, 0);
-#endif
 
     auto* cards_row = new brls::Box(brls::Axis::ROW);
     cards_row->setPadding(54, 56, 54, 56);
     cards_row->setAlignItems(brls::AlignItems::CENTER);
-
-#ifdef __SWITCH__
     cards_row->setPadding(42, 44, 42, 44);
-#endif
 
     for (const auto& card : cards) {
         cards_row->addView(new HomeSourceCard(card));
@@ -335,11 +308,6 @@ brls::View* create_home_content() {
     }
 
     auto* frame = new brls::AppletFrame(root);
-#ifndef __SWITCH__
-    if (auto* content = frame->getContentView()) {
-        content->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-    }
-#endif
     frame->registerAction(
         tr("actions/settings"),
         brls::BUTTON_START,

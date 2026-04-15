@@ -16,20 +16,10 @@ set(SWITCHBOX_BOREALIS_LIBRARY_DIR "${SWITCHBOX_BOREALIS_DIR}/library")
 set(SWITCHBOX_RELEASE_VERSION "${PROJECT_VERSION}" CACHE STRING "Version label used for packaged Switch releases")
 set(SWITCHBOX_RELEASES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/releases")
 
-option(SWITCHBOX_BUILD_DESKTOP "Build the desktop debug target" ON)
-option(SWITCHBOX_BUILD_SWITCH "Build the Nintendo Switch target" OFF)
 option(SWITCHBOX_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(SWITCHBOX_SWITCH_USE_DEKO3D "Use Borealis deko3d renderer on Nintendo Switch" ON)
 
-if (NOT SWITCHBOX_BUILD_DESKTOP AND NOT SWITCHBOX_BUILD_SWITCH)
-    message(FATAL_ERROR "At least one build target must be enabled.")
-endif ()
-
-if (SWITCHBOX_BUILD_DESKTOP AND SWITCHBOX_BUILD_SWITCH)
-    message(FATAL_ERROR "Configure either the desktop target or the Switch target in one build directory, not both.")
-endif ()
-
-if (SWITCHBOX_BUILD_SWITCH AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Switch target requested without a toolchain file. Use cmake/toolchains/switch.cmake.")
 endif ()
 
@@ -45,46 +35,32 @@ if (NOT EXISTS "${SWITCHBOX_BOREALIS_LIBRARY_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "Borealis vendored sources are missing under ${SWITCHBOX_BOREALIS_LIBRARY_DIR}.")
 endif ()
 
-set(PLATFORM_DESKTOP ${SWITCHBOX_BUILD_DESKTOP} CACHE BOOL "Build Borealis for desktop" FORCE)
-set(PLATFORM_SWITCH ${SWITCHBOX_BUILD_SWITCH} CACHE BOOL "Build Borealis for Switch" FORCE)
+set(PLATFORM_DESKTOP OFF CACHE BOOL "Build Borealis for desktop" FORCE)
+set(PLATFORM_SWITCH ON CACHE BOOL "Build Borealis for Switch" FORCE)
 set(USE_SDL2 OFF CACHE BOOL "" FORCE)
 set(USE_SYSTEM_FMT OFF CACHE BOOL "" FORCE)
 set(USE_SYSTEM_TINYXML2 OFF CACHE BOOL "" FORCE)
 set(USE_SYSTEM_TWEENY OFF CACHE BOOL "" FORCE)
 set(BRLS_UNITY_BUILD OFF CACHE BOOL "" FORCE)
 set(BRLS_RESOURCES_DIR "." CACHE STRING "" FORCE)
-
-if (SWITCHBOX_BUILD_SWITCH)
-    set(USE_DEKO3D ${SWITCHBOX_SWITCH_USE_DEKO3D} CACHE BOOL "" FORCE)
-    set(BOREALIS_USE_DEKO3D ${SWITCHBOX_SWITCH_USE_DEKO3D} CACHE BOOL "" FORCE)
-    set(FMT_OS OFF CACHE BOOL "" FORCE)
-else ()
-    set(USE_DEKO3D OFF CACHE BOOL "" FORCE)
-    set(BOREALIS_USE_DEKO3D OFF CACHE BOOL "" FORCE)
-    set(FMT_OS ON CACHE BOOL "" FORCE)
-endif ()
-
-if (WIN32)
-    set(USE_STD_THREAD ON CACHE BOOL "" FORCE)
-else ()
-    set(USE_STD_THREAD OFF CACHE BOOL "" FORCE)
-endif ()
+set(USE_DEKO3D ${SWITCHBOX_SWITCH_USE_DEKO3D} CACHE BOOL "" FORCE)
+set(BOREALIS_USE_DEKO3D ${SWITCHBOX_SWITCH_USE_DEKO3D} CACHE BOOL "" FORCE)
+set(FMT_OS OFF CACHE BOOL "" FORCE)
+set(USE_STD_THREAD OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${SWITCHBOX_BOREALIS_LIBRARY_DIR}" "${CMAKE_BINARY_DIR}/vendor/borealis")
 
-if (SWITCHBOX_BUILD_SWITCH)
-    set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "${DEVKITPRO}/portlibs/switch/include")
+set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "${DEVKITPRO}/portlibs/switch/include")
 
-    if (EXISTS "/opt/devkitpro/portlibs/switch/include/glm/vec2.hpp")
-        set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "/opt/devkitpro/portlibs/switch/include")
-    endif ()
-
-    if (NOT EXISTS "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}/glm/vec2.hpp")
-        message(FATAL_ERROR "switch-glm headers not found under ${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}. Install the switch-glm package first.")
-    endif ()
-
-    target_include_directories(borealis PUBLIC "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}")
+if (EXISTS "/opt/devkitpro/portlibs/switch/include/glm/vec2.hpp")
+    set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "/opt/devkitpro/portlibs/switch/include")
 endif ()
+
+if (NOT EXISTS "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}/glm/vec2.hpp")
+    message(FATAL_ERROR "switch-glm headers not found under ${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}. Install the switch-glm package first.")
+endif ()
+
+target_include_directories(borealis PUBLIC "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}")
 
 add_subdirectory(core)
 add_subdirectory(platform)

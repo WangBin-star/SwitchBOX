@@ -21,7 +21,6 @@
 #include <borealis/views/sidebar.hpp>
 
 #include "switchbox/app/application.hpp"
-#include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/language.hpp"
 
@@ -126,24 +125,6 @@ brls::BooleanCell* create_bool_cell(
 
 void configure_applet_frame(brls::AppletFrame* frame, const std::string& title) {
     frame->setTitle(title);
-
-#ifndef __SWITCH__
-    if (auto* content = frame->getContentView()) {
-        content->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-    }
-
-    if (auto* time_view = frame->getView("brls/hints/time")) {
-        time_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* wireless_view = frame->getView("brls/wireless")) {
-        wireless_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* battery_view = frame->getView("brls/battery")) {
-        battery_view->setVisibility(brls::Visibility::GONE);
-    }
-#endif
 
     if (auto* hints = dynamic_cast<brls::Hints*>(frame->getView("brls/hints"))) {
         hints->setAllowAButtonTouch(true);

@@ -17,7 +17,6 @@
 #include <borealis/views/label.hpp>
 #include <borealis/views/scrolling_frame.hpp>
 
-#include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/player_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/playback_target.hpp"
@@ -80,20 +79,6 @@ brls::DetailCell* create_detail_cell(
 
 void apply_native_status_layout(brls::AppletFrame* frame, const std::string& title) {
     frame->setTitle(title);
-
-#ifndef __SWITCH__
-    if (auto* time_view = frame->getView("brls/hints/time")) {
-        time_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* wireless_view = frame->getView("brls/wireless")) {
-        wireless_view->setVisibility(brls::Visibility::GONE);
-    }
-
-    if (auto* battery_view = frame->getView("brls/battery")) {
-        battery_view->setVisibility(brls::Visibility::GONE);
-    }
-#endif
 }
 
 void apply_header_path(
@@ -322,9 +307,6 @@ SmbBrowserContentBuild create_smb_browser_content(
 
     auto* scrolling_frame = new brls::ScrollingFrame();
     scrolling_frame->setContentView(content);
-#ifndef __SWITCH__
-    scrolling_frame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-#endif
 
     auto* frame = new brls::AppletFrame(scrolling_frame);
     apply_native_status_layout(frame, visible_smb_title(source));
@@ -365,9 +347,6 @@ SmbBrowserContentBuild create_smb_browser_content(
         content->addView(message);
         auto* scrolling_frame = new brls::ScrollingFrame();
         scrolling_frame->setContentView(content);
-#ifndef __SWITCH__
-        scrolling_frame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-#endif
 
         auto* frame = new brls::AppletFrame(scrolling_frame);
         apply_native_status_layout(frame, visible_smb_title(source));
@@ -404,20 +383,8 @@ SmbBrowserContentBuild create_smb_browser_content(
         detail->setMargins(0, 0, 14, 0);
         content->addView(detail);
 
-#if defined(_WIN32) && !defined(__SWITCH__)
-        auto* desktop_note = create_label(
-            tr("smb_browser/desktop_note"),
-            15.0f,
-            theme["brls/text_disabled"]);
-        desktop_note->setMargins(0, 0, 10, 0);
-        content->addView(desktop_note);
-#endif
-
         auto* scrolling_frame = new brls::ScrollingFrame();
         scrolling_frame->setContentView(content);
-#ifndef __SWITCH__
-        scrolling_frame->getAppletFrameItem()->setHintView(new HeaderStatusHint());
-#endif
 
         auto* frame = new brls::AppletFrame(scrolling_frame);
         apply_native_status_layout(frame, visible_smb_title(source));

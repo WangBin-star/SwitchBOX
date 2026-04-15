@@ -57,11 +57,7 @@ double monotonic_seconds() {
 std::string current_time_hhmm_text() {
     const std::time_t now = std::time(nullptr);
     std::tm local_time {};
-#if defined(_WIN32)
-    localtime_s(&local_time, &now);
-#else
     localtime_r(&now, &local_time);
-#endif
 
     char buffer[8] = {};
     std::snprintf(buffer, sizeof(buffer), "%02d:%02d", local_time.tm_hour, local_time.tm_min);

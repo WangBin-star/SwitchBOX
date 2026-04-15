@@ -20,9 +20,6 @@ public:
     void willAppear(bool resetState = false) override;
 
 private:
-    bool handle_start_action(brls::View* view);
-
-#if defined(__SWITCH__)
     void initialize_switch_player_state();
     void start_playback_with_target(const switchbox::core::PlaybackTarget& next_target);
     void save_player_volume_if_needed();
@@ -110,7 +107,6 @@ private:
     bool dpad_left_stick_down_pressed = false;
     bool dpad_left_stick_left_pressed = false;
     bool dpad_left_stick_right_pressed = false;
-#endif
 
     switchbox::core::PlaybackTarget target;
 };
