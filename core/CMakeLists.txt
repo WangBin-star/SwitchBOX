@@ -4,6 +4,7 @@ add_library(switchbox_core STATIC
     source/language.cpp
     source/playback_launcher.cpp
     source/playback_target.cpp
+    source/smb2_mount_fs.cpp
     source/switch_mpv_player.cpp
     source/smb_browser.cpp
 )

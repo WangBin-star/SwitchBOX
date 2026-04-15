@@ -56,6 +56,17 @@ brls::Label* create_label(
     return label;
 }
 
+brls::Label* create_focusable_message_label(
+    const std::string& text,
+    float font_size,
+    NVGcolor color) {
+    auto* label = create_label(text, font_size, color, false);
+    label->setFocusable(true);
+    label->setHideHighlightBackground(true);
+    label->setHideHighlightBorder(true);
+    return label;
+}
+
 brls::DetailCell* create_detail_cell(
     const std::string& title,
     const std::string& detail,
@@ -199,6 +210,7 @@ struct SmbBrowserContentBuild {
 
 enum class PendingRefreshKind {
     None,
+    DeleteAfterPlayerExit,
     LocalDeleteOnly,
     RefreshFromServer,
 };
@@ -257,12 +269,13 @@ SmbBrowserContentBuild create_smb_browser_content(
     brls::View* fallback_focus_view = nullptr;
     const bool should_restore_focus = !preferred_focus_relative_path.empty();
     if (entries.empty()) {
-        auto* empty_label = create_label(
+        auto* empty_label = create_focusable_message_label(
             tr("smb_browser/empty"),
             17.0f,
             theme["brls/text_disabled"]);
         empty_label->setMargins(8, 10, 14, 14);
         content->addView(empty_label);
+        focus_view = empty_label;
     }
 
     for (const auto& entry : entries) {
@@ -344,7 +357,7 @@ SmbBrowserContentBuild create_smb_browser_content(
     if (!browse_result.backend_available) {
         auto* content = new brls::Box(brls::Axis::COLUMN);
         content->setPadding(18, 40, 30, 40);
-        auto* message = create_label(
+        auto* message = create_focusable_message_label(
             tr("smb_browser/backend_unavailable"),
             18.0f,
             theme["brls/text"]);
@@ -368,7 +381,7 @@ SmbBrowserContentBuild create_smb_browser_content(
             theme["brls/text_disabled"]);
         return {
             .view = frame,
-            .focus_view = nullptr,
+            .focus_view = message,
             .rendered_entries = {},
             .content_from_server = false,
         };
@@ -377,7 +390,7 @@ SmbBrowserContentBuild create_smb_browser_content(
     if (!browse_result.success) {
         auto* content = new brls::Box(brls::Axis::COLUMN);
         content->setPadding(18, 40, 30, 40);
-        auto* message = create_label(
+        auto* message = create_focusable_message_label(
             tr("smb_browser/open_failed"),
             18.0f,
             theme["brls/text"]);
@@ -418,7 +431,7 @@ SmbBrowserContentBuild create_smb_browser_content(
             theme["brls/text_disabled"]);
         return {
             .view = frame,
-            .focus_view = nullptr,
+            .focus_view = message,
             .rendered_entries = {},
             .content_from_server = false,
         };
@@ -470,6 +483,22 @@ void SmbBrowserActivity::request_refresh_after_return(
         switchbox::core::smb_join_relative_path({}, directory_relative_path);
     g_pending_delete_refresh.focus_relative_path.clear();
     g_pending_delete_refresh.deleted_relative_path.clear();
+}
+
+void SmbBrowserActivity::request_delete_after_return(
+    const switchbox::core::SmbSourceSettings& source,
+    std::string directory_relative_path,
+    std::string focus_relative_path,
+    std::string deleted_relative_path) {
+    g_pending_delete_refresh.pending = true;
+    g_pending_delete_refresh.kind = PendingRefreshKind::DeleteAfterPlayerExit;
+    g_pending_delete_refresh.source = source;
+    g_pending_delete_refresh.directory_relative_path =
+        switchbox::core::smb_join_relative_path({}, directory_relative_path);
+    g_pending_delete_refresh.focus_relative_path =
+        switchbox::core::smb_join_relative_path({}, focus_relative_path);
+    g_pending_delete_refresh.deleted_relative_path =
+        switchbox::core::smb_join_relative_path({}, deleted_relative_path);
 }
 
 SmbBrowserActivity::SmbBrowserActivity(
@@ -748,6 +777,34 @@ bool SmbBrowserActivity::consume_pending_refresh_if_any() {
         switchbox::core::smb_join_relative_path({}, directory);
     const std::string normalized_current =
         switchbox::core::smb_join_relative_path({}, this->relative_path);
+
+    if (kind == PendingRefreshKind::DeleteAfterPlayerExit) {
+        if (normalized_directory != normalized_current) {
+            return false;
+        }
+
+        g_pending_delete_refresh.pending = false;
+        g_pending_delete_refresh.kind = PendingRefreshKind::None;
+
+        std::string error_message;
+        if (!switchbox::core::delete_smb_file(this->source, hidden, error_message)) {
+            g_pending_delete_refresh.deleted_relative_path.clear();
+            if (error_message.empty()) {
+                error_message = "Failed to delete SMB file.";
+            }
+            auto* failed = new brls::Dialog(error_message);
+            failed->open();
+            return true;
+        }
+
+        g_pending_delete_refresh.deleted_relative_path.clear();
+        if (this->has_cached_entries) {
+            apply_local_delete_result(hidden, focus);
+        } else {
+            refresh_after_player_delete(normalized_directory, focus);
+        }
+        return true;
+    }
 
     if (kind == PendingRefreshKind::RefreshFromServer) {
         if (normalized_directory != normalized_current) {

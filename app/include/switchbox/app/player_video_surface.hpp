@@ -21,7 +21,7 @@ struct PlayerOverlayViewModel {
     int selected_index = -1;
     std::vector<PlayerOverlayEntryView> entries;
     bool controls_visible = false;
-    int controls_selected_index = 2;
+    int controls_selected_index = 3;
     int short_seek_seconds = 10;
     int long_seek_seconds = 30;
     std::string audio_track_label;

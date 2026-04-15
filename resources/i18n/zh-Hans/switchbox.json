@@ -214,9 +214,6 @@
                     "placeholder": "\u4f8b\u5982 mp4,mkv,m3u8,flac",
                     "hint": "\u7528\u82f1\u6587\u9017\u53f7\u5206\u9694\u6269\u5c55\u540d\u3002\u9ed8\u8ba4\u503c\u53c2\u8003 nxmp\uff0c\u7528\u4e8e\u8fc7\u6ee4 SMB \u6d4f\u89c8\u9875\u4e2d\u53ef\u89c1\u7684\u5a92\u4f53\u6587\u4ef6"
                 },
-                "show_hidden": {
-                    "title": "\u663e\u793a\u9690\u85cf\u6587\u4ef6"
-                },
                 "sort_order": {
                     "title": "\u6392\u5e8f\u65b9\u5f0f",
                     "options": {

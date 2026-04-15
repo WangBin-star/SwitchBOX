@@ -178,6 +178,45 @@ void draw_play_or_pause_icon(
     }
 }
 
+void draw_rotate_icon(
+    NVGcontext* vg,
+    float center_x,
+    float center_y,
+    float size,
+    NVGcolor color) {
+    const float radius = size * 0.34f;
+    const float stroke_width = std::max(2.2f, size * 0.10f);
+    const float start_angle = -2.35f;
+    const float end_angle = 1.15f;
+
+    nvgBeginPath(vg);
+    nvgArc(vg, center_x, center_y, radius, start_angle, end_angle, NVG_CW);
+    nvgStrokeColor(vg, color);
+    nvgStrokeWidth(vg, stroke_width);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgStroke(vg);
+
+    const float arrow_tip_x = center_x + std::cos(end_angle) * radius;
+    const float arrow_tip_y = center_y + std::sin(end_angle) * radius;
+    const float tangent_angle = end_angle + 1.5707963f;
+    const float head_length = size * 0.18f;
+    const float head_width = size * 0.13f;
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, arrow_tip_x, arrow_tip_y);
+    nvgLineTo(
+        vg,
+        arrow_tip_x - std::cos(tangent_angle) * head_length - std::cos(end_angle) * head_width,
+        arrow_tip_y - std::sin(tangent_angle) * head_length - std::sin(end_angle) * head_width);
+    nvgLineTo(
+        vg,
+        arrow_tip_x - std::cos(tangent_angle) * head_length + std::cos(end_angle) * head_width,
+        arrow_tip_y - std::sin(tangent_angle) * head_length + std::sin(end_angle) * head_width);
+    nvgClosePath(vg);
+    nvgFillColor(vg, color);
+    nvgFill(vg);
+}
+
 }  // namespace
 
 PlayerVideoSurface::PlayerVideoSurface()
@@ -261,13 +300,17 @@ void PlayerVideoSurface::draw(
     brls::FrameContext* ctx) {
     const int draw_width = std::max(1, static_cast<int>(width));
     const int draw_height = std::max(1, static_cast<int>(height));
+    const int video_rotation = switchbox::core::switch_mpv_get_video_rotation_degrees();
+    const bool quarter_turn = (video_rotation % 180) != 0;
+    const int render_width = quarter_turn ? draw_height : draw_width;
+    const int render_height = quarter_turn ? draw_width : draw_height;
 
     const std::uint8_t* rgba_data = nullptr;
     size_t rgba_size = 0;
     int rgba_stride = 0;
     const bool has_frame = switchbox::core::switch_mpv_render_rgba_frame(
-        draw_width,
-        draw_height,
+        render_width,
+        render_height,
         &rgba_data,
         &rgba_size,
         &rgba_stride);
@@ -280,19 +323,19 @@ void PlayerVideoSurface::draw(
     }
 
     if (has_frame && rgba_data != nullptr && rgba_size > 0 && rgba_stride > 0) {
-        if (this->image == 0 || this->image_width != draw_width || this->image_height != draw_height) {
+        if (this->image == 0 || this->image_width != render_width || this->image_height != render_height) {
             if (this->image != 0) {
                 nvgDeleteImage(vg, this->image);
             }
 
             this->image = nvgCreateImageRGBA(
                 vg,
-                draw_width,
-                draw_height,
+                render_width,
+                render_height,
                 0,
                 reinterpret_cast<const unsigned char*>(rgba_data));
-            this->image_width = draw_width;
-            this->image_height = draw_height;
+            this->image_width = render_width;
+            this->image_height = render_height;
         } else {
             nvgUpdateImage(vg, this->image, reinterpret_cast<const unsigned char*>(rgba_data));
         }
@@ -304,11 +347,30 @@ void PlayerVideoSurface::draw(
     nvgFill(vg);
 
     if (this->image != 0) {
-        NVGpaint paint = nvgImagePattern(vg, x, y, width, height, 0.0f, this->image, 1.0f);
+        const float image_width = static_cast<float>(render_width);
+        const float image_height = static_cast<float>(render_height);
+        const float center_x = x + width * 0.5f;
+        const float center_y = y + height * 0.5f;
+
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x, y, width, height);
+        nvgTranslate(vg, center_x, center_y);
+        nvgRotate(vg, static_cast<float>(video_rotation) * NVG_PI / 180.0f);
+
+        NVGpaint paint = nvgImagePattern(
+            vg,
+            -image_width * 0.5f,
+            -image_height * 0.5f,
+            image_width,
+            image_height,
+            0.0f,
+            this->image,
+            1.0f);
         nvgBeginPath(vg);
-        nvgRect(vg, x, y, width, height);
+        nvgRect(vg, -image_width * 0.5f, -image_height * 0.5f, image_width, image_height);
         nvgFillPaint(vg, paint);
         nvgFill(vg);
+        nvgRestore(vg);
     }
 
     if (!this->last_error.empty()) {
@@ -550,7 +612,8 @@ void PlayerVideoSurface::draw(
         const int short_seek = std::max(1, this->overlay_model.short_seek_seconds);
         const int long_seek = std::max(1, this->overlay_model.long_seek_seconds);
         const bool paused_now = switchbox::core::switch_mpv_is_paused();
-        const std::string transport_labels[5] = {
+        const std::string transport_labels[6] = {
+            "",
             "-" + std::to_string(long_seek) + "s",
             "-" + std::to_string(short_seek) + "s",
             "",
@@ -563,8 +626,8 @@ void PlayerVideoSurface::draw(
         float selector_width = std::clamp(progress_width * 0.14f, 124.0f, 172.0f);
         const float volume_group_width = std::clamp(progress_width * 0.23f, 210.0f, 260.0f);
         float buttons_area_width = progress_width - volume_group_width - selector_width * 2.0f - row_gap * 3.0f;
-        if (buttons_area_width < 330.0f) {
-            const float deficit = 330.0f - buttons_area_width;
+        if (buttons_area_width < 396.0f) {
+            const float deficit = 396.0f - buttons_area_width;
             const float reduce_per_selector = deficit * 0.5f;
             selector_width = std::max(108.0f, selector_width - reduce_per_selector);
             buttons_area_width = progress_width - volume_group_width - selector_width * 2.0f - row_gap * 3.0f;
@@ -575,8 +638,8 @@ void PlayerVideoSurface::draw(
         const float volume_group_x = subtitle_selector_x + selector_width + row_gap;
         const float button_gap = 10.0f;
         const float button_height = 42.0f;
-        const float button_width = (buttons_area_width - button_gap * 4.0f) / 5.0f;
-        for (int index = 0; index < 5; index++) {
+        const float button_width = (buttons_area_width - button_gap * 5.0f) / 6.0f;
+        for (int index = 0; index < 6; index++) {
             const float button_x = buttons_area_x + index * (button_width + button_gap);
             const bool selected = this->overlay_model.controls_selected_index == index;
 
@@ -585,7 +648,14 @@ void PlayerVideoSurface::draw(
             nvgFillColor(vg, selected ? nvgRGBA(80, 120, 210, 220) : nvgRGBA(255, 255, 255, 38));
             nvgFill(vg);
 
-            if (index == 2) {
+            if (index == 0) {
+                draw_rotate_icon(
+                    vg,
+                    button_x + button_width * 0.5f,
+                    buttons_y + button_height * 0.5f,
+                    20.0f,
+                    nvgRGBA(255, 255, 255, selected ? 255 : 220));
+            } else if (index == 3) {
                 draw_play_or_pause_icon(
                     vg,
                     button_x + button_width * 0.5f,
@@ -619,14 +689,14 @@ void PlayerVideoSurface::draw(
                 .title = tr("player_page/audio/title"),
                 .value = this->overlay_model.audio_track_label,
                 .selectable = this->overlay_model.audio_track_selectable,
-                .action_index = 5,
+                .action_index = 6,
                 .x = audio_selector_x,
             },
             {
                 .title = tr("player_page/subtitle/title"),
                 .value = this->overlay_model.subtitle_track_label,
                 .selectable = this->overlay_model.subtitle_track_selectable,
-                .action_index = 6,
+                .action_index = 7,
                 .x = subtitle_selector_x,
             },
         };

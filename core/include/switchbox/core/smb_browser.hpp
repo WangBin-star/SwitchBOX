@@ -14,6 +14,7 @@ struct SmbBrowserEntry {
     bool is_directory = false;
     bool playable = false;
     std::uintmax_t size = 0;
+    std::int64_t modified_timestamp = 0;
 };
 
 struct SmbBrowserResult {

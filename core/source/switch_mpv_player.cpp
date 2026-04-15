@@ -3,49 +3,28 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <cstdio>
-#include <filesystem>
 #include <memory>
-#include <string_view>
 #include <sstream>
-#include <system_error>
 #include <string>
 #include <utility>
 #include <vector>
 
 #if defined(__SWITCH__) && defined(SWITCHBOX_HAS_SWITCH_MPV)
-#include <fcntl.h>
 #include <mpv/client.h>
 #include <mpv/render.h>
-#include <smb2/libsmb2.h>
-#include <smb2/smb2.h>
 #endif
 
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/smb2_mount_fs.hpp"
 
 namespace switchbox::core {
 
 #if defined(__SWITCH__) && defined(SWITCHBOX_HAS_SWITCH_MPV)
 
 namespace {
-
-std::filesystem::path runtime_base_directory() {
-    const auto& paths = switchbox::core::AppConfigStore::paths();
-    std::filesystem::path base = paths.config_file.parent_path();
-    if (base.empty()) {
-        base = std::filesystem::path("sdmc:/switch/SwitchBOX");
-    }
-
-    std::error_code error;
-    std::filesystem::create_directories(base, error);
-    return base;
-}
-
-std::string path_string(const std::filesystem::path& path) {
-    return path.generic_string();
-}
 
 void append_debug_log(const std::string& message) {
     (void)message;
@@ -59,98 +38,6 @@ std::string trim(std::string value) {
     value.erase(value.begin(), std::find_if_not(value.begin(), value.end(), is_space));
     value.erase(std::find_if_not(value.rbegin(), value.rend(), is_space).base(), value.end());
     return value;
-}
-
-std::string trim_network_component(std::string value) {
-    value = trim(std::move(value));
-
-    while (!value.empty() && (value.front() == '/' || value.front() == '\\')) {
-        value.erase(value.begin());
-    }
-
-    while (!value.empty() && (value.back() == '/' || value.back() == '\\')) {
-        value.pop_back();
-    }
-
-    return value;
-}
-
-std::vector<std::string> split_relative_segments(std::string_view raw_path) {
-    std::vector<std::string> segments;
-    std::string current;
-
-    const auto flush = [&segments, &current]() {
-        std::string segment = trim_network_component(current);
-        current.clear();
-
-        if (segment.empty() || segment == ".") {
-            return;
-        }
-
-        if (segment == "..") {
-            if (!segments.empty()) {
-                segments.pop_back();
-            }
-            return;
-        }
-
-        segments.push_back(std::move(segment));
-    };
-
-    for (const char character : raw_path) {
-        if (character == '/' || character == '\\') {
-            flush();
-            continue;
-        }
-
-        current.push_back(character);
-    }
-
-    flush();
-    return segments;
-}
-
-std::string join_segments(const std::vector<std::string>& segments) {
-    std::string path;
-    for (size_t index = 0; index < segments.size(); ++index) {
-        if (index > 0) {
-            path += "/";
-        }
-        path += segments[index];
-    }
-    return path;
-}
-
-struct ParsedShareTarget {
-    std::string share_name;
-    std::string initial_relative_path;
-};
-
-ParsedShareTarget parse_share_target(const std::string& raw_share) {
-    const auto segments = split_relative_segments(raw_share);
-    if (segments.empty()) {
-        return {};
-    }
-
-    ParsedShareTarget parsed;
-    parsed.share_name = segments.front();
-    if (segments.size() > 1) {
-        parsed.initial_relative_path =
-            join_segments(std::vector<std::string>(segments.begin() + 1, segments.end()));
-    }
-    return parsed;
-}
-
-std::string build_smb2_file_path(const PlaybackTarget::SmbLocator& locator) {
-    const ParsedShareTarget share_target = parse_share_target(locator.share);
-    if (share_target.share_name.empty()) {
-        return {};
-    }
-
-    std::vector<std::string> segments = split_relative_segments(share_target.initial_relative_path);
-    const auto relative = split_relative_segments(locator.relative_path);
-    segments.insert(segments.end(), relative.begin(), relative.end());
-    return join_segments(segments);
 }
 
 const mpv_node* node_map_find(const mpv_node_list* map, const char* key) {
@@ -227,111 +114,6 @@ std::string build_track_label(const mpv_node_list* map, int id) {
     return "Track " + std::to_string(id);
 }
 
-struct Smb2ContextDeleter {
-    void operator()(smb2_context* context) const {
-        if (context != nullptr) {
-            smb2_destroy_context(context);
-        }
-    }
-};
-
-struct Smb2FileHandleDeleter {
-    smb2_context* context = nullptr;
-
-    void operator()(smb2fh* handle) const {
-        if (context != nullptr && handle != nullptr) {
-            smb2_close(context, handle);
-        }
-    }
-};
-
-bool cache_smb_media_to_local(
-    const PlaybackTarget::SmbLocator& smb_locator,
-    std::string& local_path,
-    std::string& error_message) {
-    const std::string host = trim_network_component(smb_locator.host);
-    const ParsedShareTarget share_target = parse_share_target(smb_locator.share);
-    const std::string smb_file_path = build_smb2_file_path(smb_locator);
-    if (host.empty() || share_target.share_name.empty() || smb_file_path.empty()) {
-        error_message = "SMB playback target is missing host/share/path.";
-        return false;
-    }
-
-    const std::filesystem::path cache_path = runtime_base_directory() / "switchbox-playback-cache.bin";
-    local_path = path_string(cache_path);
-
-    std::unique_ptr<smb2_context, Smb2ContextDeleter> smb2(smb2_init_context());
-    if (!smb2) {
-        error_message = "Failed to initialize libsmb2 context.";
-        return false;
-    }
-
-    smb2_set_timeout(smb2.get(), 10);
-    smb2_set_security_mode(smb2.get(), SMB2_NEGOTIATE_SIGNING_ENABLED);
-    if (!smb_locator.username.empty()) {
-        smb2_set_user(smb2.get(), smb_locator.username.c_str());
-    }
-    if (!smb_locator.password.empty()) {
-        smb2_set_password(smb2.get(), smb_locator.password.c_str());
-    }
-
-    const int connect_result =
-        smb2_connect_share(
-            smb2.get(),
-            host.c_str(),
-            share_target.share_name.c_str(),
-            smb_locator.username.empty() ? nullptr : smb_locator.username.c_str());
-    if (connect_result < 0) {
-        error_message = smb2_get_error(smb2.get());
-        return false;
-    }
-
-    std::unique_ptr<smb2fh, Smb2FileHandleDeleter> file_handle(
-        smb2_open(smb2.get(), smb_file_path.c_str(), O_RDONLY),
-        Smb2FileHandleDeleter{smb2.get()});
-    if (!file_handle) {
-        error_message = smb2_get_error(smb2.get());
-        smb2_disconnect_share(smb2.get());
-        return false;
-    }
-
-    FILE* output = std::fopen(local_path.c_str(), "wb");
-    if (output == nullptr) {
-        error_message = "Unable to open local cache file for SMB playback.";
-        smb2_disconnect_share(smb2.get());
-        return false;
-    }
-
-    constexpr uint32_t kBufferSize = 256 * 1024;
-    std::vector<uint8_t> buffer(kBufferSize);
-
-    while (true) {
-        const int bytes_read = smb2_read(smb2.get(), file_handle.get(), buffer.data(), kBufferSize);
-        if (bytes_read < 0) {
-            error_message = smb2_get_error(smb2.get());
-            std::fclose(output);
-            smb2_disconnect_share(smb2.get());
-            return false;
-        }
-
-        if (bytes_read == 0) {
-            break;
-        }
-
-        const size_t bytes_written = std::fwrite(buffer.data(), 1, static_cast<size_t>(bytes_read), output);
-        if (bytes_written != static_cast<size_t>(bytes_read)) {
-            error_message = "Failed to write SMB cache file.";
-            std::fclose(output);
-            smb2_disconnect_share(smb2.get());
-            return false;
-        }
-    }
-
-    std::fclose(output);
-    smb2_disconnect_share(smb2.get());
-    return true;
-}
-
 std::string pick_locator(const PlaybackTarget& target) {
     if (!target.primary_locator.empty()) {
         return target.primary_locator;
@@ -348,30 +130,32 @@ public:
     }
 
     bool open(const PlaybackTarget& target, std::string& error_message) {
-        remove_cache_file();
+        std::string locator;
+        if (!initialize(error_message)) {
+            return false;
+        }
 
-        std::string locator = pick_locator(target);
+        if (!stop_current_playback(false)) {
+            error_message = "Previous playback session did not stop cleanly.";
+            return false;
+        }
+
         if (target.source_kind == PlaybackSourceKind::Smb && target.smb_locator.has_value()) {
-            std::string cache_error;
-            std::string local_cache_locator;
-            if (cache_smb_media_to_local(target.smb_locator.value(), local_cache_locator, cache_error)) {
-                locator = local_cache_locator;
-                this->cache_file_path = std::filesystem::path(local_cache_locator);
-                append_debug_log("[open] SMB cached to local file: " + locator);
-            } else {
-                append_debug_log("[open] SMB cache fallback failed: " + cache_error);
-                if (!cache_error.empty()) {
-                    this->last_error = cache_error;
-                }
+            if (!switchbox::core::switch_smb_mount_resolve_playback_path(
+                    target.smb_locator.value(),
+                    locator,
+                    error_message)) {
+                this->last_error = error_message;
+                append_debug_log("[open] SMB mount failed: " + error_message);
+                return false;
             }
+        } else {
+            switchbox::core::switch_smb_mount_release();
+            locator = pick_locator(target);
         }
 
         if (locator.empty()) {
             error_message = "The selected target does not expose an openable locator yet.";
-            return false;
-        }
-
-        if (!initialize(error_message)) {
             return false;
         }
 
@@ -380,12 +164,11 @@ public:
         this->paused.store(false);
         this->frame_dirty.store(true);
         this->playback_speed = 1.0;
+        this->video_rotation_degrees = 0;
         this->playback_volume = std::clamp(switchbox::core::AppConfigStore::current().general.player_volume, 0, 100);
 
         append_debug_log("[open] locator=" + locator);
 
-        mpv_command_string(this->handle, "stop");
-        process_pending_events();
         this->session_active.store(true);
 
         const char* command[] = {"loadfile", locator.c_str(), "replace", nullptr};
@@ -404,16 +187,7 @@ public:
     }
 
     void stop() {
-        if (this->handle != nullptr) {
-            mpv_command_string(this->handle, "stop");
-            process_pending_events();
-        }
-
-        this->session_active.store(false);
-        this->has_media = false;
-        this->paused.store(false);
-        this->frame_dirty.store(false);
-        remove_cache_file();
+        (void)stop_current_playback(false);
     }
 
     bool is_session_active() const {
@@ -500,6 +274,15 @@ public:
 
     double get_speed() const {
         return this->playback_speed;
+    }
+
+    bool rotate_clockwise_90() {
+        this->video_rotation_degrees = (this->video_rotation_degrees + 90) % 360;
+        return true;
+    }
+
+    int get_video_rotation_degrees() const {
+        return this->video_rotation_degrees;
     }
 
     bool set_volume(int volume) {
@@ -687,16 +470,6 @@ public:
     }
 
 private:
-    void remove_cache_file() {
-        if (this->cache_file_path.empty()) {
-            return;
-        }
-
-        std::error_code error;
-        std::filesystem::remove(this->cache_file_path, error);
-        this->cache_file_path.clear();
-    }
-
     static void mpv_render_update(void* context) {
         auto* self = static_cast<SwitchMpvPlayer*>(context);
         if (self != nullptr) {
@@ -704,13 +477,60 @@ private:
         }
     }
 
-    void process_pending_events() {
+    bool is_idle_active() {
+        if (this->handle == nullptr) {
+            return true;
+        }
+
+        int idle_flag = 0;
+        const int rc = mpv_get_property(this->handle, "idle-active", MPV_FORMAT_FLAG, &idle_flag);
+        return rc >= 0 && idle_flag != 0;
+    }
+
+    bool wait_for_stop_completion(std::chrono::milliseconds timeout) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        do {
+            process_pending_events(0.05);
+
+            if ((!this->session_active.load() && !this->has_media) || is_idle_active()) {
+                this->session_active.store(false);
+                this->has_media = false;
+                this->paused.store(false);
+                return true;
+            }
+        } while (std::chrono::steady_clock::now() < deadline);
+
+        return (!this->session_active.load() && !this->has_media) || is_idle_active();
+    }
+
+    bool stop_current_playback(bool release_mount_after_stop) {
+        bool fully_stopped = true;
+        if (this->handle != nullptr) {
+            mpv_command_string(this->handle, "stop");
+            fully_stopped = wait_for_stop_completion(std::chrono::milliseconds(1500));
+        }
+
+        this->session_active.store(false);
+        this->has_media = false;
+        this->paused.store(false);
+        this->frame_dirty.store(false);
+
+        if (release_mount_after_stop && fully_stopped) {
+            switchbox::core::switch_smb_mount_release();
+        }
+
+        return fully_stopped;
+    }
+
+    void process_pending_events(double timeout_seconds = 0.0) {
         if (this->handle == nullptr) {
             return;
         }
 
+        bool first_wait = true;
         while (true) {
-            mpv_event* event = mpv_wait_event(this->handle, 0);
+            mpv_event* event = mpv_wait_event(this->handle, first_wait ? timeout_seconds : 0.0);
+            first_wait = false;
             if (event == nullptr || event->event_id == MPV_EVENT_NONE) {
                 break;
             }
@@ -879,9 +699,9 @@ private:
     std::atomic<bool> paused = false;
     std::atomic<bool> frame_dirty = false;
     double playback_speed = 1.0;
+    int video_rotation_degrees = 0;
     int playback_volume = 80;
     std::string last_error;
-    std::filesystem::path cache_file_path;
 
     int buffer_width = 0;
     int buffer_height = 0;
@@ -929,6 +749,14 @@ bool switch_mpv_set_speed(double speed) {
 
 double switch_mpv_get_speed() {
     return SwitchMpvPlayer::instance().get_speed();
+}
+
+bool switch_mpv_rotate_clockwise_90() {
+    return SwitchMpvPlayer::instance().rotate_clockwise_90();
+}
+
+int switch_mpv_get_video_rotation_degrees() {
+    return SwitchMpvPlayer::instance().get_video_rotation_degrees();
 }
 
 bool switch_mpv_set_volume(int volume) {
@@ -1024,6 +852,14 @@ bool switch_mpv_set_speed(double) {
 
 double switch_mpv_get_speed() {
     return 1.0;
+}
+
+bool switch_mpv_rotate_clockwise_90() {
+    return false;
+}
+
+int switch_mpv_get_video_rotation_degrees() {
+    return 0;
 }
 
 bool switch_mpv_set_volume(int) {

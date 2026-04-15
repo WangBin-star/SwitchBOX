@@ -1,12 +1,14 @@
 #include "switchbox/core/smb_browser.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <cctype>
 #include <filesystem>
 #include <memory>
 #include <string_view>
 #include <system_error>
+#include <thread>
 
 #if defined(_WIN32) && !defined(__SWITCH__)
 #include <windows.h>
@@ -140,6 +142,10 @@ std::string join_segments(const std::vector<std::string>& segments) {
 }
 
 std::filesystem::path path_from_utf8(const std::string& value);
+
+std::int64_t file_time_sort_value(std::filesystem::file_time_type file_time) {
+    return static_cast<std::int64_t>(file_time.time_since_epoch().count());
+}
 
 std::filesystem::path append_relative_segments(
     std::filesystem::path base_path,
@@ -483,6 +489,7 @@ WindowsSmbAuthResult ensure_windows_smb_connection(
         .message = format_windows_error_message(result),
     };
 }
+
 #endif
 
 ParsedShareTarget parse_share_target(const std::string& raw_share) {
@@ -521,6 +528,102 @@ bool entry_name_less(const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
     }
 
     return to_lower(lhs.name) < to_lower(rhs.name);
+}
+
+bool entry_name_greater(const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
+    if (lhs.is_directory != rhs.is_directory) {
+        return lhs.is_directory && !rhs.is_directory;
+    }
+
+    return to_lower(lhs.name) > to_lower(rhs.name);
+}
+
+template <typename ValueGetter>
+bool entry_value_less(
+    const SmbBrowserEntry& lhs,
+    const SmbBrowserEntry& rhs,
+    const ValueGetter& value_getter,
+    bool ascending) {
+    if (lhs.is_directory != rhs.is_directory) {
+        return lhs.is_directory && !rhs.is_directory;
+    }
+
+    const auto lhs_value = value_getter(lhs);
+    const auto rhs_value = value_getter(rhs);
+    if (lhs_value != rhs_value) {
+        return ascending ? (lhs_value < rhs_value) : (lhs_value > rhs_value);
+    }
+
+    const std::string lhs_name = to_lower(lhs.name);
+    const std::string rhs_name = to_lower(rhs.name);
+    if (lhs_name != rhs_name) {
+        return ascending ? (lhs_name < rhs_name) : (lhs_name > rhs_name);
+    }
+
+    return lhs.relative_path < rhs.relative_path;
+}
+
+void sort_entries(
+    std::vector<SmbBrowserEntry>& entries,
+    const std::string& sort_order) {
+    if (sort_order == "name_desc") {
+        std::sort(entries.begin(), entries.end(), entry_name_greater);
+        return;
+    }
+
+    if (sort_order == "date_asc") {
+        std::sort(entries.begin(), entries.end(), [](const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
+            return entry_value_less(
+                lhs,
+                rhs,
+                [](const SmbBrowserEntry& entry) {
+                    return entry.modified_timestamp;
+                },
+                true);
+        });
+        return;
+    }
+
+    if (sort_order == "date_desc") {
+        std::sort(entries.begin(), entries.end(), [](const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
+            return entry_value_less(
+                lhs,
+                rhs,
+                [](const SmbBrowserEntry& entry) {
+                    return entry.modified_timestamp;
+                },
+                false);
+        });
+        return;
+    }
+
+    if (sort_order == "size_asc") {
+        std::sort(entries.begin(), entries.end(), [](const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
+            return entry_value_less(
+                lhs,
+                rhs,
+                [](const SmbBrowserEntry& entry) {
+                    return static_cast<std::uintmax_t>(entry.is_directory ? 0 : entry.size);
+                },
+                true);
+        });
+        return;
+    }
+
+    if (sort_order == "size_desc") {
+        std::sort(entries.begin(), entries.end(), [](const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
+            return entry_value_less(
+                lhs,
+                rhs,
+                [](const SmbBrowserEntry& entry) {
+                    return static_cast<std::uintmax_t>(entry.is_directory ? 0 : entry.size);
+                },
+                false);
+        });
+        return;
+    }
+
+    std::sort(entries.begin(), entries.end(), entry_name_less);
 }
 
 #ifdef __SWITCH__
@@ -757,6 +860,12 @@ SmbBrowserResult browse_smb_directory(
                 continue;
             }
 
+            const auto last_write_time = entry.last_write_time(error);
+            const std::int64_t modified_timestamp = error ? 0 : file_time_sort_value(last_write_time);
+            if (error) {
+                error.clear();
+            }
+
             if (is_directory) {
                 result.entries.push_back({
                     .name = name,
@@ -764,6 +873,7 @@ SmbBrowserResult browse_smb_directory(
                     .is_directory = true,
                     .playable = false,
                     .size = 0,
+                    .modified_timestamp = modified_timestamp,
                 });
                 continue;
             }
@@ -789,6 +899,7 @@ SmbBrowserResult browse_smb_directory(
                 .is_directory = false,
                 .playable = true,
                 .size = file_size,
+                .modified_timestamp = modified_timestamp,
             });
         }
 
@@ -797,7 +908,7 @@ SmbBrowserResult browse_smb_directory(
             return result;
         }
 
-        std::sort(result.entries.begin(), result.entries.end(), entry_name_less);
+        sort_entries(result.entries, general.sort_order);
         result.success = true;
         return result;
     } catch (const std::exception& exception) {
@@ -868,6 +979,7 @@ SmbBrowserResult browse_smb_directory(
                     .is_directory = true,
                     .playable = false,
                     .size = 0,
+                    .modified_timestamp = static_cast<std::int64_t>(entry->st.smb2_mtime),
                 });
                 continue;
             }
@@ -882,12 +994,13 @@ SmbBrowserResult browse_smb_directory(
                 .is_directory = false,
                 .playable = true,
                 .size = entry->st.smb2_size,
+                .modified_timestamp = static_cast<std::int64_t>(entry->st.smb2_mtime),
             });
         }
 
         directory.reset();
         smb2_disconnect_share(smb2.get());
-        std::sort(result.entries.begin(), result.entries.end(), entry_name_less);
+        sort_entries(result.entries, general.sort_order);
         result.success = true;
         return result;
     } catch (const std::exception& exception) {
@@ -1002,13 +1115,21 @@ bool delete_smb_file(
             return false;
         }
 
-        if (!delete_smb_path_recursive(smb2.get(), smb2_path, error_message)) {
-            smb2_disconnect_share(smb2.get());
-            return false;
+        constexpr int kDeleteRetryCount = 10;
+        for (int attempt = 0; attempt < kDeleteRetryCount; ++attempt) {
+            error_message.clear();
+            if (delete_smb_path_recursive(smb2.get(), smb2_path, error_message)) {
+                smb2_disconnect_share(smb2.get());
+                return true;
+            }
+
+            if (attempt + 1 < kDeleteRetryCount) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
         }
 
         smb2_disconnect_share(smb2.get());
-        return true;
+        return false;
     } catch (const std::exception& exception) {
         error_message = std::string("SMB delete exception: ") + exception.what();
         return false;

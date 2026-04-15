@@ -57,6 +57,8 @@ private:
     void apply_continuous_seek_if_needed();
     void apply_hold_speed_if_needed();
     void update_volume_osd_timeout();
+    void present_runtime_error_if_needed();
+    void stop_playback_session_before_leave();
     void adjust_volume(int delta);
     bool seek_relative(double seconds);
     void refresh_track_selector_state();
@@ -81,7 +83,7 @@ private:
     bool overlay_visible = false;
     std::string overlay_message;
     bool controls_visible = false;
-    int controls_selected_index = 2;
+    int controls_selected_index = 3;
     PlayerVideoSurface* video_surface = nullptr;
     bool player_volume_dirty = false;
     int session_volume = 80;
@@ -102,6 +104,8 @@ private:
     int last_controls_nav_direction = 0;
     bool volume_osd_visible = false;
     std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    bool playback_error_dialog_open = false;
+    bool playback_session_stopped = false;
     bool dpad_left_stick_up_pressed = false;
     bool dpad_left_stick_down_pressed = false;
     bool dpad_left_stick_left_pressed = false;

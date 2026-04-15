@@ -175,6 +175,14 @@ bool left_stick_down_pressed(const brls::ControllerState& state) {
     return state.axes[brls::LEFT_Y] > 0.55f;
 }
 
+bool right_stick_up_pressed(const brls::ControllerState& state) {
+    return state.axes[brls::RIGHT_Y] < -0.55f;
+}
+
+bool right_stick_down_pressed(const brls::ControllerState& state) {
+    return state.axes[brls::RIGHT_Y] > 0.55f;
+}
+
 bool left_stick_left_pressed(const brls::ControllerState& state) {
     return state.axes[brls::LEFT_X] < -0.55f;
 }
@@ -314,17 +322,45 @@ void PlayerActivity::willAppear(bool resetState) {
     registerAction(
         tr("actions/disable"),
         brls::BUTTON_NAV_UP,
-        [this](brls::View*) { return handle_up_action(); },
+        [](brls::View*) { return true; },
+        true,
+        true,
+        brls::SOUND_NONE);
+    registerAction(
+        tr("actions/enable"),
+        brls::BUTTON_NAV_DOWN,
+        [](brls::View*) { return true; },
+        true,
+        true,
+        brls::SOUND_NONE);
+    registerAction(
+        tr("actions/disable"),
+        brls::BUTTON_LEFT,
+        [this](brls::View*) { return handle_left_action(); },
         true,
         true,
         brls::SOUND_CLICK);
     registerAction(
         tr("actions/enable"),
-        brls::BUTTON_NAV_DOWN,
-        [this](brls::View*) { return handle_down_action(); },
+        brls::BUTTON_RIGHT,
+        [this](brls::View*) { return handle_right_action(); },
         true,
         true,
         brls::SOUND_CLICK);
+    registerAction(
+        tr("actions/disable"),
+        brls::BUTTON_NAV_LEFT,
+        [](brls::View*) { return true; },
+        true,
+        true,
+        brls::SOUND_NONE);
+    registerAction(
+        tr("actions/enable"),
+        brls::BUTTON_NAV_RIGHT,
+        [](brls::View*) { return true; },
+        true,
+        true,
+        brls::SOUND_NONE);
 
     this->runtime_tick.setPeriod(16);
     this->runtime_tick.setCallback([this]() {
@@ -346,9 +382,8 @@ void PlayerActivity::willAppear(bool resetState) {
 
 PlayerActivity::~PlayerActivity() {
 #if defined(__SWITCH__)
-    this->runtime_tick.stop();
     save_player_volume_if_needed();
-    switchbox::core::switch_mpv_stop();
+    stop_playback_session_before_leave();
 #endif
 }
 
@@ -420,6 +455,7 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
         return;
     }
 
+    this->playback_session_stopped = false;
     this->target = next_target;
     if (this->target.smb_locator.has_value()) {
         this->current_relative_path = this->target.smb_locator->relative_path;
@@ -446,10 +482,10 @@ void PlayerActivity::save_player_volume_if_needed() {
 bool PlayerActivity::handle_a_action() {
     if (this->controls_visible) {
         execute_controls_action(this->controls_selected_index);
-        if (this->controls_selected_index == 0 ||
-            this->controls_selected_index == 1 ||
-            this->controls_selected_index == 3 ||
-            this->controls_selected_index == 4) {
+        if (this->controls_selected_index == 1 ||
+            this->controls_selected_index == 2 ||
+            this->controls_selected_index == 4 ||
+            this->controls_selected_index == 5) {
             this->last_controls_repeat_action = this->controls_selected_index;
             this->last_controls_repeat_time = std::chrono::steady_clock::now();
         } else {
@@ -479,6 +515,7 @@ bool PlayerActivity::handle_b_action() {
         return true;
     }
 
+    stop_playback_session_before_leave();
     brls::Application::popActivity(brls::TransitionAnimation::FADE);
     return true;
 }
@@ -919,10 +956,10 @@ bool PlayerActivity::should_accept_controls_navigation_step(int direction) {
 }
 
 void PlayerActivity::move_controls_selection(int delta) {
-    constexpr int kButtonCount = 7;
+    constexpr int kButtonCount = 8;
     int next = this->controls_selected_index;
     if (next < 0 || next >= kButtonCount) {
-        next = 2;
+        next = 3;
     } else {
         next = (next + delta + kButtonCount) % kButtonCount;
     }
@@ -935,19 +972,21 @@ bool PlayerActivity::execute_controls_action(int action_index) {
     const auto& general = switchbox::core::AppConfigStore::current().general;
     switch (action_index) {
         case 0:
-            return seek_relative(-static_cast<double>(general.long_seek));
+            return switchbox::core::switch_mpv_rotate_clockwise_90();
         case 1:
-            return seek_relative(-static_cast<double>(general.short_seek));
+            return seek_relative(-static_cast<double>(general.long_seek));
         case 2:
+            return seek_relative(-static_cast<double>(general.short_seek));
+        case 3:
             switchbox::core::switch_mpv_toggle_pause();
             return true;
-        case 3:
-            return seek_relative(static_cast<double>(general.short_seek));
         case 4:
-            return seek_relative(static_cast<double>(general.long_seek));
+            return seek_relative(static_cast<double>(general.short_seek));
         case 5:
-            return open_audio_track_selector();
+            return seek_relative(static_cast<double>(general.long_seek));
         case 6:
+            return open_audio_track_selector();
+        case 7:
             return open_subtitle_track_selector();
         default:
             return false;
@@ -960,19 +999,22 @@ void PlayerActivity::tick_runtime_controls() {
     apply_hold_speed_if_needed();
     apply_continuous_seek_if_needed();
     update_volume_osd_timeout();
+    present_runtime_error_if_needed();
 }
 
 void PlayerActivity::apply_directional_input_fallback_if_needed() {
     const auto& controller = brls::Application::getControllerState();
 
-    const bool up_pressed = left_stick_up_pressed(controller);
-    const bool down_pressed = left_stick_down_pressed(controller);
+    const bool up_pressed =
+        left_stick_up_pressed(controller) ||
+        right_stick_up_pressed(controller);
+    const bool down_pressed =
+        left_stick_down_pressed(controller) ||
+        right_stick_down_pressed(controller);
     const bool left_pressed =
-        direction_left_pressed(controller) ||
         left_stick_left_pressed(controller) ||
         right_stick_left_pressed(controller);
     const bool right_pressed =
-        direction_right_pressed(controller) ||
         left_stick_right_pressed(controller) ||
         right_stick_right_pressed(controller);
 
@@ -1010,10 +1052,10 @@ void PlayerActivity::apply_controls_hold_action_if_needed() {
         return;
     }
 
-    if (!(this->controls_selected_index == 0 ||
-          this->controls_selected_index == 1 ||
-          this->controls_selected_index == 3 ||
-          this->controls_selected_index == 4)) {
+    if (!(this->controls_selected_index == 1 ||
+          this->controls_selected_index == 2 ||
+          this->controls_selected_index == 4 ||
+          this->controls_selected_index == 5)) {
         this->last_controls_repeat_action = -1;
         return;
     }
@@ -1143,6 +1185,51 @@ void PlayerActivity::update_volume_osd_timeout() {
     }
 }
 
+void PlayerActivity::present_runtime_error_if_needed() {
+    if (this->playback_error_dialog_open) {
+        return;
+    }
+
+    std::string error_message = switchbox::core::switch_mpv_consume_last_error();
+    if (error_message.empty()) {
+        return;
+    }
+
+    this->playback_error_dialog_open = true;
+    this->controls_visible = false;
+    this->overlay_visible = false;
+    this->volume_osd_visible = false;
+    this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    sync_overlay_to_surface();
+    stop_playback_session_before_leave();
+
+    auto* dialog = new brls::Dialog(error_message);
+    dialog->setCancelable(false);
+    dialog->addButton(brls::getStr("hints/ok"), [this]() {
+        this->playback_error_dialog_open = false;
+        brls::Application::popActivity(brls::TransitionAnimation::FADE);
+    });
+    dialog->open();
+}
+
+void PlayerActivity::stop_playback_session_before_leave() {
+    if (this->playback_session_stopped) {
+        return;
+    }
+
+    this->playback_session_stopped = true;
+    if (this->runtime_initialized) {
+        this->runtime_tick.stop();
+    }
+
+    this->controls_visible = false;
+    this->overlay_visible = false;
+    this->volume_osd_visible = false;
+    this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    sync_overlay_to_surface();
+    switchbox::core::switch_mpv_stop();
+}
+
 void PlayerActivity::adjust_volume(int delta) {
     const int next_volume = std::clamp(this->session_volume + delta, 0, 100);
     if (next_volume == this->session_volume) {
@@ -1190,17 +1277,8 @@ void PlayerActivity::confirm_delete_current_file() {
         const std::string deleting_relative_path = this->current_relative_path;
         const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
         const std::string next_focus = find_next_focus_after_delete();
-        std::string error_message;
-        if (!switchbox::core::delete_smb_file(source, deleting_relative_path, error_message)) {
-            if (error_message.empty()) {
-                error_message = "Failed to delete SMB file.";
-            }
-            auto* failed = new brls::Dialog(error_message);
-            failed->open();
-            return;
-        }
-
-        SmbBrowserActivity::request_focus_after_return(
+        stop_playback_session_before_leave();
+        SmbBrowserActivity::request_delete_after_return(
             source,
             directory,
             next_focus,

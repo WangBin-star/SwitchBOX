@@ -155,7 +155,6 @@ bool general_settings_equal(
     const switchbox::core::GeneralSettings& rhs) {
     return lhs.language == rhs.language &&
            lhs.playable_extensions == rhs.playable_extensions &&
-           lhs.show_hidden == rhs.show_hidden &&
            lhs.sort_order == rhs.sort_order &&
            lhs.hardware_decode == rhs.hardware_decode &&
            lhs.short_seek == rhs.short_seek &&
@@ -800,12 +799,6 @@ void open_playable_extensions_editor(const std::shared_ptr<SettingsDraftState>& 
         0);
 }
 
-void toggle_show_hidden(const std::shared_ptr<SettingsDraftState>& state) {
-    state->draft_config.general.show_hidden = !state->draft_config.general.show_hidden;
-    sync_dirty_state(state);
-    rebuild_right_panel(state);
-}
-
 void toggle_hardware_decode(const std::shared_ptr<SettingsDraftState>& state) {
     state->draft_config.general.hardware_decode = !state->draft_config.general.hardware_decode;
     sync_dirty_state(state);
@@ -1032,21 +1025,10 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         });
 
     add_setting_cell(
-        "settings/general/show_hidden",
-        tr("settings_page/general/show_hidden/title"),
-        bool_display_text(general.show_hidden),
-        false,
-        [state](brls::View*) {
-            request_focus_restore(state, "settings/general/show_hidden");
-            toggle_show_hidden(state);
-            return true;
-        });
-
-    add_setting_cell(
         "settings/general/sort_order",
         tr("settings_page/general/sort_order/title"),
         sort_order_display_name(general.sort_order),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/sort_order");
             open_sort_order_dropdown(state);

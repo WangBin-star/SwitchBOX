@@ -254,11 +254,10 @@ std::string normalize_line_endings_to_crlf(std::string_view text) {
     return normalized;
 }
 
-const std::array<std::string_view, 21>& required_general_keys() {
-    static constexpr std::array<std::string_view, 21> keys = {
+const std::array<std::string_view, 20>& required_general_keys() {
+    static constexpr std::array<std::string_view, 20> keys = {
         "language",
         "playable_extensions",
-        "show_hidden",
         "sort_order",
         "hardware_decode",
         "short_seek",
@@ -347,9 +346,6 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
     }
     if (key == "playable_extensions") {
         return general.playable_extensions;
-    }
-    if (key == "show_hidden") {
-        return general.show_hidden ? "true" : "false";
     }
     if (key == "sort_order") {
         return general.sort_order;
@@ -644,9 +640,6 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         get_value(document, "general", "language", config.general.language);
     config.general.playable_extensions =
         get_value(document, "general", "playable_extensions", config.general.playable_extensions);
-    config.general.show_hidden = parse_bool(
-        get_value(document, "general", "show_hidden"),
-        config.general.show_hidden);
     config.general.sort_order =
         get_value(document, "general", "sort_order", config.general.sort_order);
     config.general.hardware_decode = parse_bool(
@@ -793,9 +786,6 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
     output << "playable_extensions=" << config.general.playable_extensions << '\n';
     output << '\n';
-    output << "; 是否显示隐藏文件 / Whether hidden files are shown" << '\n';
-    output << "show_hidden=" << (config.general.show_hidden ? "true" : "false") << '\n';
-    output << '\n';
     output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
     output << "sort_order=" << config.general.sort_order << '\n';
     output << '\n';
@@ -922,8 +912,6 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "language=" << config.general.language << '\n';
     output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
     output << "playable_extensions=" << config.general.playable_extensions << '\n';
-    output << "; 是否显示隐藏文件 / Whether hidden files are shown" << '\n';
-    output << "show_hidden=" << (config.general.show_hidden ? "true" : "false") << '\n';
     output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
     output << "sort_order=" << config.general.sort_order << '\n';
     output << "; 是否启用硬件解码 / Whether hardware decoding is enabled" << '\n';
