@@ -6,9 +6,11 @@
         "actions": {
             "settings": "Settings",
             "save": "Save",
+            "discard": "Discard",
             "enable": "Enable",
             "disable": "Disable",
-            "delete": "Delete"
+            "delete": "Delete",
+            "home": "Home"
         },
         "smb_browser": {
             "extensions_hint": "Visible extensions: {0}",
@@ -23,6 +25,7 @@
             "folder_prefix": "[Folder] {0}",
             "file_prefix": "[Media] {0}",
             "folder_detail": "Directory",
+            "delete_directory_not_supported": "Directory deletion is not supported yet.",
             "file_detail": "Playable file · {0}",
             "player_stub": {
                 "checkpoints": {
@@ -141,6 +144,16 @@
                 "start": "Playback Test",
                 "toggle_pause": "Play/Pause"
             },
+            "volume_label": "Volume: {0}",
+            "audio": {
+                "title": "Audio",
+                "no_options": "No audio tracks available"
+            },
+            "subtitle": {
+                "title": "Subtitles",
+                "no_options": "No subtitle tracks available",
+                "off": "Off"
+            },
             "launch_started": "Playback request sent.",
             "status": {
                 "title": "Current status",
@@ -184,6 +197,7 @@
             "summary": "Changes first stay on this page as a draft. After choosing a value and returning from the dropdown, press + to save and apply it. Press B to cancel and leave.",
             "save_success": "Settings saved.",
             "save_failed": "Failed to save settings.",
+            "exit_confirm": "You have unsaved changes. Save before leaving?",
             "common": {
                 "not_set": "Not set",
                 "edit_section": "Edit current entry",

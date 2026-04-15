@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 
 namespace switchbox::core {
 
@@ -228,6 +229,416 @@ bool starts_with(std::string_view value, std::string_view prefix) {
     return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
 }
 
+std::string normalize_line_endings_to_crlf(std::string_view text) {
+    std::string normalized;
+    normalized.reserve(text.size() + text.size() / 8 + 8);
+
+    for (size_t index = 0; index < text.size(); ++index) {
+        const char ch = text[index];
+        if (ch == '\r') {
+            if (index + 1 < text.size() && text[index + 1] == '\n') {
+                ++index;
+            }
+            normalized += "\r\n";
+            continue;
+        }
+
+        if (ch == '\n') {
+            normalized += "\r\n";
+            continue;
+        }
+
+        normalized.push_back(ch);
+    }
+
+    return normalized;
+}
+
+const std::array<std::string_view, 21>& required_general_keys() {
+    static constexpr std::array<std::string_view, 21> keys = {
+        "language",
+        "playable_extensions",
+        "show_hidden",
+        "sort_order",
+        "hardware_decode",
+        "short_seek",
+        "long_seek",
+        "y_hold_speed_multiplier",
+        "continuous_seek_interval_ms",
+        "player_volume",
+        "player_volume_osd_duration_ms",
+        "overlay_marquee_delay_ms",
+        "use_preferred_audio_language",
+        "preferred_audio_language",
+        "use_preferred_subtitle_language",
+        "preferred_subtitle_language",
+        "demux_cache_sec",
+        "resume_start_percent",
+        "resume_stop_percent",
+        "touch_enable",
+        "touch_swipe_seek",
+    };
+    return keys;
+}
+
+bool has_required_general_keys(const IniDocument& document) {
+    const auto section_it = document.find("general");
+    if (section_it == document.end()) {
+        return false;
+    }
+
+    const auto& section = section_it->second;
+    for (const auto key : required_general_keys()) {
+        if (!section.contains(std::string(key))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool has_required_general_keys_in_raw_text(std::string_view raw_ini_text) {
+    if (raw_ini_text.empty()) {
+        return false;
+    }
+
+    bool in_general_section = false;
+    std::unordered_set<std::string> found_keys;
+    std::istringstream input{std::string(raw_ini_text)};
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim(line);
+        if (line.empty() || line.starts_with(';') || line.starts_with('#')) {
+            continue;
+        }
+
+        if (line.front() == '[' && line.back() == ']') {
+            in_general_section = trim(line.substr(1, line.size() - 2)) == "general";
+            continue;
+        }
+
+        if (!in_general_section) {
+            continue;
+        }
+
+        const size_t separator = line.find('=');
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        const std::string key = trim(line.substr(0, separator));
+        if (!key.empty()) {
+            found_keys.insert(key);
+        }
+    }
+
+    for (const auto key : required_general_keys()) {
+        if (!found_keys.contains(std::string(key))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string general_key_value_from_config(const GeneralSettings& general, std::string_view key) {
+    if (key == "language") {
+        return general.language;
+    }
+    if (key == "playable_extensions") {
+        return general.playable_extensions;
+    }
+    if (key == "show_hidden") {
+        return general.show_hidden ? "true" : "false";
+    }
+    if (key == "sort_order") {
+        return general.sort_order;
+    }
+    if (key == "hardware_decode") {
+        return general.hardware_decode ? "true" : "false";
+    }
+    if (key == "short_seek") {
+        return std::to_string(general.short_seek);
+    }
+    if (key == "long_seek") {
+        return std::to_string(general.long_seek);
+    }
+    if (key == "y_hold_speed_multiplier") {
+        std::ostringstream value;
+        value << general.y_hold_speed_multiplier;
+        return value.str();
+    }
+    if (key == "continuous_seek_interval_ms") {
+        return std::to_string(general.continuous_seek_interval_ms);
+    }
+    if (key == "player_volume") {
+        return std::to_string(general.player_volume);
+    }
+    if (key == "player_volume_osd_duration_ms") {
+        return std::to_string(general.player_volume_osd_duration_ms);
+    }
+    if (key == "overlay_marquee_delay_ms") {
+        return std::to_string(general.overlay_marquee_delay_ms);
+    }
+    if (key == "use_preferred_audio_language") {
+        return general.use_preferred_audio_language ? "true" : "false";
+    }
+    if (key == "preferred_audio_language") {
+        return general.preferred_audio_language;
+    }
+    if (key == "use_preferred_subtitle_language") {
+        return general.use_preferred_subtitle_language ? "true" : "false";
+    }
+    if (key == "preferred_subtitle_language") {
+        return general.preferred_subtitle_language;
+    }
+    if (key == "demux_cache_sec") {
+        return std::to_string(general.demux_cache_sec);
+    }
+    if (key == "resume_start_percent") {
+        return std::to_string(general.resume_start_percent);
+    }
+    if (key == "resume_stop_percent") {
+        return std::to_string(general.resume_stop_percent);
+    }
+    if (key == "touch_enable") {
+        return general.touch_enable ? "true" : "false";
+    }
+    if (key == "touch_swipe_seek") {
+        return general.touch_swipe_seek ? "true" : "false";
+    }
+    return {};
+}
+
+#if 0
+bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const AppConfig& config) {
+    const std::string raw_ini_text = read_utf8_text_file(paths.config_file);
+    if (raw_ini_text.empty()) {
+        return false;
+    }
+
+    std::vector<std::string> lines;
+    lines.reserve(256);
+    {
+        std::istringstream input{raw_ini_text};
+        std::string line;
+        while (std::getline(input, line)) {
+            lines.push_back(line);
+        }
+    }
+
+    int general_start = -1;
+    int general_end = static_cast<int>(lines.size());
+    for (int index = 0; index < static_cast<int>(lines.size()); ++index) {
+        const std::string trimmed = trim(lines[static_cast<size_t>(index)]);
+        if (trimmed.empty()) {
+            continue;
+        }
+        if (trimmed.front() == '[' && trimmed.back() == ']') {
+            const std::string section_name = trim(trimmed.substr(1, trimmed.size() - 2));
+            if (general_start < 0) {
+                if (section_name == "general") {
+                    general_start = index;
+                }
+                continue;
+            }
+
+            general_end = index;
+            break;
+        }
+    }
+
+    if (general_start < 0) {
+        return false;
+    }
+
+    std::unordered_set<std::string> existing_keys;
+    for (int index = general_start + 1; index < general_end; ++index) {
+        const std::string trimmed = trim(lines[static_cast<size_t>(index)]);
+        if (trimmed.empty() || trimmed.starts_with(';') || trimmed.starts_with('#')) {
+            continue;
+        }
+        const size_t separator = trimmed.find('=');
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        const std::string key = trim(trimmed.substr(0, separator));
+        if (!key.empty()) {
+            existing_keys.insert(key);
+        }
+    }
+
+    std::vector<std::string> missing_lines;
+    for (const auto key : required_general_keys()) {
+        if (existing_keys.contains(std::string(key))) {
+            continue;
+        }
+        missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
+    }
+
+    if (missing_lines.empty()) {
+        return true;
+    }
+
+    std::vector<std::string> insert_lines;
+    insert_lines.reserve(missing_lines.size() + 2);
+    insert_lines.push_back("; Auto-backfilled missing [general] keys / 自动补齐缺失的 [general] 设置项");
+    for (const auto& line : missing_lines) {
+        insert_lines.push_back(line);
+    }
+
+    lines.insert(lines.begin() + general_end, insert_lines.begin(), insert_lines.end());
+
+    std::ofstream output(paths.config_file, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        return false;
+    }
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    output.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+    for (size_t index = 0; index < lines.size(); ++index) {
+        output << lines[index];
+        if (index + 1 < lines.size()) {
+            output << '\n';
+        }
+    }
+    std::vector<std::string> rendered_lines;
+    {
+        std::istringstream input(output.str());
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.find("Left overlay marquee delay") != std::string::npos) {
+                line = "; Left overlay marquee delay in milliseconds, 0 = immediate";
+            }
+            rendered_lines.push_back(std::move(line));
+        }
+    }
+
+    std::ostringstream rendered;
+    for (size_t index = 0; index < rendered_lines.size(); ++index) {
+        rendered << rendered_lines[index];
+        if (index + 1 < rendered_lines.size()) {
+            rendered << '\n';
+        }
+    }
+
+    std::ofstream file(paths.config_file, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    file.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+
+    const std::string normalized = normalize_line_endings_to_crlf(rendered.str());
+    file.write(normalized.data(), static_cast<std::streamsize>(normalized.size()));
+    return file.good();
+}
+
+}
+#endif
+
+bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfig& config) {
+    const std::string raw_ini_text = read_utf8_text_file(paths.config_file);
+    if (raw_ini_text.empty()) {
+        return false;
+    }
+
+    std::vector<std::string> lines;
+    lines.reserve(256);
+    {
+        std::istringstream input{raw_ini_text};
+        std::string line;
+        while (std::getline(input, line)) {
+            lines.push_back(line);
+        }
+    }
+
+    int general_start = -1;
+    int general_end = static_cast<int>(lines.size());
+    for (int index = 0; index < static_cast<int>(lines.size()); ++index) {
+        const std::string trimmed = trim(lines[static_cast<size_t>(index)]);
+        if (trimmed.empty()) {
+            continue;
+        }
+        if (trimmed.front() == '[' && trimmed.back() == ']') {
+            const std::string section_name = trim(trimmed.substr(1, trimmed.size() - 2));
+            if (general_start < 0) {
+                if (section_name == "general") {
+                    general_start = index;
+                }
+                continue;
+            }
+
+            general_end = index;
+            break;
+        }
+    }
+
+    if (general_start < 0) {
+        return false;
+    }
+
+    std::unordered_set<std::string> existing_keys;
+    for (int index = general_start + 1; index < general_end; ++index) {
+        const std::string trimmed = trim(lines[static_cast<size_t>(index)]);
+        if (trimmed.empty() || trimmed.starts_with(';') || trimmed.starts_with('#')) {
+            continue;
+        }
+        const size_t separator = trimmed.find('=');
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        const std::string key = trim(trimmed.substr(0, separator));
+        if (!key.empty()) {
+            existing_keys.insert(key);
+        }
+    }
+
+    std::vector<std::string> missing_lines;
+    for (const auto key : required_general_keys()) {
+        if (existing_keys.contains(std::string(key))) {
+            continue;
+        }
+        missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
+    }
+
+    if (missing_lines.empty()) {
+        return true;
+    }
+
+    std::vector<std::string> insert_lines;
+    insert_lines.reserve(missing_lines.size() + 1);
+    insert_lines.push_back("; Auto-backfilled missing [general] keys");
+    for (const auto& line : missing_lines) {
+        insert_lines.push_back(line);
+    }
+
+    lines.insert(lines.begin() + general_end, insert_lines.begin(), insert_lines.end());
+
+    std::ofstream output(paths.config_file, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        return false;
+    }
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    output.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+
+    std::ostringstream rendered;
+    for (size_t index = 0; index < lines.size(); ++index) {
+        rendered << lines[index];
+        if (index + 1 < lines.size()) {
+            rendered << '\n';
+        }
+    }
+
+    const std::string normalized = normalize_line_endings_to_crlf(rendered.str());
+    output.write(normalized.data(), static_cast<std::streamsize>(normalized.size()));
+    return output.good();
+}
+
 void load_config_from_document(const IniDocument& document, AppConfig& config) {
     config.general.language =
         get_value(document, "general", "language", config.general.language);
@@ -263,6 +674,18 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         config.general.player_volume = 0;
     } else if (config.general.player_volume > 100) {
         config.general.player_volume = 100;
+    }
+    config.general.player_volume_osd_duration_ms = parse_int(
+        get_value(document, "general", "player_volume_osd_duration_ms"),
+        config.general.player_volume_osd_duration_ms);
+    if (config.general.player_volume_osd_duration_ms < 0) {
+        config.general.player_volume_osd_duration_ms = 0;
+    }
+    config.general.overlay_marquee_delay_ms = parse_int(
+        get_value(document, "general", "overlay_marquee_delay_ms"),
+        config.general.overlay_marquee_delay_ms);
+    if (config.general.overlay_marquee_delay_ms < 0) {
+        config.general.overlay_marquee_delay_ms = 0;
     }
     config.general.use_preferred_audio_language = parse_bool(
         get_value(document, "general", "use_preferred_audio_language"),
@@ -358,13 +781,137 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     std::error_code error;
     std::filesystem::create_directories(paths.base_directory, error);
 
-    std::ofstream output(paths.config_file, std::ios::binary | std::ios::trunc);
-    if (!output.is_open()) {
+    std::ostringstream output;
+    output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
+    output << "; langs/ 会相对当前 ini 所在目录查找 / langs/ is searched relative to this ini file" << '\n';
+    output << '\n';
+    output << "; -----------软件参数--------------" << '\n';
+    output << "[general]" << '\n';
+    output << "; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page" << '\n';
+    output << "language=" << config.general.language << '\n';
+    output << '\n';
+    output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
+    output << "playable_extensions=" << config.general.playable_extensions << '\n';
+    output << '\n';
+    output << "; 是否显示隐藏文件 / Whether hidden files are shown" << '\n';
+    output << "show_hidden=" << (config.general.show_hidden ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
+    output << "sort_order=" << config.general.sort_order << '\n';
+    output << '\n';
+    output << "; ----下面是播放器设置---- / Player settings" << '\n';
+    output << "; 是否启用硬件解码 / Whether hardware decoding is enabled" << '\n';
+    output << "hardware_decode=" << (config.general.hardware_decode ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 短按快进/快退秒数 / Short seek step in seconds" << '\n';
+    output << "short_seek=" << config.general.short_seek << '\n';
+    output << '\n';
+    output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
+    output << "long_seek=" << config.general.long_seek << '\n';
+    output << '\n';
+    output << "; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell" << '\n';
+    output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
+    output << '\n';
+    output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
+    output << "continuous_seek_interval_ms=" << config.general.continuous_seek_interval_ms << '\n';
+    output << '\n';
+    output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
+    output << "use_preferred_audio_language=" << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 音轨语言代码，建议使用 ISO 639 风格，例如 eng、jpn、chi / Preferred audio language code, ISO 639 style recommended, for example: eng, jpn, chi" << '\n';
+    output << "preferred_audio_language=" << config.general.preferred_audio_language << '\n';
+    output << '\n';
+    output << "; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled" << '\n';
+    output << "use_preferred_subtitle_language=" << (config.general.use_preferred_subtitle_language ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 字幕语言代码，建议使用 ISO 639 风格 / Preferred subtitle language code, ISO 639 style recommended" << '\n';
+    output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
+    output << '\n';
+    output << "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only" << '\n';
+    output << "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
+    output << "demux_cache_sec=" << config.general.demux_cache_sec << '\n';
+    output << '\n';
+    output << "; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent" << '\n';
+    output << "resume_start_percent=" << config.general.resume_start_percent << '\n';
+    output << '\n';
+    output << "; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent" << '\n';
+    output << "resume_stop_percent=" << config.general.resume_stop_percent << '\n';
+    output << '\n';
+    output << "; 是否启用触摸操作 / Whether touch controls are enabled" << '\n';
+    output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 是否允许触摸滑动快进 / Whether touch swipe seek is enabled" << '\n';
+    output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
+    output << "player_volume=" << config.general.player_volume << '\n';
+    output << '\n';
+    output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
+    output << "player_volume_osd_duration_ms=" << config.general.player_volume_osd_duration_ms << '\n';
+    output << '\n';
+    output << "; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
+    output << "overlay_marquee_delay_ms=" << config.general.overlay_marquee_delay_ms << '\n';
+    output << '\n';
+    output << "; -----------IPTV--------------" << '\n';
+    output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';
+    output << "; 示例 / Example:" << '\n';
+    output << "; [iptv-main]" << '\n';
+    output << "; title=主 IPTV / Main IPTV" << '\n';
+    output << "; url=http://example.com/playlist.m3u" << '\n';
+    output << "; enabled=true" << '\n';
+    output << '\n';
+
+    for (const auto& source : config.iptv_sources) {
+        if (source.key.empty()) {
+            continue;
+        }
+
+        output << "[iptv-" << source.key << "]" << '\n';
+        output << "title=" << source.title << '\n';
+        output << "url=" << source.url << '\n';
+        output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << '\n';
+    }
+
+    output << "; -----------SMB--------------" << '\n';
+    output << "; SMB 源使用 [smb-xxx] 形式的分组名 / SMB sources use sections named [smb-xxx]" << '\n';
+    output << "; 示例 / Example:" << '\n';
+    output << "; [smb-media]" << '\n';
+    output << "; title=家庭 NAS / Home NAS" << '\n';
+    output << "; host=192.168.1.10" << '\n';
+    output << "; share=video" << '\n';
+    output << "; username=user" << '\n';
+    output << "; password=pass" << '\n';
+    output << "; enabled=true" << '\n';
+    output << '\n';
+
+    for (const auto& source : config.smb_sources) {
+        if (source.key.empty()) {
+            continue;
+        }
+
+        output << "[smb-" << source.key << "]" << '\n';
+        output << "title=" << source.title << '\n';
+        output << "host=" << source.host << '\n';
+        output << "share=" << source.share << '\n';
+        output << "username=" << source.username << '\n';
+        output << "password=" << source.password << '\n';
+        output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << '\n';
+    }
+
+    std::ofstream file(paths.config_file, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
         return false;
     }
 
     static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
-    output.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+    file.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+
+    const std::string normalized = normalize_line_endings_to_crlf(output.str());
+    file.write(normalized.data(), static_cast<std::streamsize>(normalized.size()));
+    return file.good();
+#if 0
 
     output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
     output << "; langs/ 会相对当前 ini 所在目录查找 / langs/ is searched relative to this ini file" << '\n';
@@ -413,6 +960,10 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
     output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
     output << "player_volume=" << config.general.player_volume << '\n';
+    output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
+    output << "player_volume_osd_duration_ms=" << config.general.player_volume_osd_duration_ms << '\n';
+    output << "; Left overlay marquee delay in milliseconds, 0 = immediate / 宸︿晶娴獥鏂囦欢鍚嶆粴鍔ㄥ欢杩燂紙姣锛夛紝0=绔嬪嵆" << '\n';
+    output << "overlay_marquee_delay_ms=" << config.general.overlay_marquee_delay_ms << '\n';
     output << '\n';
 
     output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';
@@ -461,7 +1012,38 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << '\n';
     }
 
-    return output.good();
+    std::vector<std::string> rendered_lines;
+    {
+        std::istringstream input(output.str());
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.find("Left overlay marquee delay") != std::string::npos) {
+                line = "; Left overlay marquee delay in milliseconds, 0 = immediate";
+            }
+            rendered_lines.push_back(std::move(line));
+        }
+    }
+
+    std::ostringstream rendered;
+    for (size_t index = 0; index < rendered_lines.size(); ++index) {
+        rendered << rendered_lines[index];
+        if (index + 1 < rendered_lines.size()) {
+            rendered << '\n';
+        }
+    }
+
+    std::ofstream file(paths.config_file, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    static constexpr std::array<unsigned char, 3> utf8Bom = {0xEF, 0xBB, 0xBF};
+    file.write(reinterpret_cast<const char*>(utf8Bom.data()), static_cast<std::streamsize>(utf8Bom.size()));
+
+    const std::string normalized = normalize_line_endings_to_crlf(rendered.str());
+    file.write(normalized.data(), static_cast<std::streamsize>(normalized.size()));
+    return file.good();
+#endif
 }
 
 }  // namespace
@@ -480,14 +1062,19 @@ bool AppConfigStore::initialize() {
     }
 
     store.paths = resolve_paths();
-
     if (path_exists(store.paths.config_file)) {
         const IniDocument document = parse_ini(store.paths.config_file);
+        const std::string raw_ini_text = read_utf8_text_file(store.paths.config_file);
         load_config_from_document(document, store.config);
         store.loadedFromDisk = true;
         store.initialized = true;
-        if (document.contains("iptv") || document.contains("smb")) {
+        const bool needs_legacy_upgrade = document.contains("iptv") || document.contains("smb");
+        const bool needs_general_backfill =
+            !has_required_general_keys(document) || !has_required_general_keys_in_raw_text(raw_ini_text);
+        if (needs_legacy_upgrade) {
             write_config_file(store.paths, store.config);
+        } else if (needs_general_backfill) {
+            backfill_missing_general_keys_in_file(store.paths, store.config);
         }
         return true;
     }

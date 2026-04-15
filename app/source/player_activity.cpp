@@ -9,10 +9,10 @@
 #include <borealis/core/application.hpp>
 #include <borealis/core/box.hpp>
 #include <borealis/core/i18n.hpp>
-#include <borealis/core/thread.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/cells/cell_detail.hpp>
 #include <borealis/views/dialog.hpp>
+#include <borealis/views/dropdown.hpp>
 #include <borealis/views/header.hpp>
 #include <borealis/views/hint.hpp>
 #include <borealis/views/label.hpp>
@@ -182,6 +182,14 @@ bool left_stick_left_pressed(const brls::ControllerState& state) {
 bool left_stick_right_pressed(const brls::ControllerState& state) {
     return state.axes[brls::LEFT_X] > 0.55f;
 }
+
+bool right_stick_left_pressed(const brls::ControllerState& state) {
+    return state.axes[brls::RIGHT_X] < -0.55f;
+}
+
+bool right_stick_right_pressed(const brls::ControllerState& state) {
+    return state.axes[brls::RIGHT_X] > 0.55f;
+}
 #endif
 
 #if defined(__SWITCH__)
@@ -318,35 +326,6 @@ void PlayerActivity::willAppear(bool resetState) {
         true,
         brls::SOUND_CLICK);
 
-    registerAction(
-        tr("actions/disable"),
-        brls::BUTTON_LEFT,
-        [this](brls::View*) { return handle_left_action(); },
-        true,
-        false,
-        brls::SOUND_CLICK);
-    registerAction(
-        tr("actions/enable"),
-        brls::BUTTON_NAV_LEFT,
-        [this](brls::View*) { return handle_left_action(); },
-        true,
-        false,
-        brls::SOUND_CLICK);
-    registerAction(
-        tr("actions/disable"),
-        brls::BUTTON_RIGHT,
-        [this](brls::View*) { return handle_right_action(); },
-        true,
-        false,
-        brls::SOUND_NONE);
-    registerAction(
-        tr("actions/disable"),
-        brls::BUTTON_NAV_RIGHT,
-        [this](brls::View*) { return handle_right_action(); },
-        true,
-        false,
-        brls::SOUND_NONE);
-
     this->runtime_tick.setPeriod(16);
     this->runtime_tick.setCallback([this]() {
         this->tick_runtime_controls();
@@ -408,6 +387,15 @@ void PlayerActivity::initialize_switch_player_state() {
     this->video_surface = dynamic_cast<PlayerVideoSurface*>(this->getView("switchbox/player_surface"));
     if (this->video_surface != nullptr) {
         brls::Application::giveFocus(this->video_surface);
+        this->video_surface->set_pause_icon_tap_handler([this]() {
+            if (!switchbox::core::AppConfigStore::current().general.touch_enable) {
+                return;
+            }
+            if (!switchbox::core::switch_mpv_is_paused()) {
+                return;
+            }
+            switchbox::core::switch_mpv_toggle_pause();
+        });
     }
 
     if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
@@ -458,11 +446,14 @@ void PlayerActivity::save_player_volume_if_needed() {
 bool PlayerActivity::handle_a_action() {
     if (this->controls_visible) {
         execute_controls_action(this->controls_selected_index);
-        if (this->controls_selected_index == 2) {
-            this->last_controls_repeat_action = -1;
-        } else {
+        if (this->controls_selected_index == 0 ||
+            this->controls_selected_index == 1 ||
+            this->controls_selected_index == 3 ||
+            this->controls_selected_index == 4) {
             this->last_controls_repeat_action = this->controls_selected_index;
             this->last_controls_repeat_time = std::chrono::steady_clock::now();
+        } else {
+            this->last_controls_repeat_action = -1;
         }
         return true;
     }
@@ -493,6 +484,9 @@ bool PlayerActivity::handle_b_action() {
 }
 
 bool PlayerActivity::handle_x_action() {
+    if (this->controls_visible || this->overlay_visible) {
+        return true;
+    }
     confirm_delete_current_file();
     return true;
 }
@@ -508,7 +502,9 @@ bool PlayerActivity::handle_plus_action() {
 
 bool PlayerActivity::handle_left_action() {
     if (this->controls_visible) {
-        move_controls_selection(-1);
+        if (should_accept_controls_navigation_step(-1)) {
+            move_controls_selection(-1);
+        }
         return true;
     }
 
@@ -526,7 +522,9 @@ bool PlayerActivity::handle_left_action() {
 
 bool PlayerActivity::handle_right_action() {
     if (this->controls_visible) {
-        move_controls_selection(1);
+        if (should_accept_controls_navigation_step(1)) {
+            move_controls_selection(1);
+        }
         return true;
     }
 
@@ -591,6 +589,137 @@ bool PlayerActivity::handle_long_forward() {
     }
 
     return seek_relative(static_cast<double>(switchbox::core::AppConfigStore::current().general.long_seek));
+}
+
+void PlayerActivity::refresh_track_selector_state() {
+    this->audio_track_options.clear();
+    this->subtitle_track_options.clear();
+
+    const auto audio_tracks = switchbox::core::switch_mpv_list_audio_tracks();
+    this->audio_track_options.reserve(audio_tracks.size());
+    this->audio_track_selectable = !audio_tracks.empty();
+    this->selected_audio_track_label = tr("player_page/audio/no_options");
+
+    for (const auto& track : audio_tracks) {
+        this->audio_track_options.push_back({track.id, track.label, track.selected});
+        if (track.selected) {
+            this->selected_audio_track_label = track.label;
+        }
+    }
+    if (this->audio_track_selectable && this->selected_audio_track_label == tr("player_page/audio/no_options")) {
+        this->selected_audio_track_label = this->audio_track_options.front().label;
+    }
+
+    const auto subtitle_tracks = switchbox::core::switch_mpv_list_subtitle_tracks();
+    this->subtitle_track_selectable = !subtitle_tracks.empty();
+    this->selected_subtitle_track_label = tr("player_page/subtitle/no_options");
+
+    if (this->subtitle_track_selectable) {
+        bool selected_found = false;
+        this->subtitle_track_options.push_back({-1, tr("player_page/subtitle/off"), false});
+        for (const auto& track : subtitle_tracks) {
+            this->subtitle_track_options.push_back({track.id, track.label, track.selected});
+            if (track.selected) {
+                selected_found = true;
+                this->selected_subtitle_track_label = track.label;
+            }
+        }
+
+        if (!selected_found) {
+            this->subtitle_track_options.front().selected = true;
+            this->selected_subtitle_track_label = this->subtitle_track_options.front().label;
+        }
+    }
+}
+
+bool PlayerActivity::open_audio_track_selector() {
+    if (!this->audio_track_selectable || this->audio_track_options.empty()) {
+        brls::Application::notify(tr("player_page/audio/no_options"));
+        return true;
+    }
+
+    std::vector<std::string> labels;
+    labels.reserve(this->audio_track_options.size());
+    int selected_index = 0;
+    for (int index = 0; index < static_cast<int>(this->audio_track_options.size()); ++index) {
+        labels.push_back(this->audio_track_options[static_cast<size_t>(index)].label);
+        if (this->audio_track_options[static_cast<size_t>(index)].selected) {
+            selected_index = index;
+        }
+    }
+
+    const auto options = this->audio_track_options;
+    auto* dropdown = new brls::Dropdown(
+        tr("player_page/audio/title"),
+        labels,
+        [](int) {},
+        selected_index,
+        [this, options](int selection) {
+            if (selection < 0 || selection >= static_cast<int>(options.size())) {
+                return;
+            }
+
+            std::string error_message;
+            if (!switchbox::core::switch_mpv_set_audio_track(
+                    options[static_cast<size_t>(selection)].id,
+                    error_message)) {
+                if (error_message.empty()) {
+                    error_message = tr("player_page/audio/no_options");
+                }
+                brls::Application::notify(error_message);
+                return;
+            }
+
+            this->refresh_track_selector_state();
+            this->sync_overlay_to_surface();
+        });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
+    return true;
+}
+
+bool PlayerActivity::open_subtitle_track_selector() {
+    if (!this->subtitle_track_selectable || this->subtitle_track_options.empty()) {
+        brls::Application::notify(tr("player_page/subtitle/no_options"));
+        return true;
+    }
+
+    std::vector<std::string> labels;
+    labels.reserve(this->subtitle_track_options.size());
+    int selected_index = 0;
+    for (int index = 0; index < static_cast<int>(this->subtitle_track_options.size()); ++index) {
+        labels.push_back(this->subtitle_track_options[static_cast<size_t>(index)].label);
+        if (this->subtitle_track_options[static_cast<size_t>(index)].selected) {
+            selected_index = index;
+        }
+    }
+
+    const auto options = this->subtitle_track_options;
+    auto* dropdown = new brls::Dropdown(
+        tr("player_page/subtitle/title"),
+        labels,
+        [](int) {},
+        selected_index,
+        [this, options](int selection) {
+            if (selection < 0 || selection >= static_cast<int>(options.size())) {
+                return;
+            }
+
+            std::string error_message;
+            if (!switchbox::core::switch_mpv_set_subtitle_track(
+                    options[static_cast<size_t>(selection)].id,
+                    error_message)) {
+                if (error_message.empty()) {
+                    error_message = tr("player_page/subtitle/no_options");
+                }
+                brls::Application::notify(error_message);
+                return;
+            }
+
+            this->refresh_track_selector_state();
+            this->sync_overlay_to_surface();
+        });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
+    return true;
 }
 
 void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
@@ -658,7 +787,10 @@ void PlayerActivity::sync_overlay_to_surface() {
         return;
     }
 
+    refresh_track_selector_state();
+
     PlayerOverlayViewModel model;
+    const auto& general = switchbox::core::AppConfigStore::current().general;
     model.visible = this->overlay_visible;
     model.path = this->has_smb_source ? switchbox::core::smb_display_path(this->smb_source, this->overlay_relative_path)
                                       : this->target.source_label;
@@ -666,8 +798,16 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.selected_index = this->overlay_selected_index;
     model.controls_visible = this->controls_visible;
     model.controls_selected_index = this->controls_selected_index;
-    model.short_seek_seconds = switchbox::core::AppConfigStore::current().general.short_seek;
-    model.long_seek_seconds = switchbox::core::AppConfigStore::current().general.long_seek;
+    model.short_seek_seconds = general.short_seek;
+    model.long_seek_seconds = general.long_seek;
+    model.audio_track_label = this->selected_audio_track_label;
+    model.audio_track_selectable = this->audio_track_selectable;
+    model.subtitle_track_label = this->selected_subtitle_track_label;
+    model.subtitle_track_selectable = this->subtitle_track_selectable;
+    model.overlay_marquee_delay_ms = general.overlay_marquee_delay_ms;
+    model.touch_enable = general.touch_enable;
+    model.volume_osd_visible = this->volume_osd_visible && !this->controls_visible && !this->overlay_visible;
+    model.volume_osd_value = std::clamp(this->session_volume, 0, 100);
     model.entries.reserve(this->overlay_entries.size());
     for (const auto& entry : this->overlay_entries) {
         model.entries.push_back({
@@ -733,6 +873,10 @@ void PlayerActivity::overlay_go_parent() {
 void PlayerActivity::toggle_overlay() {
     this->overlay_visible = !this->overlay_visible;
     if (this->overlay_visible) {
+        this->volume_osd_visible = false;
+        this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    }
+    if (this->overlay_visible) {
         refresh_overlay_entries(true);
     } else {
         sync_overlay_to_surface();
@@ -743,14 +887,39 @@ void PlayerActivity::toggle_controls_panel() {
     this->controls_visible = !this->controls_visible;
     this->last_controls_repeat_action = -1;
     this->last_controls_repeat_time = std::chrono::steady_clock::time_point::min();
+    this->last_controls_nav_direction = 0;
+    this->last_controls_nav_time = std::chrono::steady_clock::time_point::min();
+    if (this->controls_visible) {
+        this->volume_osd_visible = false;
+        this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    }
     if (this->controls_visible && this->overlay_visible) {
         this->overlay_visible = false;
     }
     sync_overlay_to_surface();
 }
 
+bool PlayerActivity::should_accept_controls_navigation_step(int direction) {
+    const auto now = std::chrono::steady_clock::now();
+    if (this->last_controls_nav_time == std::chrono::steady_clock::time_point::min()) {
+        this->last_controls_nav_time = now;
+        this->last_controls_nav_direction = direction;
+        return true;
+    }
+
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - this->last_controls_nav_time).count();
+    if (direction == this->last_controls_nav_direction && elapsed_ms < 90) {
+        return false;
+    }
+
+    this->last_controls_nav_time = now;
+    this->last_controls_nav_direction = direction;
+    return true;
+}
+
 void PlayerActivity::move_controls_selection(int delta) {
-    constexpr int kButtonCount = 5;
+    constexpr int kButtonCount = 7;
     int next = this->controls_selected_index;
     if (next < 0 || next >= kButtonCount) {
         next = 2;
@@ -776,6 +945,10 @@ bool PlayerActivity::execute_controls_action(int action_index) {
             return seek_relative(static_cast<double>(general.short_seek));
         case 4:
             return seek_relative(static_cast<double>(general.long_seek));
+        case 5:
+            return open_audio_track_selector();
+        case 6:
+            return open_subtitle_track_selector();
         default:
             return false;
     }
@@ -786,6 +959,7 @@ void PlayerActivity::tick_runtime_controls() {
     apply_controls_hold_action_if_needed();
     apply_hold_speed_if_needed();
     apply_continuous_seek_if_needed();
+    update_volume_osd_timeout();
 }
 
 void PlayerActivity::apply_directional_input_fallback_if_needed() {
@@ -793,8 +967,14 @@ void PlayerActivity::apply_directional_input_fallback_if_needed() {
 
     const bool up_pressed = left_stick_up_pressed(controller);
     const bool down_pressed = left_stick_down_pressed(controller);
-    const bool left_pressed = left_stick_left_pressed(controller);
-    const bool right_pressed = left_stick_right_pressed(controller);
+    const bool left_pressed =
+        direction_left_pressed(controller) ||
+        left_stick_left_pressed(controller) ||
+        right_stick_left_pressed(controller);
+    const bool right_pressed =
+        direction_right_pressed(controller) ||
+        left_stick_right_pressed(controller) ||
+        right_stick_right_pressed(controller);
 
     if (up_pressed && !this->dpad_left_stick_up_pressed) {
         handle_up_action();
@@ -830,7 +1010,10 @@ void PlayerActivity::apply_controls_hold_action_if_needed() {
         return;
     }
 
-    if (this->controls_selected_index == 2) {
+    if (!(this->controls_selected_index == 0 ||
+          this->controls_selected_index == 1 ||
+          this->controls_selected_index == 3 ||
+          this->controls_selected_index == 4)) {
         this->last_controls_repeat_action = -1;
         return;
     }
@@ -939,6 +1122,27 @@ void PlayerActivity::apply_hold_speed_if_needed() {
     }
 }
 
+void PlayerActivity::update_volume_osd_timeout() {
+    if (!this->volume_osd_visible) {
+        return;
+    }
+
+    if (this->controls_visible || this->overlay_visible) {
+        this->volume_osd_visible = false;
+        this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+        sync_overlay_to_surface();
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (this->volume_osd_hide_time != std::chrono::steady_clock::time_point::min() &&
+        now >= this->volume_osd_hide_time) {
+        this->volume_osd_visible = false;
+        this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+        sync_overlay_to_surface();
+    }
+}
+
 void PlayerActivity::adjust_volume(int delta) {
     const int next_volume = std::clamp(this->session_volume + delta, 0, 100);
     if (next_volume == this->session_volume) {
@@ -948,6 +1152,18 @@ void PlayerActivity::adjust_volume(int delta) {
     if (switchbox::core::switch_mpv_set_volume(next_volume)) {
         this->session_volume = next_volume;
         this->player_volume_dirty = true;
+
+        if (!this->controls_visible && !this->overlay_visible) {
+            const int duration_ms = std::max(
+                0,
+                switchbox::core::AppConfigStore::current().general.player_volume_osd_duration_ms);
+            this->volume_osd_visible = duration_ms > 0;
+            this->volume_osd_hide_time =
+                duration_ms > 0 ? (std::chrono::steady_clock::now() + std::chrono::milliseconds(duration_ms))
+                                : std::chrono::steady_clock::time_point::min();
+        }
+
+        sync_overlay_to_surface();
     }
 }
 
@@ -974,33 +1190,22 @@ void PlayerActivity::confirm_delete_current_file() {
         const std::string deleting_relative_path = this->current_relative_path;
         const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
         const std::string next_focus = find_next_focus_after_delete();
-        brls::Application::popActivity(
-            brls::TransitionAnimation::FADE,
-            [source, deleting_relative_path, directory, next_focus]() {
-                std::string error_message;
-                if (!switchbox::core::delete_smb_file(source, deleting_relative_path, error_message)) {
-                    if (error_message.empty()) {
-                        error_message = "Failed to delete SMB file.";
-                    }
-                    auto* failed = new brls::Dialog(error_message);
-                    failed->open();
-                    return;
-                }
+        std::string error_message;
+        if (!switchbox::core::delete_smb_file(source, deleting_relative_path, error_message)) {
+            if (error_message.empty()) {
+                error_message = "Failed to delete SMB file.";
+            }
+            auto* failed = new brls::Dialog(error_message);
+            failed->open();
+            return;
+        }
 
-                brls::sync([directory, next_focus]() {
-                    const auto stack = brls::Application::getActivitiesStack();
-                    if (stack.empty()) {
-                        return;
-                    }
-
-                    auto* browser = dynamic_cast<SmbBrowserActivity*>(stack.back());
-                    if (browser == nullptr) {
-                        return;
-                    }
-
-                    browser->refresh_after_player_delete(directory, next_focus);
-                });
-            });
+        SmbBrowserActivity::request_focus_after_return(
+            source,
+            directory,
+            next_focus,
+            deleting_relative_path);
+        brls::Application::popActivity(brls::TransitionAnimation::FADE);
     });
     dialog->open();
 }

@@ -735,6 +735,28 @@ bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
     return true;
 }
 
+bool exit_settings_with_confirm_if_needed(const std::shared_ptr<SettingsDraftState>& state) {
+    sync_dirty_state(state);
+    if (!state->dirty) {
+        brls::Application::popActivity(brls::TransitionAnimation::FADE);
+        return true;
+    }
+
+    auto* dialog = new brls::Dialog(tr("settings_page/exit_confirm"));
+    dialog->addButton(
+        tr("actions/save"),
+        [state]() {
+            (void)apply_draft_changes(state);
+        });
+    dialog->addButton(
+        tr("actions/discard"),
+        []() {
+            brls::Application::popActivity(brls::TransitionAnimation::FADE);
+        });
+    dialog->open();
+    return true;
+}
+
 void open_language_dropdown(const std::shared_ptr<SettingsDraftState>& state) {
     const auto& paths = switchbox::core::AppConfigStore::paths();
     const auto language_state = switchbox::core::resolve_language_state(paths, state->draft_config);
@@ -1360,6 +1382,15 @@ brls::View* create_settings_content() {
         brls::BUTTON_START,
         [state](brls::View*) {
             return apply_draft_changes(state);
+        },
+        false,
+        false,
+        brls::SOUND_CLICK);
+    frame->registerAction(
+        brls::getStr("hints/back"),
+        brls::BUTTON_B,
+        [state](brls::View*) {
+            return exit_settings_with_confirm_if_needed(state);
         },
         false,
         false,

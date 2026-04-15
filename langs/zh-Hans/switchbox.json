@@ -6,9 +6,11 @@
         "actions": {
             "settings": "\u8bbe\u7f6e",
             "save": "\u4fdd\u5b58",
+            "discard": "\u653e\u5f03",
             "enable": "\u542f\u7528",
             "disable": "\u505c\u7528",
-            "delete": "\u5220\u9664"
+            "delete": "\u5220\u9664",
+            "home": "\u9996\u9875"
         },
         "smb_browser": {
             "extensions_hint": "\u5f53\u524d\u663e\u793a\u7684\u6269\u5c55\u540d\uff1a{0}",
@@ -24,6 +26,7 @@
             "file_prefix": "[\u5a92\u4f53] {0}",
             "folder_detail": "\u76ee\u5f55",
             "file_detail": "\u53ef\u64ad\u653e\u6587\u4ef6 \u00b7 {0}",
+            "delete_directory_not_supported": "\u6682\u4e0d\u652f\u6301\u5220\u9664\u6587\u4ef6\u5939\u3002",
             "player_stub": {
                 "checkpoints": {
                     "1": "\u5148\u628a\u9009\u4e2d\u7684 SMB \u6587\u4ef6\u63a5\u6210\u771f\u5b9e\u7684\u6d41\u8bfb\u53d6\u5165\u53e3",
@@ -141,6 +144,16 @@
                 "start": "\u64ad\u653e\u6d4b\u8bd5",
                 "toggle_pause": "\u64ad\u653e/\u6682\u505c"
             },
+            "volume_label": "\u97f3\u91cf: {0}",
+            "audio": {
+                "title": "\u97f3\u8f68",
+                "no_options": "\u65e0\u53ef\u9009\u97f3\u8f68"
+            },
+            "subtitle": {
+                "title": "\u5b57\u5e55",
+                "no_options": "\u65e0\u53ef\u9009\u5b57\u5e55",
+                "off": "\u5173\u95ed"
+            },
             "launch_started": "\u5df2\u53d1\u8d77\u64ad\u653e\u8bf7\u6c42\u3002",
             "status": {
                 "title": "\u5f53\u524d\u72b6\u6001",
@@ -184,6 +197,7 @@
             "summary": "\u8bbe\u7f6e\u4f1a\u5148\u4f5c\u4e3a\u8349\u7a3f\u4fdd\u7559\u5728\u8fd9\u4e2a\u9875\u9762\u3002\u4ece\u4e0b\u62c9\u6846\u9009\u62e9\u5b8c\u8fd4\u56de\u540e\uff0c\u6309 + \u624d\u4f1a\u5199\u5165\u5e76\u751f\u6548\uff1b\u6309 B \u5219\u653e\u5f03\u672c\u6b21\u4fee\u6539\u5e76\u9000\u51fa\u3002",
             "save_success": "\u8bbe\u5b9a\u5df2\u4fdd\u5b58\u3002",
             "save_failed": "\u8bbe\u5b9a\u4fdd\u5b58\u5931\u8d25\u3002",
+            "exit_confirm": "\u5b58\u5728\u672a\u4fdd\u5b58\u4fee\u6539\uff0c\u662f\u5426\u4fdd\u5b58\u540e\u9000\u51fa\uff1f",
             "common": {
                 "not_set": "\u672a\u8bbe\u7f6e",
                 "edit_section": "\u7f16\u8f91\u5f53\u524d\u6761\u76ee",

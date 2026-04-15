@@ -23,16 +23,18 @@ struct GeneralSettings {
     int short_seek = 10;
     int long_seek = 60;
     float y_hold_speed_multiplier = 2.0f;
-    int continuous_seek_interval_ms = 100;
-    int player_volume = 80;
+    int continuous_seek_interval_ms = 300;
+    int player_volume = 50;
+    int player_volume_osd_duration_ms = 500;
+    int overlay_marquee_delay_ms = 500;
     bool use_preferred_audio_language = false;
     std::string preferred_audio_language = "eng";
     bool use_preferred_subtitle_language = false;
     std::string preferred_subtitle_language = "eng";
-    int demux_cache_sec = 20;
+    int demux_cache_sec = 120;
     int resume_start_percent = 5;
     int resume_stop_percent = 5;
-    bool touch_enable = false;
+    bool touch_enable = true;
     bool touch_swipe_seek = false;
 };
 

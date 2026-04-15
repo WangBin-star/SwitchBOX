@@ -49,17 +49,28 @@ private:
     void toggle_overlay();
     void toggle_controls_panel();
     void move_controls_selection(int delta);
+    bool should_accept_controls_navigation_step(int direction);
     bool execute_controls_action(int action_index);
     void tick_runtime_controls();
     void apply_directional_input_fallback_if_needed();
     void apply_controls_hold_action_if_needed();
     void apply_continuous_seek_if_needed();
     void apply_hold_speed_if_needed();
+    void update_volume_osd_timeout();
     void adjust_volume(int delta);
     bool seek_relative(double seconds);
+    void refresh_track_selector_state();
+    bool open_audio_track_selector();
+    bool open_subtitle_track_selector();
     void confirm_delete_current_file();
     std::string find_next_focus_after_delete() const;
     switchbox::core::SmbSourceSettings make_smb_source_from_target() const;
+
+    struct TrackSelectionState {
+        int id = -1;
+        std::string label;
+        bool selected = false;
+    };
 
     switchbox::core::SmbSourceSettings smb_source;
     bool has_smb_source = false;
@@ -75,12 +86,22 @@ private:
     bool player_volume_dirty = false;
     int session_volume = 80;
     double applied_speed = 1.0;
+    std::vector<TrackSelectionState> audio_track_options;
+    std::vector<TrackSelectionState> subtitle_track_options;
+    std::string selected_audio_track_label;
+    std::string selected_subtitle_track_label;
+    bool audio_track_selectable = false;
+    bool subtitle_track_selectable = false;
     bool runtime_initialized = false;
     brls::RepeatingTimer runtime_tick;
     std::chrono::steady_clock::time_point last_continuous_seek_time = std::chrono::steady_clock::time_point::min();
     int last_continuous_seek_mode = 0;
     std::chrono::steady_clock::time_point last_controls_repeat_time = std::chrono::steady_clock::time_point::min();
     int last_controls_repeat_action = -1;
+    std::chrono::steady_clock::time_point last_controls_nav_time = std::chrono::steady_clock::time_point::min();
+    int last_controls_nav_direction = 0;
+    bool volume_osd_visible = false;
+    std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     bool dpad_left_stick_up_pressed = false;
     bool dpad_left_stick_down_pressed = false;
     bool dpad_left_stick_left_pressed = false;

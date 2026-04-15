@@ -523,6 +523,60 @@ bool entry_name_less(const SmbBrowserEntry& lhs, const SmbBrowserEntry& rhs) {
     return to_lower(lhs.name) < to_lower(rhs.name);
 }
 
+#ifdef __SWITCH__
+bool delete_smb_path_recursive(
+    smb2_context* smb2,
+    const std::string& smb2_path,
+    std::string& error_message) {
+    if (smb2 == nullptr || smb2_path.empty()) {
+        error_message = "SMB file path is empty.";
+        return false;
+    }
+
+    smb2_stat_64 entry_stat{};
+    if (smb2_stat(smb2, smb2_path.c_str(), &entry_stat) < 0) {
+        error_message = smb2_get_error(smb2);
+        return false;
+    }
+
+    if (entry_stat.smb2_type != SMB2_TYPE_DIRECTORY) {
+        if (smb2_unlink(smb2, smb2_path.c_str()) < 0) {
+            error_message = smb2_get_error(smb2);
+            return false;
+        }
+        return true;
+    }
+
+    std::unique_ptr<smb2dir, Smb2DirectoryDeleter> directory(
+        smb2_opendir(smb2, smb2_path.c_str()),
+        Smb2DirectoryDeleter{smb2});
+    if (!directory) {
+        error_message = smb2_get_error(smb2);
+        return false;
+    }
+
+    while (auto* entry = smb2_readdir(smb2, directory.get())) {
+        const std::string name = entry->name == nullptr ? "" : entry->name;
+        if (name.empty() || name == "." || name == "..") {
+            continue;
+        }
+
+        const std::string child_path = smb2_path + "/" + name;
+        if (!delete_smb_path_recursive(smb2, child_path, error_message)) {
+            return false;
+        }
+    }
+
+    directory.reset();
+    if (smb2_rmdir(smb2, smb2_path.c_str()) < 0) {
+        error_message = smb2_get_error(smb2);
+        return false;
+    }
+
+    return true;
+}
+#endif
+
 }  // namespace
 
 std::vector<std::string> normalize_playable_extensions(const std::string& raw_extensions) {
@@ -892,8 +946,8 @@ bool delete_smb_file(
             append_relative_segments(root_path, split_relative_segments(effective_relative_path));
 
         std::error_code remove_error;
-        const bool removed = std::filesystem::remove(target_path, remove_error);
-        if (!removed || remove_error) {
+        const std::uintmax_t removed_count = std::filesystem::remove_all(target_path, remove_error);
+        if (remove_error || removed_count == 0) {
             error_message = "Failed to delete SMB file: " + path_string(target_path);
             return false;
         }
@@ -948,9 +1002,7 @@ bool delete_smb_file(
             return false;
         }
 
-        const int unlink_result = smb2_unlink(smb2.get(), smb2_path.c_str());
-        if (unlink_result < 0) {
-            error_message = smb2_get_error(smb2.get());
+        if (!delete_smb_path_recursive(smb2.get(), smb2_path, error_message)) {
             smb2_disconnect_share(smb2.get());
             return false;
         }

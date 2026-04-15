@@ -48,15 +48,7 @@ std::string path_string(const std::filesystem::path& path) {
 }
 
 void append_debug_log(const std::string& message) {
-    const std::filesystem::path log_path = runtime_base_directory() / "playback-debug.log";
-    FILE* file = std::fopen(path_string(log_path).c_str(), "a");
-    if (file == nullptr) {
-        return;
-    }
-
-    std::fputs(message.c_str(), file);
-    std::fputs("\n", file);
-    std::fclose(file);
+    (void)message;
 }
 
 std::string trim(std::string value) {
@@ -159,6 +151,80 @@ std::string build_smb2_file_path(const PlaybackTarget::SmbLocator& locator) {
     const auto relative = split_relative_segments(locator.relative_path);
     segments.insert(segments.end(), relative.begin(), relative.end());
     return join_segments(segments);
+}
+
+const mpv_node* node_map_find(const mpv_node_list* map, const char* key) {
+    if (map == nullptr || key == nullptr) {
+        return nullptr;
+    }
+
+    for (int index = 0; index < map->num; ++index) {
+        if (map->keys == nullptr || map->values == nullptr || map->keys[index] == nullptr) {
+            continue;
+        }
+        if (std::strcmp(map->keys[index], key) == 0) {
+            return &map->values[index];
+        }
+    }
+
+    return nullptr;
+}
+
+std::string node_to_string(const mpv_node* node) {
+    if (node == nullptr) {
+        return {};
+    }
+
+    if (node->format == MPV_FORMAT_STRING && node->u.string != nullptr) {
+        return node->u.string;
+    }
+
+    return {};
+}
+
+bool node_to_bool(const mpv_node* node, bool fallback = false) {
+    if (node == nullptr) {
+        return fallback;
+    }
+
+    if (node->format == MPV_FORMAT_FLAG) {
+        return node->u.flag != 0;
+    }
+
+    if (node->format == MPV_FORMAT_INT64) {
+        return node->u.int64 != 0;
+    }
+
+    return fallback;
+}
+
+bool node_to_int(const mpv_node* node, int& output) {
+    if (node == nullptr) {
+        return false;
+    }
+
+    if (node->format == MPV_FORMAT_INT64) {
+        output = static_cast<int>(node->u.int64);
+        return true;
+    }
+
+    return false;
+}
+
+std::string build_track_label(const mpv_node_list* map, int id) {
+    const std::string title = trim(node_to_string(node_map_find(map, "title")));
+    const std::string lang = trim(node_to_string(node_map_find(map, "lang")));
+
+    if (!title.empty() && !lang.empty()) {
+        return title + " (" + lang + ")";
+    }
+    if (!title.empty()) {
+        return title;
+    }
+    if (!lang.empty()) {
+        return lang;
+    }
+    return "Track " + std::to_string(id);
 }
 
 struct Smb2ContextDeleter {
@@ -456,6 +522,96 @@ public:
 
     int get_volume() const {
         return this->playback_volume;
+    }
+
+    std::vector<MpvTrackOption> list_tracks_by_type(const char* track_type) {
+        std::vector<MpvTrackOption> options;
+        if (this->handle == nullptr || track_type == nullptr) {
+            return options;
+        }
+
+        mpv_node root {};
+        const int rc = mpv_get_property(this->handle, "track-list", MPV_FORMAT_NODE, &root);
+        if (rc < 0) {
+            return options;
+        }
+
+        if (root.format == MPV_FORMAT_NODE_ARRAY && root.u.list != nullptr) {
+            const mpv_node_list* array = root.u.list;
+            for (int index = 0; index < array->num; ++index) {
+                const mpv_node& item = array->values[index];
+                if (item.format != MPV_FORMAT_NODE_MAP || item.u.list == nullptr) {
+                    continue;
+                }
+
+                const mpv_node_list* map = item.u.list;
+                const std::string type = node_to_string(node_map_find(map, "type"));
+                if (type != track_type) {
+                    continue;
+                }
+
+                int id = -1;
+                if (!node_to_int(node_map_find(map, "id"), id)) {
+                    continue;
+                }
+
+                options.push_back({
+                    .id = id,
+                    .label = build_track_label(map, id),
+                    .selected = node_to_bool(node_map_find(map, "selected")),
+                });
+            }
+        }
+
+        mpv_free_node_contents(&root);
+        return options;
+    }
+
+    std::vector<MpvTrackOption> list_audio_tracks() {
+        return list_tracks_by_type("audio");
+    }
+
+    std::vector<MpvTrackOption> list_subtitle_tracks() {
+        return list_tracks_by_type("sub");
+    }
+
+    bool set_audio_track(int id, std::string& error_message) {
+        if (this->handle == nullptr) {
+            error_message = "Player backend is not ready.";
+            return false;
+        }
+
+        int64_t value = static_cast<int64_t>(id);
+        const int rc = mpv_set_property(this->handle, "aid", MPV_FORMAT_INT64, &value);
+        if (rc < 0) {
+            error_message = mpv_error_string(rc);
+            return false;
+        }
+
+        process_pending_events();
+        return true;
+    }
+
+    bool set_subtitle_track(int id, std::string& error_message) {
+        if (this->handle == nullptr) {
+            error_message = "Player backend is not ready.";
+            return false;
+        }
+
+        int rc = 0;
+        if (id < 0) {
+            rc = mpv_set_property_string(this->handle, "sid", "no");
+        } else {
+            int64_t value = static_cast<int64_t>(id);
+            rc = mpv_set_property(this->handle, "sid", MPV_FORMAT_INT64, &value);
+        }
+        if (rc < 0) {
+            error_message = mpv_error_string(rc);
+            return false;
+        }
+
+        process_pending_events();
+        return true;
     }
 
     double get_position_seconds() {
@@ -783,6 +939,22 @@ int switch_mpv_get_volume() {
     return SwitchMpvPlayer::instance().get_volume();
 }
 
+std::vector<MpvTrackOption> switch_mpv_list_audio_tracks() {
+    return SwitchMpvPlayer::instance().list_audio_tracks();
+}
+
+std::vector<MpvTrackOption> switch_mpv_list_subtitle_tracks() {
+    return SwitchMpvPlayer::instance().list_subtitle_tracks();
+}
+
+bool switch_mpv_set_audio_track(int id, std::string& error_message) {
+    return SwitchMpvPlayer::instance().set_audio_track(id, error_message);
+}
+
+bool switch_mpv_set_subtitle_track(int id, std::string& error_message) {
+    return SwitchMpvPlayer::instance().set_subtitle_track(id, error_message);
+}
+
 double switch_mpv_get_position_seconds() {
     return SwitchMpvPlayer::instance().get_position_seconds();
 }
@@ -860,6 +1032,24 @@ bool switch_mpv_set_volume(int) {
 
 int switch_mpv_get_volume() {
     return 100;
+}
+
+std::vector<MpvTrackOption> switch_mpv_list_audio_tracks() {
+    return {};
+}
+
+std::vector<MpvTrackOption> switch_mpv_list_subtitle_tracks() {
+    return {};
+}
+
+bool switch_mpv_set_audio_track(int, std::string& error_message) {
+    error_message = switch_mpv_backend_reason();
+    return false;
+}
+
+bool switch_mpv_set_subtitle_track(int, std::string& error_message) {
+    error_message = switch_mpv_backend_reason();
+    return false;
 }
 
 double switch_mpv_get_position_seconds() {
