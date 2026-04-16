@@ -85,6 +85,54 @@ float parse_float(const std::string& value, float fallback) {
     }
 }
 
+std::vector<std::string> split_comma_separated_list(std::string_view value) {
+    std::vector<std::string> items;
+    std::unordered_set<std::string> seen_items;
+    std::string current;
+
+    const auto flush = [&]() {
+        std::string item = trim(current);
+        current.clear();
+
+        if (item.empty() || seen_items.contains(item)) {
+            return;
+        }
+
+        seen_items.insert(item);
+        items.push_back(std::move(item));
+    };
+
+    for (const char character : value) {
+        if (character == ',') {
+            flush();
+            continue;
+        }
+
+        current.push_back(character);
+    }
+
+    flush();
+    return items;
+}
+
+std::string join_comma_separated_list(const std::vector<std::string>& values) {
+    std::string joined;
+    for (const auto& value : values) {
+        const std::string trimmed_value = trim(value);
+        if (trimmed_value.empty()) {
+            continue;
+        }
+
+        if (!joined.empty()) {
+            joined.push_back(',');
+        }
+
+        joined += trimmed_value;
+    }
+
+    return joined;
+}
+
 AppPaths make_paths(const std::filesystem::path& baseDirectory) {
     return {
         .base_directory = baseDirectory,
@@ -406,6 +454,77 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
     return {};
 }
 
+std::vector<std::string> general_key_comment_lines(std::string_view key) {
+    if (key == "language") {
+        return {"; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page"};
+    }
+    if (key == "playable_extensions") {
+        return {"; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional."};
+    }
+    if (key == "sort_order") {
+        return {"; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc"};
+    }
+    if (key == "hardware_decode") {
+        return {
+            "; ----下面是播放器设置---- / Player settings",
+            "; 是否启用硬件解码 / Whether hardware decoding is enabled",
+        };
+    }
+    if (key == "short_seek") {
+        return {"; 短按快进/快退秒数 / Short seek step in seconds"};
+    }
+    if (key == "long_seek") {
+        return {"; 长按快进/快退秒数 / Long seek step in seconds"};
+    }
+    if (key == "y_hold_speed_multiplier") {
+        return {"; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell"};
+    }
+    if (key == "continuous_seek_interval_ms") {
+        return {"; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds"};
+    }
+    if (key == "use_preferred_audio_language") {
+        return {"; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled"};
+    }
+    if (key == "preferred_audio_language") {
+        return {"; 音轨语言代码；zh=中文优先（广泛匹配并优先普通话），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
+    }
+    if (key == "use_preferred_subtitle_language") {
+        return {"; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled"};
+    }
+    if (key == "preferred_subtitle_language") {
+        return {"; 字幕语言代码；zh=中文优先（广泛匹配并优先简体中文），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
+    }
+    if (key == "demux_cache_sec") {
+        return {
+            "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only",
+            "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp",
+        };
+    }
+    if (key == "resume_start_percent") {
+        return {"; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent"};
+    }
+    if (key == "resume_stop_percent") {
+        return {"; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent"};
+    }
+    if (key == "touch_enable") {
+        return {"; 是否启用触摸操作 / Whether touch controls are enabled"};
+    }
+    if (key == "touch_swipe_seek") {
+        return {"; 是否允许触摸滑动快进 / Whether touch swipe seek is enabled"};
+    }
+    if (key == "player_volume") {
+        return {"; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit"};
+    }
+    if (key == "player_volume_osd_duration_ms") {
+        return {"; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled"};
+    }
+    if (key == "overlay_marquee_delay_ms") {
+        return {"; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate"};
+    }
+
+    return {};
+}
+
 #if 0
 bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const AppConfig& config) {
     const std::string raw_ini_text = read_utf8_text_file(paths.config_file);
@@ -469,6 +588,9 @@ bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const A
     for (const auto key : required_general_keys()) {
         if (existing_keys.contains(std::string(key))) {
             continue;
+        }
+        for (const auto& comment_line : general_key_comment_lines(key)) {
+            missing_lines.push_back(comment_line);
         }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
@@ -598,6 +720,9 @@ bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfi
         if (existing_keys.contains(std::string(key))) {
             continue;
         }
+        for (const auto& comment_line : general_key_comment_lines(key)) {
+            missing_lines.push_back(comment_line);
+        }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
 
@@ -607,7 +732,7 @@ bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfi
 
     std::vector<std::string> insert_lines;
     insert_lines.reserve(missing_lines.size() + 1);
-    insert_lines.push_back("; Auto-backfilled missing [general] keys");
+    insert_lines.push_back("; Auto-backfilled missing [general] keys / 自动补齐缺失的 [general] 设置项");
     for (const auto& line : missing_lines) {
         insert_lines.push_back(line);
     }
@@ -724,6 +849,8 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
             source.enabled = parse_bool(
                 get_value(document, sectionName, "enabled"),
                 source.enabled);
+            source.favorite_keys = split_comma_separated_list(
+                get_value(document, sectionName, "favorite_keys"));
             config.iptv_sources.push_back(std::move(source));
             continue;
         }
@@ -808,13 +935,13 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
     output << "use_preferred_audio_language=" << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 音轨语言代码，建议使用 ISO 639 风格，例如 eng、jpn、chi / Preferred audio language code, ISO 639 style recommended, for example: eng, jpn, chi" << '\n';
+    output << "; 音轨语言代码；zh=中文优先（广泛匹配并优先普通话），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
     output << "preferred_audio_language=" << config.general.preferred_audio_language << '\n';
     output << '\n';
     output << "; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled" << '\n';
     output << "use_preferred_subtitle_language=" << (config.general.use_preferred_subtitle_language ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 字幕语言代码，建议使用 ISO 639 风格 / Preferred subtitle language code, ISO 639 style recommended" << '\n';
+    output << "; 字幕语言代码；zh=中文优先（广泛匹配并优先简体中文），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
     output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
     output << '\n';
     output << "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only" << '\n';
@@ -849,6 +976,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; title=主 IPTV / Main IPTV" << '\n';
     output << "; url=http://example.com/playlist.m3u" << '\n';
     output << "; enabled=true" << '\n';
+    output << "; favorite_keys=channel1,channel2" << '\n';
     output << '\n';
 
     for (const auto& source : config.iptv_sources) {
@@ -860,6 +988,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << "title=" << source.title << '\n';
         output << "url=" << source.url << '\n';
         output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << "favorite_keys=" << join_comma_separated_list(source.favorite_keys) << '\n';
         output << '\n';
     }
 

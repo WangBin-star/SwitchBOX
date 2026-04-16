@@ -1,6 +1,7 @@
 add_library(switchbox_core STATIC
     source/app_config.cpp
     source/build_info.cpp
+    source/iptv_playlist.cpp
     source/language.cpp
     source/playback_launcher.cpp
     source/playback_target.cpp
@@ -19,8 +20,13 @@ target_compile_definitions(switchbox_core
         SWITCHBOX_APP_VERSION="${PROJECT_VERSION}"
 )
 
-set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "${DEVKITPRO}/portlibs/switch/include")
-set(SWITCHBOX_SWITCH_PORTLIBS_LIB_DIR "${DEVKITPRO}/portlibs/switch/lib")
+set(SWITCHBOX_SWITCH_PORTLIBS_ROOT "${DEVKITPRO}/portlibs/switch")
+if (EXISTS "/opt/devkitpro/portlibs/switch/include/smb2/libsmb2.h")
+    set(SWITCHBOX_SWITCH_PORTLIBS_ROOT "/opt/devkitpro/portlibs/switch")
+endif ()
+
+set(SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR "${SWITCHBOX_SWITCH_PORTLIBS_ROOT}/include")
+set(SWITCHBOX_SWITCH_PORTLIBS_LIB_DIR "${SWITCHBOX_SWITCH_PORTLIBS_ROOT}/lib")
 set(SWITCHBOX_SWITCH_LIBSMB2_LIBRARY "${SWITCHBOX_SWITCH_PORTLIBS_LIB_DIR}/libsmb2.a")
 
 set(SWITCHBOX_SWITCH_MEDIA_PORTLIBS_PREFIX "${DEVKITPRO}/tmp/switchbox-portlibs" CACHE PATH "Custom Switch media portlibs prefix for libmpv/FFmpeg")

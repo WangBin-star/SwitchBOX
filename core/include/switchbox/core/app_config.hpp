@@ -27,9 +27,9 @@ struct GeneralSettings {
     int player_volume_osd_duration_ms = 500;
     int overlay_marquee_delay_ms = 500;
     bool use_preferred_audio_language = false;
-    std::string preferred_audio_language = "eng";
+    std::string preferred_audio_language = "zh";
     bool use_preferred_subtitle_language = false;
-    std::string preferred_subtitle_language = "eng";
+    std::string preferred_subtitle_language = "zh";
     int demux_cache_sec = 120;
     int resume_start_percent = 5;
     int resume_stop_percent = 5;
@@ -42,6 +42,7 @@ struct IptvSourceSettings {
     std::string title;
     std::string url;
     bool enabled = true;
+    std::vector<std::string> favorite_keys;
 };
 
 struct SmbSourceSettings {

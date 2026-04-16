@@ -3,6 +3,7 @@ add_library(switchbox_app STATIC
     source/config_missing_activity.cpp
     source/header_status_hint.cpp
     source/home_activity.cpp
+    source/iptv_browser_activity.cpp
     source/player_activity.cpp
     source/player_video_surface.cpp
     source/placeholder_activity.cpp

@@ -11,6 +11,7 @@
 #include <borealis/views/h_scrolling_frame.hpp>
 #include <borealis/views/label.hpp>
 
+#include "switchbox/app/iptv_browser_activity.hpp"
 #include "switchbox/app/placeholder_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
@@ -90,19 +91,6 @@ PlaceholderSection make_history_section() {
                 tr("sections/history/checkpoints/1"),
                 tr("sections/history/checkpoints/2"),
                 tr("sections/history/checkpoints/3"),
-            },
-    };
-}
-
-PlaceholderSection make_iptv_section(const switchbox::core::IptvSourceSettings& source) {
-    return {
-        .title = visible_iptv_title(source),
-        .subtitle = summarize_iptv_source(source),
-        .checkpoints =
-            {
-                tr("sections/iptv/checkpoints/1"),
-                tr("sections/iptv/checkpoints/2"),
-                tr("sections/iptv/checkpoints/3"),
             },
     };
 }
@@ -247,7 +235,7 @@ std::vector<HomeCardModel> build_home_cards() {
             .accent_color = nvgRGB(73, 188, 218),
             .action =
                 [source]() {
-                    brls::Application::pushActivity(new PlaceholderActivity(make_iptv_section(source)));
+                    brls::Application::pushActivity(new IptvBrowserActivity(source));
                 },
         });
     }

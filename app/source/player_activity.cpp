@@ -292,6 +292,14 @@ void PlayerActivity::initialize_switch_player_state() {
 }
 
 void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackTarget& next_target) {
+    const bool switching_inside_player =
+        !this->playback_session_stopped &&
+        (switchbox::core::switch_mpv_session_active() || switchbox::core::switch_mpv_has_media());
+    if (switching_inside_player) {
+        switchbox::core::switch_mpv_stop();
+        (void)switchbox::core::switch_mpv_consume_last_error();
+    }
+
     std::string startup_error;
     if (!prepare_switch_renderer_if_needed(startup_error) && !startup_error.empty()) {
         auto* dialog = new brls::Dialog(startup_error);

@@ -4,8 +4,13 @@ set(DEVKITA64_RAW "$ENV{DEVKITA64}")
 string(REPLACE "\\" "/" DEVKITPRO "${DEVKITPRO_RAW}")
 string(REPLACE "\\" "/" DEVKITA64 "${DEVKITA64_RAW}")
 
-set(DEVKITPRO "${DEVKITPRO}" CACHE PATH "Path to devkitPro" FORCE)
-set(DEVKITA64 "${DEVKITA64}" CACHE PATH "Path to devkitA64" FORCE)
+# Keep these as plain strings. On Windows, CACHE PATH can be rewritten back to
+# backslashes during regeneration, which breaks the official devkitPro CMake
+# toolchain because the resulting list items contain invalid escape sequences.
+set(DEVKITPRO "${DEVKITPRO}" CACHE STRING "Path to devkitPro" FORCE)
+set(DEVKITA64 "${DEVKITA64}" CACHE STRING "Path to devkitA64" FORCE)
+set(ENV{DEVKITPRO} "${DEVKITPRO}")
+set(ENV{DEVKITA64} "${DEVKITA64}")
 
 if (NOT DEVKITPRO)
     message(FATAL_ERROR "DEVKITPRO is not set. Expected a path such as C:/devkitPro.")

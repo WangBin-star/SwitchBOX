@@ -34,6 +34,32 @@
                 }
             }
         },
+        "iptv_browser": {
+            "loading": "Loading IPTV playlist...",
+            "loading_detail": "The first open fetches the remote M3U playlist. Please wait.",
+            "backend_unavailable": "The IPTV playlist backend is not available in this build.",
+            "open_failed": "Failed to open this IPTV playlist.",
+            "unexpected_error": "An unexpected error occurred while requesting the IPTV playlist.",
+            "empty": "This playlist does not contain any visible channels.",
+            "groups": {
+                "favorites": "Favorites",
+                "ungrouped": "Ungrouped"
+            },
+            "group_count": "{0} channels",
+            "favorites_empty": "There are no favorite channels yet.",
+            "group_empty": "This group does not contain any visible channels.",
+            "favorite_added": "Added \"{0}\" to favorites.",
+            "favorite_removed": "Removed \"{0}\" from favorites.",
+            "favorite_save_failed": "Failed to save favorite status.",
+            "actions": {
+                "favorite": "Favorite",
+                "unfavorite": "Unfavorite"
+            },
+            "channel": {
+                "favorite_badge": "Favorite",
+                "number_value": "CH {0}"
+            }
+        },
         "home": {
             "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
             "cards": {
@@ -269,6 +295,11 @@
                 "preferred_subtitle_language": {
                     "title": "Preferred subtitle language code",
                     "hint": "Example: eng, jpn, chi"
+                },
+                "preferred_language_options": {
+                    "chinese": "Chinese",
+                    "english": "English",
+                    "custom": "Custom"
                 }
             },
             "apply": {

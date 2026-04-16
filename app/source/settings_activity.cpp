@@ -34,6 +34,12 @@ enum class SettingsSection {
     Smb,
 };
 
+enum class PreferredLanguagePreset {
+    Chinese,
+    English,
+    Custom,
+};
+
 struct LanguageOption {
     std::string value;
     std::string label;
@@ -160,7 +166,8 @@ bool iptv_source_equal(
     return lhs.key == rhs.key &&
            lhs.title == rhs.title &&
            lhs.url == rhs.url &&
-           lhs.enabled == rhs.enabled;
+           lhs.enabled == rhs.enabled &&
+           lhs.favorite_keys == rhs.favorite_keys;
 }
 
 bool smb_source_equal(
@@ -369,6 +376,40 @@ std::string sort_order_display_name(const std::string& sort_order) {
         return tr("settings_page/general/sort_order/options/size_desc");
     }
     return tr("settings_page/general/sort_order/options/name_asc");
+}
+
+PreferredLanguagePreset detect_preferred_language_preset(const std::string& value) {
+    if (value == "zh") {
+        return PreferredLanguagePreset::Chinese;
+    }
+    if (value == "en") {
+        return PreferredLanguagePreset::English;
+    }
+    return PreferredLanguagePreset::Custom;
+}
+
+std::string preferred_language_display_text(const std::string& value) {
+    switch (detect_preferred_language_preset(value)) {
+        case PreferredLanguagePreset::Chinese:
+            return tr("settings_page/general/preferred_language_options/chinese");
+        case PreferredLanguagePreset::English:
+            return tr("settings_page/general/preferred_language_options/english");
+        case PreferredLanguagePreset::Custom:
+        default:
+            return value.empty() ? tr("settings_page/general/preferred_language_options/custom")
+                                 : value;
+    }
+}
+
+std::string preferred_language_custom_seed(const std::string& value) {
+    switch (detect_preferred_language_preset(value)) {
+        case PreferredLanguagePreset::Chinese:
+        case PreferredLanguagePreset::English:
+            return {};
+        case PreferredLanguagePreset::Custom:
+        default:
+            return value;
+    }
 }
 
 std::string format_float_value(float value, int precision = 1) {
@@ -929,32 +970,116 @@ void open_continuous_seek_interval_editor(const std::shared_ptr<SettingsDraftSta
         0);
 }
 
-void open_preferred_audio_language_editor(const std::shared_ptr<SettingsDraftState>& state) {
-    brls::Application::getImeManager()->openForText(
-        [state](std::string text) {
-            state->draft_config.general.preferred_audio_language = std::move(text);
-            sync_dirty_state(state);
-            rebuild_right_panel(state);
-        },
+void open_preferred_audio_language_picker(const std::shared_ptr<SettingsDraftState>& state) {
+    const std::vector<std::string> labels = {
+        tr("settings_page/general/preferred_language_options/chinese"),
+        tr("settings_page/general/preferred_language_options/english"),
+        tr("settings_page/general/preferred_language_options/custom"),
+    };
+
+    int selected_index = 2;
+    switch (detect_preferred_language_preset(state->draft_config.general.preferred_audio_language)) {
+        case PreferredLanguagePreset::Chinese:
+            selected_index = 0;
+            break;
+        case PreferredLanguagePreset::English:
+            selected_index = 1;
+            break;
+        case PreferredLanguagePreset::Custom:
+        default:
+            selected_index = 2;
+            break;
+    }
+
+    auto* dropdown = new brls::Dropdown(
         tr("settings_page/general/preferred_audio_language/title"),
-        tr("settings_page/general/preferred_audio_language/hint"),
-        16,
-        state->draft_config.general.preferred_audio_language,
-        0);
+        labels,
+        [](int) {},
+        selected_index,
+        [state](int selection) {
+            if (selection == 0) {
+                state->draft_config.general.preferred_audio_language = "zh";
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+                return;
+            }
+
+            if (selection == 1) {
+                state->draft_config.general.preferred_audio_language = "en";
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+                return;
+            }
+
+            brls::Application::getImeManager()->openForText(
+                [state](std::string text) {
+                    state->draft_config.general.preferred_audio_language = std::move(text);
+                    sync_dirty_state(state);
+                    rebuild_right_panel(state);
+                },
+                tr("settings_page/general/preferred_audio_language/title"),
+                tr("settings_page/general/preferred_audio_language/hint"),
+                32,
+                preferred_language_custom_seed(state->draft_config.general.preferred_audio_language),
+                0);
+        });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
-void open_preferred_subtitle_language_editor(const std::shared_ptr<SettingsDraftState>& state) {
-    brls::Application::getImeManager()->openForText(
-        [state](std::string text) {
-            state->draft_config.general.preferred_subtitle_language = std::move(text);
-            sync_dirty_state(state);
-            rebuild_right_panel(state);
-        },
+void open_preferred_subtitle_language_picker(const std::shared_ptr<SettingsDraftState>& state) {
+    const std::vector<std::string> labels = {
+        tr("settings_page/general/preferred_language_options/chinese"),
+        tr("settings_page/general/preferred_language_options/english"),
+        tr("settings_page/general/preferred_language_options/custom"),
+    };
+
+    int selected_index = 2;
+    switch (detect_preferred_language_preset(state->draft_config.general.preferred_subtitle_language)) {
+        case PreferredLanguagePreset::Chinese:
+            selected_index = 0;
+            break;
+        case PreferredLanguagePreset::English:
+            selected_index = 1;
+            break;
+        case PreferredLanguagePreset::Custom:
+        default:
+            selected_index = 2;
+            break;
+    }
+
+    auto* dropdown = new brls::Dropdown(
         tr("settings_page/general/preferred_subtitle_language/title"),
-        tr("settings_page/general/preferred_subtitle_language/hint"),
-        16,
-        state->draft_config.general.preferred_subtitle_language,
-        0);
+        labels,
+        [](int) {},
+        selected_index,
+        [state](int selection) {
+            if (selection == 0) {
+                state->draft_config.general.preferred_subtitle_language = "zh";
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+                return;
+            }
+
+            if (selection == 1) {
+                state->draft_config.general.preferred_subtitle_language = "en";
+                sync_dirty_state(state);
+                rebuild_right_panel(state);
+                return;
+            }
+
+            brls::Application::getImeManager()->openForText(
+                [state](std::string text) {
+                    state->draft_config.general.preferred_subtitle_language = std::move(text);
+                    sync_dirty_state(state);
+                    rebuild_right_panel(state);
+                },
+                tr("settings_page/general/preferred_subtitle_language/title"),
+                tr("settings_page/general/preferred_subtitle_language/hint"),
+                32,
+                preferred_language_custom_seed(state->draft_config.general.preferred_subtitle_language),
+                0);
+        });
+    brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
 void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
@@ -1079,7 +1204,7 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/use_preferred_audio_language",
         tr("settings_page/general/use_preferred_audio_language/title"),
         bool_display_text(general.use_preferred_audio_language),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/use_preferred_audio_language");
             toggle_preferred_audio_language(state);
@@ -1089,11 +1214,11 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     add_setting_cell(
         "settings/general/preferred_audio_language",
         tr("settings_page/general/preferred_audio_language/title"),
-        general.preferred_audio_language,
-        false,
+        preferred_language_display_text(general.preferred_audio_language),
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/preferred_audio_language");
-            open_preferred_audio_language_editor(state);
+            open_preferred_audio_language_picker(state);
             return true;
         });
 
@@ -1101,7 +1226,7 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/use_preferred_subtitle_language",
         tr("settings_page/general/use_preferred_subtitle_language/title"),
         bool_display_text(general.use_preferred_subtitle_language),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/use_preferred_subtitle_language");
             toggle_preferred_subtitle_language(state);
@@ -1111,11 +1236,11 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     add_setting_cell(
         "settings/general/preferred_subtitle_language",
         tr("settings_page/general/preferred_subtitle_language/title"),
-        general.preferred_subtitle_language,
-        false,
+        preferred_language_display_text(general.preferred_subtitle_language),
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/preferred_subtitle_language");
-            open_preferred_subtitle_language_editor(state);
+            open_preferred_subtitle_language_picker(state);
             return true;
         });
 }

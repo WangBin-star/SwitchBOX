@@ -234,4 +234,19 @@ PlaybackTarget make_smb_playback_target(
     return target;
 }
 
+PlaybackTarget make_iptv_playback_target(
+    const IptvSourceSettings& source,
+    const IptvPlaylistEntry& entry) {
+    PlaybackTarget target;
+    target.source_kind = PlaybackSourceKind::Iptv;
+    target.title = !entry.title.empty() ? entry.title : trim(source.title);
+    target.subtitle = !entry.group_title.empty() ? entry.group_title : trim(source.title);
+    target.source_label = trim(source.title).empty() ? "IPTV" : trim(source.title);
+    target.primary_locator = trim(entry.stream_url);
+    target.display_locator = target.primary_locator;
+    target.fallback_locator.clear();
+    target.locator_is_direct = !target.primary_locator.empty();
+    return target;
+}
+
 }  // namespace switchbox::core

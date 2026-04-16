@@ -4,6 +4,7 @@
 #include <string>
 
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/iptv_playlist.hpp"
 
 namespace switchbox::core {
 
@@ -36,5 +37,8 @@ struct PlaybackTarget {
 PlaybackTarget make_smb_playback_target(
     const SmbSourceSettings& source,
     const std::string& relative_path);
+PlaybackTarget make_iptv_playback_target(
+    const IptvSourceSettings& source,
+    const IptvPlaylistEntry& entry);
 
 }  // namespace switchbox::core

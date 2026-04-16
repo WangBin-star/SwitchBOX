@@ -34,6 +34,32 @@
                 }
             }
         },
+        "iptv_browser": {
+            "loading": "\u6b63\u5728\u52a0\u8f7d IPTV \u64ad\u653e\u5217\u8868...",
+            "loading_detail": "\u9996\u6b21\u8fdb\u5165\u4f1a\u8bf7\u6c42\u8fdc\u7a0b M3U \u5217\u8868\uff0c\u8bf7\u7a0d\u5019\u3002",
+            "backend_unavailable": "\u5f53\u524d\u6784\u5efa\u8fd8\u6ca1\u6709\u63a5\u5165 IPTV \u64ad\u653e\u5217\u8868\u540e\u7aef\u3002",
+            "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a IPTV \u64ad\u653e\u5217\u8868\u3002",
+            "unexpected_error": "\u8bf7\u6c42 IPTV \u5217\u8868\u65f6\u53d1\u751f\u4e86\u672a\u77e5\u9519\u8bef\u3002",
+            "empty": "\u5f53\u524d\u64ad\u653e\u5217\u8868\u4e2d\u6ca1\u6709\u53ef\u663e\u793a\u7684\u9891\u9053\u3002",
+            "groups": {
+                "favorites": "\u6536\u85cf",
+                "ungrouped": "\u672a\u5206\u7ec4"
+            },
+            "group_count": "\u5171 {0} \u4e2a\u9891\u9053",
+            "favorites_empty": "\u6536\u85cf\u5206\u7ec4\u91cc\u8fd8\u6ca1\u6709\u9891\u9053\u3002",
+            "group_empty": "\u5f53\u524d\u5206\u7ec4\u4e2d\u6ca1\u6709\u53ef\u663e\u793a\u7684\u9891\u9053\u3002",
+            "favorite_added": "\u5df2\u6536\u85cf\u300c{0}\u300d",
+            "favorite_removed": "\u5df2\u53d6\u6d88\u6536\u85cf\u300c{0}\u300d",
+            "favorite_save_failed": "\u6536\u85cf\u72b6\u6001\u4fdd\u5b58\u5931\u8d25\u3002",
+            "actions": {
+                "favorite": "\u6536\u85cf",
+                "unfavorite": "\u53d6\u6d88\u6536\u85cf"
+            },
+            "channel": {
+                "favorite_badge": "\u5df2\u6536\u85cf",
+                "number_value": "CH {0}"
+            }
+        },
         "home": {
             "no_sources_hint": "\u5f53\u524d\u6ca1\u6709\u5df2\u542f\u7528\u7684 IPTV \u6216 SMB \u6765\u6e90\uff0c\u6309 + \u524d\u5f80\u8bbe\u7f6e\u6dfb\u52a0\u3002",
             "cards": {
@@ -269,6 +295,11 @@
                 "preferred_subtitle_language": {
                     "title": "\u4f18\u5148\u5b57\u5e55\u8bed\u8a00\u4ee3\u7801",
                     "hint": "\u4f8b\u5982 eng\u3001jpn\u3001chi"
+                },
+                "preferred_language_options": {
+                    "chinese": "\u4e2d\u6587",
+                    "english": "\u82f1\u6587",
+                    "custom": "\u81ea\u5b9a\u4e49"
                 }
             },
             "apply": {
