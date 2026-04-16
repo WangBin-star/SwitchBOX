@@ -323,7 +323,7 @@ const std::array<std::string_view, 20>& required_general_keys() {
         "resume_start_percent",
         "resume_stop_percent",
         "touch_enable",
-        "touch_swipe_seek",
+        "touch_player_gestures",
     };
     return keys;
 }
@@ -448,8 +448,8 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
     if (key == "touch_enable") {
         return general.touch_enable ? "true" : "false";
     }
-    if (key == "touch_swipe_seek") {
-        return general.touch_swipe_seek ? "true" : "false";
+    if (key == "touch_player_gestures") {
+        return general.touch_player_gestures ? "true" : "false";
     }
     return {};
 }
@@ -509,8 +509,9 @@ std::vector<std::string> general_key_comment_lines(std::string_view key) {
     if (key == "touch_enable") {
         return {"; 是否启用触摸操作 / Whether touch controls are enabled"};
     }
-    if (key == "touch_swipe_seek") {
-        return {"; 是否允许触摸滑动快进 / Whether touch swipe seek is enabled"};
+    if (key == "touch_player_gestures") {
+        return {
+            "; 是否启用播放器触控手势（左右滑动跳转、上下滑动音量、点击进度条定位） / Whether player touch gestures are enabled (horizontal seek, vertical volume, progress-bar tap seek)"};
     }
     if (key == "player_volume") {
         return {"; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit"};
@@ -833,9 +834,13 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
     config.general.touch_enable = parse_bool(
         get_value(document, "general", "touch_enable"),
         config.general.touch_enable);
-    config.general.touch_swipe_seek = parse_bool(
-        get_value(document, "general", "touch_swipe_seek"),
-        config.general.touch_swipe_seek);
+    config.general.touch_player_gestures = parse_bool(
+        get_value(
+            document,
+            "general",
+            "touch_player_gestures",
+            get_value(document, "general", "touch_swipe_seek")),
+        config.general.touch_player_gestures);
 
     config.iptv_sources.clear();
     config.smb_sources.clear();
@@ -957,8 +962,8 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; 是否启用触摸操作 / Whether touch controls are enabled" << '\n';
     output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 是否允许触摸滑动快进 / Whether touch swipe seek is enabled" << '\n';
-    output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
+    output << "; 是否启用播放器触控手势（左右滑动跳转、上下滑动音量、点击进度条定位） / Whether player touch gestures are enabled (horizontal seek, vertical volume, progress-bar tap seek)" << '\n';
+    output << "touch_player_gestures=" << (config.general.touch_player_gestures ? "true" : "false") << '\n';
     output << '\n';
     output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
     output << "player_volume=" << config.general.player_volume << '\n';
@@ -1073,8 +1078,8 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "resume_stop_percent=" << config.general.resume_stop_percent << '\n';
     output << "; 是否启用触摸操作，默认关闭 / Whether touch controls are enabled, disabled by default" << '\n';
     output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
-    output << "; 是否允许触摸滑动快进，默认关闭 / Whether touch swipe seek is enabled, disabled by default" << '\n';
-    output << "touch_swipe_seek=" << (config.general.touch_swipe_seek ? "true" : "false") << '\n';
+    output << "; 是否启用播放器触控手势（左右滑动跳转、上下滑动音量、点击进度条定位），默认关闭 / Whether player touch gestures are enabled (horizontal seek, vertical volume, progress-bar tap seek), disabled by default" << '\n';
+    output << "touch_player_gestures=" << (config.general.touch_player_gestures ? "true" : "false") << '\n';
     output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
     output << "player_volume=" << config.general.player_volume << '\n';
     output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';

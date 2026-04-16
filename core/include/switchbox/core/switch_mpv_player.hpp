@@ -37,6 +37,7 @@ bool switch_mpv_session_active();
 bool switch_mpv_has_media();
 void switch_mpv_toggle_pause();
 bool switch_mpv_seek_relative_seconds(double delta_seconds);
+bool switch_mpv_seek_absolute_seconds(double target_seconds);
 bool switch_mpv_set_speed(double speed);
 double switch_mpv_get_speed();
 bool switch_mpv_rotate_clockwise_90();

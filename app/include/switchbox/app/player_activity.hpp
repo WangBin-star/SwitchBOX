@@ -61,9 +61,14 @@ private:
     void stop_playback_session_before_leave();
     void adjust_volume(int delta);
     bool seek_relative(double seconds);
+    bool seek_absolute(double seconds);
     void refresh_track_selector_state();
     bool open_audio_track_selector();
     bool open_subtitle_track_selector();
+    void ensure_controls_panel_visible_for_touch();
+    void handle_touch_horizontal_pan(brls::GestureState state, float delta_ratio);
+    void handle_touch_vertical_pan(brls::GestureState state, float delta_ratio);
+    void handle_touch_progress_tap(float ratio);
     void confirm_delete_current_file();
     std::string find_next_focus_after_delete() const;
     switchbox::core::SmbSourceSettings make_smb_source_from_target() const;
@@ -111,6 +116,10 @@ private:
     std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     bool playback_error_dialog_open = false;
     bool playback_session_stopped = false;
+    bool touch_horizontal_pan_active = false;
+    double touch_seek_anchor_seconds = 0.0;
+    bool touch_vertical_pan_active = false;
+    int touch_volume_anchor = 0;
     bool dpad_left_stick_up_pressed = false;
     bool dpad_left_stick_down_pressed = false;
     bool dpad_left_stick_left_pressed = false;

@@ -275,6 +275,15 @@ void PlayerActivity::initialize_switch_player_state() {
             }
             switchbox::core::switch_mpv_toggle_pause();
         });
+        this->video_surface->set_progress_tap_handler([this](float ratio) {
+            handle_touch_progress_tap(ratio);
+        });
+        this->video_surface->set_horizontal_pan_handler([this](brls::GestureState state, float delta_ratio) {
+            handle_touch_horizontal_pan(state, delta_ratio);
+        });
+        this->video_surface->set_vertical_pan_handler([this](brls::GestureState state, float delta_ratio) {
+            handle_touch_vertical_pan(state, delta_ratio);
+        });
     }
 
     if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
@@ -314,6 +323,8 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
     }
 
     this->playback_session_stopped = false;
+    this->touch_horizontal_pan_active = false;
+    this->touch_vertical_pan_active = false;
     this->target = next_target;
     if (this->target.smb_locator.has_value()) {
         this->current_relative_path = this->target.smb_locator->relative_path;
@@ -721,6 +732,7 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.subtitle_track_selectable = this->subtitle_track_selectable;
     model.overlay_marquee_delay_ms = general.overlay_marquee_delay_ms;
     model.touch_enable = general.touch_enable;
+    model.touch_player_gestures = general.touch_player_gestures;
     model.volume_osd_visible = this->volume_osd_visible && !this->controls_visible && !this->overlay_visible;
     model.volume_osd_value = std::clamp(this->session_volume, 0, 100);
     model.entries.reserve(this->overlay_entries.size());
@@ -811,6 +823,27 @@ void PlayerActivity::toggle_controls_panel() {
     if (this->controls_visible && this->overlay_visible) {
         this->overlay_visible = false;
     }
+    sync_overlay_to_surface();
+}
+
+void PlayerActivity::ensure_controls_panel_visible_for_touch() {
+    if (!this->controls_visible) {
+        this->controls_visible = true;
+    }
+
+    this->last_controls_repeat_action = -1;
+    this->last_controls_repeat_time = std::chrono::steady_clock::time_point::min();
+    this->last_controls_nav_direction = 0;
+    this->last_controls_nav_time = std::chrono::steady_clock::time_point::min();
+    this->last_controls_horizontal_repeat_direction = 0;
+    this->last_controls_horizontal_repeat_time = std::chrono::steady_clock::time_point::min();
+    this->volume_osd_visible = false;
+    this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+
+    if (this->overlay_visible) {
+        this->overlay_visible = false;
+    }
+
     sync_overlay_to_surface();
 }
 
@@ -1242,6 +1275,81 @@ void PlayerActivity::adjust_volume(int delta) {
 
 bool PlayerActivity::seek_relative(double seconds) {
     return switchbox::core::switch_mpv_seek_relative_seconds(seconds);
+}
+
+bool PlayerActivity::seek_absolute(double seconds) {
+    return switchbox::core::switch_mpv_seek_absolute_seconds(seconds);
+}
+
+void PlayerActivity::handle_touch_horizontal_pan(brls::GestureState state, float delta_ratio) {
+    const auto& general = switchbox::core::AppConfigStore::current().general;
+    if (!general.touch_enable || !general.touch_player_gestures) {
+        this->touch_horizontal_pan_active = false;
+        return;
+    }
+
+    if (!this->touch_horizontal_pan_active) {
+        this->touch_horizontal_pan_active = true;
+        this->touch_seek_anchor_seconds = switchbox::core::switch_mpv_get_position_seconds();
+        ensure_controls_panel_visible_for_touch();
+    }
+
+    if (!this->touch_horizontal_pan_active) {
+        return;
+    }
+
+    const double duration = switchbox::core::switch_mpv_get_duration_seconds();
+    if (duration > 0.0) {
+        const double target_seconds =
+            std::clamp(this->touch_seek_anchor_seconds + static_cast<double>(delta_ratio) * duration, 0.0, duration);
+        (void)seek_absolute(target_seconds);
+    }
+
+    if (state == brls::GestureState::END) {
+        this->touch_horizontal_pan_active = false;
+    }
+}
+
+void PlayerActivity::handle_touch_vertical_pan(brls::GestureState state, float delta_ratio) {
+    const auto& general = switchbox::core::AppConfigStore::current().general;
+    if (!general.touch_enable || !general.touch_player_gestures) {
+        this->touch_vertical_pan_active = false;
+        return;
+    }
+
+    if (!this->touch_vertical_pan_active) {
+        this->touch_vertical_pan_active = true;
+        this->touch_volume_anchor = this->session_volume;
+    }
+
+    if (!this->touch_vertical_pan_active) {
+        return;
+    }
+
+    const int target_volume = std::clamp(
+        this->touch_volume_anchor + static_cast<int>(std::lround(delta_ratio * 100.0f)),
+        0,
+        100);
+    adjust_volume(target_volume - this->session_volume);
+
+    if (state == brls::GestureState::END) {
+        this->touch_vertical_pan_active = false;
+    }
+}
+
+void PlayerActivity::handle_touch_progress_tap(float ratio) {
+    const auto& general = switchbox::core::AppConfigStore::current().general;
+    if (!general.touch_enable || !general.touch_player_gestures || !this->controls_visible) {
+        return;
+    }
+
+    const double duration = switchbox::core::switch_mpv_get_duration_seconds();
+    if (duration <= 0.0) {
+        return;
+    }
+
+    ensure_controls_panel_visible_for_touch();
+    (void)seek_absolute(std::clamp(static_cast<double>(ratio), 0.0, 1.0) * duration);
 }
 
 void PlayerActivity::confirm_delete_current_file() {

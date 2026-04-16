@@ -12,6 +12,7 @@
 
 #include <borealis/core/i18n.hpp>
 #include <borealis/core/application.hpp>
+#include <borealis/core/touch/pan_gesture.hpp>
 #include <borealis/core/touch/tap_gesture.hpp>
 
 #if defined(__SWITCH__)
@@ -230,6 +231,25 @@ PlayerVideoSurface::PlayerVideoSurface()
             return;
         }
         if (!this->pause_icon_visible || !this->overlay_model.touch_enable) {
+            if (this->overlay_model.controls_visible &&
+                this->overlay_model.touch_enable &&
+                this->overlay_model.touch_player_gestures) {
+                const float px = status.position.x;
+                const float py = status.position.y;
+                const bool inside_progress =
+                    px >= this->controls_progress_bounds.x &&
+                    px <= this->controls_progress_bounds.x + this->controls_progress_bounds.width &&
+                    py >= this->controls_progress_bounds.y &&
+                    py <= this->controls_progress_bounds.y + this->controls_progress_bounds.height;
+                if (inside_progress && this->progress_tap_handler && this->controls_progress_bounds.width > 1.0f) {
+                    const float ratio = std::clamp(
+                        (px - this->controls_progress_bounds.x) / this->controls_progress_bounds.width,
+                        0.0f,
+                        1.0f);
+                    this->progress_tap_handler(ratio);
+                    *sound_to_play = brls::SOUND_CLICK;
+                }
+            }
             return;
         }
 
@@ -249,6 +269,51 @@ PlayerVideoSurface::PlayerVideoSurface()
             *sound_to_play = brls::SOUND_CLICK;
         }
     }));
+
+    addGestureRecognizer(new brls::PanGestureRecognizer([this](brls::PanGestureStatus status, brls::Sound*) {
+        if (!this->overlay_model.touch_enable || !this->overlay_model.touch_player_gestures) {
+            this->active_pan_axis = ActivePanAxis::None;
+            return;
+        }
+
+        if (status.state == brls::GestureState::FAILED ||
+            status.state == brls::GestureState::INTERRUPTED) {
+            this->active_pan_axis = ActivePanAxis::None;
+            return;
+        }
+
+        if (!(status.state == brls::GestureState::START ||
+              status.state == brls::GestureState::STAY ||
+              status.state == brls::GestureState::END)) {
+            return;
+        }
+
+        const float delta_x = status.position.x - status.startPosition.x;
+        const float delta_y = status.position.y - status.startPosition.y;
+
+        if (this->active_pan_axis == ActivePanAxis::None) {
+            const float abs_delta_x = std::fabs(delta_x);
+            const float abs_delta_y = std::fabs(delta_y);
+            if (abs_delta_x < 0.001f && abs_delta_y < 0.001f) {
+                return;
+            }
+
+            this->active_pan_axis =
+                abs_delta_x >= abs_delta_y ? ActivePanAxis::Horizontal : ActivePanAxis::Vertical;
+        }
+
+        if (this->active_pan_axis == ActivePanAxis::Horizontal && this->horizontal_pan_handler) {
+            const float width = std::max(1.0f, this->getWidth());
+            this->horizontal_pan_handler(status.state, delta_x / width);
+        } else if (this->active_pan_axis == ActivePanAxis::Vertical && this->vertical_pan_handler) {
+            const float height = std::max(1.0f, this->getHeight());
+            this->vertical_pan_handler(status.state, (status.startPosition.y - status.position.y) / height);
+        }
+
+        if (status.state == brls::GestureState::END) {
+            this->active_pan_axis = ActivePanAxis::None;
+        }
+    }, brls::PanAxis::ANY));
 }
 
 PlayerVideoSurface::~PlayerVideoSurface() = default;
@@ -288,6 +353,18 @@ void PlayerVideoSurface::set_overlay_model(PlayerOverlayViewModel model) {
 
 void PlayerVideoSurface::set_pause_icon_tap_handler(std::function<void()> handler) {
     this->pause_icon_tap_handler = std::move(handler);
+}
+
+void PlayerVideoSurface::set_progress_tap_handler(std::function<void(float)> handler) {
+    this->progress_tap_handler = std::move(handler);
+}
+
+void PlayerVideoSurface::set_horizontal_pan_handler(std::function<void(brls::GestureState, float)> handler) {
+    this->horizontal_pan_handler = std::move(handler);
+}
+
+void PlayerVideoSurface::set_vertical_pan_handler(std::function<void(brls::GestureState, float)> handler) {
+    this->vertical_pan_handler = std::move(handler);
 }
 
 void PlayerVideoSurface::draw(
@@ -340,6 +417,7 @@ void PlayerVideoSurface::draw(
 
     this->pause_icon_visible = false;
     this->pause_icon_bounds = {};
+    this->controls_progress_bounds = {};
     if (paused && !this->overlay_model.visible && !this->overlay_model.controls_visible) {
         const float icon_height = std::max(96.0f, height * 0.25f);
         const float icon_width = icon_height * 0.82f;
@@ -549,6 +627,12 @@ void PlayerVideoSurface::draw(
         const float progress_y = panel_y + 14.0f;
         const float progress_width = panel_width - 52.0f;
         const float progress_height = 10.0f;
+        this->controls_progress_bounds = {
+            .x = progress_x,
+            .y = progress_y - 12.0f,
+            .width = progress_width,
+            .height = progress_height + 28.0f,
+        };
 
         nvgBeginPath(vg);
         nvgRoundedRect(vg, progress_x, progress_y, progress_width, progress_height, 5.0f);

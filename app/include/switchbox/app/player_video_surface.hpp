@@ -30,6 +30,7 @@ struct PlayerOverlayViewModel {
     bool subtitle_track_selectable = false;
     int overlay_marquee_delay_ms = 500;
     bool touch_enable = true;
+    bool touch_player_gestures = false;
     bool volume_osd_visible = false;
     int volume_osd_value = 80;
 };
@@ -41,6 +42,9 @@ public:
 
     void set_overlay_model(PlayerOverlayViewModel model);
     void set_pause_icon_tap_handler(std::function<void()> handler);
+    void set_progress_tap_handler(std::function<void(float)> handler);
+    void set_horizontal_pan_handler(std::function<void(brls::GestureState, float)> handler);
+    void set_vertical_pan_handler(std::function<void(brls::GestureState, float)> handler);
 
     void draw(
         NVGcontext* vg,
@@ -67,8 +71,20 @@ private:
     double overlay_selected_since_seconds = 0.0;
     double overlay_visible_since_seconds = 0.0;
     std::function<void()> pause_icon_tap_handler;
+    std::function<void(float)> progress_tap_handler;
+    std::function<void(brls::GestureState, float)> horizontal_pan_handler;
+    std::function<void(brls::GestureState, float)> vertical_pan_handler;
     bool pause_icon_visible = false;
     Rect pause_icon_bounds;
+    Rect controls_progress_bounds;
+
+    enum class ActivePanAxis {
+        None,
+        Horizontal,
+        Vertical,
+    };
+
+    ActivePanAxis active_pan_axis = ActivePanAxis::None;
 };
 
 }  // namespace switchbox::app

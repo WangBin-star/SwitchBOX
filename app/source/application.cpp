@@ -37,9 +37,20 @@ void prepare_language_override(const switchbox::core::LanguageState& language_st
     }
 }
 
+void apply_runtime_preferences_from_config() {
+    bool touch_enabled = true;
+    if (switchbox::core::AppConfigStore::loaded_from_disk()) {
+        touch_enabled = switchbox::core::AppConfigStore::current().general.touch_enable;
+    }
+
+    brls::Application::setTouchInputEnabled(touch_enabled);
+}
+
 void rebuild_root_ui(const StartupContext& context, bool reopen_settings) {
     const bool config_ready = switchbox::core::AppConfigStore::loaded_from_disk();
     const auto& paths = switchbox::core::AppConfigStore::paths();
+
+    apply_runtime_preferences_from_config();
 
     brls::Application::clearActivities();
 
@@ -63,6 +74,10 @@ void Application::set_runtime_context(const StartupContext& context) {
 
 const StartupContext& Application::runtime_context() {
     return g_runtime_context;
+}
+
+void Application::apply_runtime_preferences() {
+    apply_runtime_preferences_from_config();
 }
 
 void Application::reload_root_ui(bool reopen_settings) {
@@ -111,6 +126,8 @@ int Application::run(const StartupContext& context) const {
     if (configReady) {
         apply_language_state(languageState);
     }
+
+    Application::apply_runtime_preferences();
 
     if (!configReady) {
         brls::Logger::warning("Unable to initialize config store");

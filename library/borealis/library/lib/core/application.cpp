@@ -283,6 +283,24 @@ void Application::processInput()
     inputManager->updateMouseStates(&rawMouse);
     inputManager->updateUnifiedControllerState(&controllerState);
 
+    if (!Application::touchInputEnabled)
+    {
+        if (!Application::currentTouchState.empty())
+        {
+            for (auto& touch : Application::currentTouchState)
+            {
+                if (touch.view)
+                {
+                    touch.view->interruptGestures(false);
+                    touch.view = nullptr;
+                }
+            }
+            Application::currentTouchState.clear();
+        }
+
+        rawTouch.clear();
+    }
+
     if (isSwapInputKeys())
     {
         bool swapKeys[ControllerButton::_BUTTON_MAX];
@@ -855,6 +873,38 @@ void Application::setGlobalQuit(bool enabled)
         else
             (*it)->unregisterAction(Application::gloablQuitIdentifier);
     }
+}
+
+void Application::setTouchInputEnabled(bool enabled)
+{
+    Application::touchInputEnabled = enabled;
+
+    if (!enabled)
+    {
+        for (auto& touch : Application::currentTouchState)
+        {
+            if (touch.view)
+            {
+                touch.view->interruptGestures(false);
+                touch.view = nullptr;
+            }
+        }
+        Application::currentTouchState.clear();
+
+        if (Application::inputType == InputType::TOUCH)
+        {
+            Application::inputType = InputType::GAMEPAD;
+            Application::setDrawCoursor(false);
+            if (Application::currentFocus)
+                Application::currentFocus->onFocusGained();
+            globalInputTypeChangeEvent.fire(InputType::GAMEPAD);
+        }
+    }
+}
+
+bool Application::isTouchInputEnabled()
+{
+    return Application::touchInputEnabled;
 }
 
 void Application::setFPSStatus(bool enabled)

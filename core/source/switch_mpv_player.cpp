@@ -612,6 +612,31 @@ public:
         return true;
     }
 
+    bool seek_absolute_seconds(double target_seconds) {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        if (target_seconds < 0.0) {
+            target_seconds = 0.0;
+        }
+
+        std::ostringstream stream;
+        stream.setf(std::ios::fixed);
+        stream.precision(3);
+        stream << target_seconds;
+        const std::string target_text = stream.str();
+        const char* command[] = {"seek", target_text.c_str(), "absolute", "exact", nullptr};
+        const int rc = mpv_command_async(this->handle, 0, command);
+        if (rc < 0) {
+            this->last_error = std::string("Absolute seek failed: ") + mpv_error_string(rc);
+            append_debug_log("[input] absolute seek failed: " + this->last_error);
+            return false;
+        }
+
+        return true;
+    }
+
     bool set_speed(double speed) {
         if (this->handle == nullptr) {
             return false;
@@ -1791,6 +1816,10 @@ bool switch_mpv_seek_relative_seconds(double delta_seconds) {
     return SwitchMpvPlayer::instance().seek_relative_seconds(delta_seconds);
 }
 
+bool switch_mpv_seek_absolute_seconds(double target_seconds) {
+    return SwitchMpvPlayer::instance().seek_absolute_seconds(target_seconds);
+}
+
 bool switch_mpv_set_speed(double speed) {
     return SwitchMpvPlayer::instance().set_speed(speed);
 }
@@ -1912,6 +1941,10 @@ void switch_mpv_toggle_pause() {
 }
 
 bool switch_mpv_seek_relative_seconds(double) {
+    return false;
+}
+
+bool switch_mpv_seek_absolute_seconds(double) {
     return false;
 }
 

@@ -157,7 +157,7 @@ bool general_settings_equal(
            lhs.resume_start_percent == rhs.resume_start_percent &&
            lhs.resume_stop_percent == rhs.resume_stop_percent &&
            lhs.touch_enable == rhs.touch_enable &&
-           lhs.touch_swipe_seek == rhs.touch_swipe_seek;
+           lhs.touch_player_gestures == rhs.touch_player_gestures;
 }
 
 bool iptv_source_equal(
@@ -345,18 +345,6 @@ std::string summarize_detail_text(const std::string& value, size_t max_length = 
 
 std::string bool_display_text(bool value) {
     return value ? tr("settings_page/common/enabled") : tr("settings_page/common/disabled");
-}
-
-std::string integration_badge(bool integrated) {
-    return integrated ? tr("settings_page/integration/integrated")
-                      : tr("settings_page/integration/not_integrated");
-}
-
-std::string with_integration_badge(
-    const std::string& value,
-    bool integrated,
-    size_t max_length = 56) {
-    return integration_badge(integrated) + " | " + summarize_detail_text(value, max_length);
 }
 
 std::string sort_order_display_name(const std::string& sort_order) {
@@ -741,6 +729,8 @@ bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
         return true;
     }
 
+    switchbox::app::Application::apply_runtime_preferences();
+
     if (language_changed) {
         state->saved_config = state->draft_config;
         brls::delay(1, []() {
@@ -823,6 +813,19 @@ void open_playable_extensions_editor(const std::shared_ptr<SettingsDraftState>& 
 
 void toggle_hardware_decode(const std::shared_ptr<SettingsDraftState>& state) {
     state->draft_config.general.hardware_decode = !state->draft_config.general.hardware_decode;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_touch_enable(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.touch_enable = !state->draft_config.general.touch_enable;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_touch_player_gestures(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.touch_player_gestures =
+        !state->draft_config.general.touch_player_gestures;
     sync_dirty_state(state);
     rebuild_right_panel(state);
 }
@@ -1096,12 +1099,11 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     const auto add_setting_cell = [&](const std::string& view_id,
                                       const std::string& title,
                                       const std::string& value,
-                                      bool integrated,
                                       std::function<bool(brls::View*)> action) {
         container->addView(create_action_cell(
             title,
-            with_integration_badge(value, integrated, 44),
-            integrated ? theme["brls/list/listItem_value_color"] : theme["brls/text_disabled"],
+            summarize_detail_text(value, 44),
+            theme["brls/list/listItem_value_color"],
             std::move(action),
             view_id));
     };
@@ -1112,7 +1114,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/language",
         tr("settings_page/language/title"),
         selected_language_display_name(state),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/language");
             open_language_dropdown(state);
@@ -1120,10 +1121,19 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         });
 
     add_setting_cell(
+        "settings/general/touch_enable",
+        tr("settings_page/general/touch_enable/title"),
+        bool_display_text(general.touch_enable),
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/touch_enable");
+            toggle_touch_enable(state);
+            return true;
+        });
+
+    add_setting_cell(
         "settings/general/playable_extensions",
         tr("settings_page/general/playable_extensions/title"),
         general.playable_extensions,
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/playable_extensions");
             open_playable_extensions_editor(state);
@@ -1134,7 +1144,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/sort_order",
         tr("settings_page/general/sort_order/title"),
         sort_order_display_name(general.sort_order),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/sort_order");
             open_sort_order_dropdown(state);
@@ -1147,7 +1156,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/hardware_decode",
         tr("settings_page/general/hardware_decode/title"),
         bool_display_text(general.hardware_decode),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/hardware_decode");
             toggle_hardware_decode(state);
@@ -1158,7 +1166,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/short_seek",
         tr("settings_page/general/short_seek/title"),
         tr("settings_page/general/seconds_value", std::to_string(general.short_seek)),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/short_seek");
             open_short_seek_editor(state);
@@ -1169,7 +1176,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/long_seek",
         tr("settings_page/general/long_seek/title"),
         tr("settings_page/general/seconds_value", std::to_string(general.long_seek)),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/long_seek");
             open_long_seek_editor(state);
@@ -1180,7 +1186,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/y_hold_speed_multiplier",
         tr("settings_page/general/y_hold_speed_multiplier/title"),
         tr("settings_page/general/multiplier_value", format_float_value(general.y_hold_speed_multiplier, 1)),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/y_hold_speed_multiplier");
             open_y_hold_speed_multiplier_editor(state);
@@ -1193,7 +1198,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         tr(
             "settings_page/general/milliseconds_value",
             std::to_string(general.continuous_seek_interval_ms)),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/continuous_seek_interval_ms");
             open_continuous_seek_interval_editor(state);
@@ -1201,10 +1205,19 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         });
 
     add_setting_cell(
+        "settings/general/touch_player_gestures",
+        tr("settings_page/general/touch_player_gestures/title"),
+        bool_display_text(general.touch_player_gestures),
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/touch_player_gestures");
+            toggle_touch_player_gestures(state);
+            return true;
+        });
+
+    add_setting_cell(
         "settings/general/use_preferred_audio_language",
         tr("settings_page/general/use_preferred_audio_language/title"),
         bool_display_text(general.use_preferred_audio_language),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/use_preferred_audio_language");
             toggle_preferred_audio_language(state);
@@ -1215,7 +1228,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/preferred_audio_language",
         tr("settings_page/general/preferred_audio_language/title"),
         preferred_language_display_text(general.preferred_audio_language),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/preferred_audio_language");
             open_preferred_audio_language_picker(state);
@@ -1226,7 +1238,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/use_preferred_subtitle_language",
         tr("settings_page/general/use_preferred_subtitle_language/title"),
         bool_display_text(general.use_preferred_subtitle_language),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/use_preferred_subtitle_language");
             toggle_preferred_subtitle_language(state);
@@ -1237,7 +1248,6 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/preferred_subtitle_language",
         tr("settings_page/general/preferred_subtitle_language/title"),
         preferred_language_display_text(general.preferred_subtitle_language),
-        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/preferred_subtitle_language");
             open_preferred_subtitle_language_picker(state);

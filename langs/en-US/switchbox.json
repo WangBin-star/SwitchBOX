@@ -229,10 +229,6 @@
                 "enabled": "Enabled",
                 "disabled": "Disabled"
             },
-            "integration": {
-                "integrated": "[Integrated]",
-                "not_integrated": "[Planned]"
-            },
             "general": {
                 "title": "Basic Settings",
                 "summary": "This page shows agreed runtime options and marks whether each option is already wired to real behavior in the current development stage.",
@@ -281,6 +277,12 @@
                 "continuous_seek_interval_ms": {
                     "title": "Continuous seek interval",
                     "hint": "Repeat interval in milliseconds for combo seek actions such as R+Left/Right and ZR+Left/Right."
+                },
+                "touch_enable": {
+                    "title": "Enable touch"
+                },
+                "touch_player_gestures": {
+                    "title": "Player swipe controls"
                 },
                 "use_preferred_audio_language": {
                     "title": "Use preferred audio language"

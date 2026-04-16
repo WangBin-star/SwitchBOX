@@ -229,10 +229,6 @@
                 "enabled": "\u5df2\u542f\u7528",
                 "disabled": "\u5df2\u7981\u7528"
             },
-            "integration": {
-                "integrated": "[\u5df2\u63a5\u5165]",
-                "not_integrated": "[\u672a\u63a5\u5165]"
-            },
             "general": {
                 "title": "\u57fa\u7840\u8bbe\u7f6e",
                 "summary": "\u8fd9\u91cc\u5c55\u793a\u6211\u4eec\u5df2\u7ea6\u5b9a\u7684\u53c2\u6570\uff0c\u5e76\u6807\u8bb0\u5f53\u524d\u5f00\u53d1\u9636\u6bb5\u662f\u5426\u5df2\u7ecf\u771f\u6b63\u63a5\u5165\u751f\u6548\u903b\u8f91\u3002",
@@ -281,6 +277,12 @@
                 "continuous_seek_interval_ms": {
                     "title": "\u8fde\u8df3\u95f4\u9694",
                     "hint": "\u7ec4\u5408\u952e\u8fde\u7eed\u8df3\u8f6c\uff08\u5982 R+\u5de6/\u53f3\uff0cZR+\u5de6/\u53f3\uff09\u7684\u89e6\u53d1\u95f4\u9694\uff0c\u5355\u4f4d\u4e3a\u6beb\u79d2\u3002"
+                },
+                "touch_enable": {
+                    "title": "\u542f\u7528\u89e6\u63a7"
+                },
+                "touch_player_gestures": {
+                    "title": "\u64ad\u653e\u5668\u6ed1\u52a8\u63a7\u5236"
                 },
                 "use_preferred_audio_language": {
                     "title": "\u542f\u7528\u4f18\u5148\u97f3\u8f68\u8bed\u8a00"

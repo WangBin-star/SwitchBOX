@@ -209,6 +209,8 @@ class Application
      * Sets whether BUTTON_START will globally be used to close the application.
      */
     static void setGlobalQuit(bool enabled);
+    static void setTouchInputEnabled(bool enabled);
+    static bool isTouchInputEnabled();
 
     static void setFPSStatus(bool enabled);
     static bool getFPSStatus();
@@ -404,6 +406,7 @@ class Application
 
     inline static bool globalQuitEnabled                = false;
     inline static ActionIdentifier gloablQuitIdentifier = ACTION_NONE;
+    inline static bool touchInputEnabled                = true;
     inline static bool globalFPSToggleEnabled           = false;
     inline static size_t globalFPS                      = 60;
     inline static Time limitedFrameTime                 = 0;

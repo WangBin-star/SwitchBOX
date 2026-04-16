@@ -34,7 +34,7 @@ struct GeneralSettings {
     int resume_start_percent = 5;
     int resume_stop_percent = 5;
     bool touch_enable = true;
-    bool touch_swipe_seek = false;
+    bool touch_player_gestures = false;
 };
 
 struct IptvSourceSettings {
