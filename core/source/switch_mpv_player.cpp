@@ -8,8 +8,6 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -24,7 +22,6 @@
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <mpv/render_dk3d.h>
-#include <switch.h>
 #endif
 
 #include "switchbox/core/app_config.hpp"
@@ -40,17 +37,6 @@ void append_debug_log(const std::string& message) {
     (void)message;
 }
 
-uint16_t read_be16(const uint8_t* data) {
-    return static_cast<uint16_t>((static_cast<uint16_t>(data[0]) << 8) | static_cast<uint16_t>(data[1]));
-}
-
-uint32_t read_be32(const uint8_t* data) {
-    return (static_cast<uint32_t>(data[0]) << 24) |
-           (static_cast<uint32_t>(data[1]) << 16) |
-           (static_cast<uint32_t>(data[2]) << 8) |
-           static_cast<uint32_t>(data[3]);
-}
-
 std::string trim(std::string value) {
     const auto is_space = [](unsigned char character) {
         return std::isspace(character) != 0;
@@ -61,243 +47,19 @@ std::string trim(std::string value) {
     return value;
 }
 
-std::string utf8_from_codepoint(uint32_t codepoint) {
-    std::string output;
-    if (codepoint <= 0x7F) {
-        output.push_back(static_cast<char>(codepoint));
-    } else if (codepoint <= 0x7FF) {
-        output.push_back(static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F)));
-        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    } else if (codepoint <= 0xFFFF) {
-        output.push_back(static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F)));
-        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    } else if (codepoint <= 0x10FFFF) {
-        output.push_back(static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07)));
-        output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    }
-    return output;
-}
+constexpr const char* kEmbeddedSubtitleFontDirectory = "romfs:/font";
+constexpr const char* kEmbeddedSubtitleFontFamily = "Droid Sans Fallback";
 
-std::string decode_utf16be(const uint8_t* data, size_t size) {
-    std::string output;
-    for (size_t offset = 0; offset + 1 < size; offset += 2) {
-        uint32_t codepoint = read_be16(data + offset);
-        if (codepoint >= 0xD800 && codepoint <= 0xDBFF && offset + 3 < size) {
-            const uint32_t low = read_be16(data + offset + 2);
-            if (low >= 0xDC00 && low <= 0xDFFF) {
-                codepoint = 0x10000 + (((codepoint - 0xD800) << 10) | (low - 0xDC00));
-                offset += 2;
-            }
-        }
-        output += utf8_from_codepoint(codepoint);
-    }
-    return trim(output);
-}
-
-std::string decode_name_record(
-    uint16_t platform_id,
-    const uint8_t* data,
-    size_t size) {
-    if (platform_id == 0 || platform_id == 3) {
-        return decode_utf16be(data, size);
+void configure_embedded_subtitle_fonts(mpv_handle* handle) {
+    if (handle == nullptr) {
+        return;
     }
 
-    return trim(std::string(reinterpret_cast<const char*>(data), size));
-}
-
-std::string extract_font_family_name_from_sfnt_face(
-    const uint8_t* data,
-    size_t size,
-    size_t face_offset) {
-    if (face_offset + 12 > size) {
-        return {};
-    }
-
-    const uint8_t* face = data + face_offset;
-    const size_t face_size = size - face_offset;
-    const uint16_t table_count = read_be16(face + 4);
-    if (12 + static_cast<size_t>(table_count) * 16 > face_size) {
-        return {};
-    }
-
-    size_t name_table_offset = 0;
-    size_t name_table_length = 0;
-    for (uint16_t index = 0; index < table_count; ++index) {
-        const uint8_t* record = face + 12 + static_cast<size_t>(index) * 16;
-        if (std::memcmp(record, "name", 4) != 0) {
-            continue;
-        }
-
-        name_table_offset = static_cast<size_t>(read_be32(record + 8));
-        name_table_length = static_cast<size_t>(read_be32(record + 12));
-        break;
-    }
-
-    if (name_table_offset == 0 || name_table_offset + name_table_length > face_size || name_table_length < 6) {
-        return {};
-    }
-
-    const uint8_t* name_table = face + name_table_offset;
-    const uint16_t record_count = read_be16(name_table + 2);
-    const uint16_t string_offset = read_be16(name_table + 4);
-    if (6 + static_cast<size_t>(record_count) * 12 > name_table_length || string_offset > name_table_length) {
-        return {};
-    }
-
-    int best_score = std::numeric_limits<int>::min();
-    std::string best_name;
-
-    for (uint16_t index = 0; index < record_count; ++index) {
-        const uint8_t* record = name_table + 6 + static_cast<size_t>(index) * 12;
-        const uint16_t platform_id = read_be16(record + 0);
-        const uint16_t language_id = read_be16(record + 4);
-        const uint16_t name_id = read_be16(record + 6);
-        const uint16_t text_length = read_be16(record + 8);
-        const uint16_t text_offset = read_be16(record + 10);
-
-        if (name_id != 16 && name_id != 1) {
-            continue;
-        }
-        if (static_cast<size_t>(string_offset) + text_offset + text_length > name_table_length) {
-            continue;
-        }
-
-        const uint8_t* text = name_table + string_offset + text_offset;
-        const std::string decoded = decode_name_record(platform_id, text, text_length);
-        if (decoded.empty()) {
-            continue;
-        }
-
-        int score = (name_id == 16 ? 100 : 50);
-        if (platform_id == 3) {
-            score += 40;
-        } else if (platform_id == 0) {
-            score += 30;
-        } else if (platform_id == 1) {
-            score += 20;
-        }
-        if (language_id == 0x0409 || language_id == 0) {
-            score += 10;
-        }
-
-        if (score > best_score) {
-            best_score = score;
-            best_name = decoded;
-        }
-    }
-
-    return best_name;
-}
-
-std::string extract_font_family_name_from_sfnt(const void* raw_data, size_t size) {
-    if (raw_data == nullptr || size < 12) {
-        return {};
-    }
-
-    const auto* data = static_cast<const uint8_t*>(raw_data);
-    if (std::memcmp(data, "ttcf", 4) == 0) {
-        if (size < 12) {
-            return {};
-        }
-        const uint32_t face_count = read_be32(data + 8);
-        for (uint32_t index = 0; index < face_count; ++index) {
-            const size_t offset_pos = 12 + static_cast<size_t>(index) * 4;
-            if (offset_pos + 4 > size) {
-                break;
-            }
-            const size_t face_offset = static_cast<size_t>(read_be32(data + offset_pos));
-            const std::string family_name = extract_font_family_name_from_sfnt_face(data, size, face_offset);
-            if (!family_name.empty()) {
-                return family_name;
-            }
-        }
-        return {};
-    }
-
-    return extract_font_family_name_from_sfnt_face(data, size, 0);
-}
-
-bool write_binary_file(
-    const std::filesystem::path& path,
-    const void* data,
-    size_t size) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output.is_open()) {
-        return false;
-    }
-
-    output.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
-    return output.good();
-}
-
-struct SwitchSubtitleFontCache {
-    bool attempted = false;
-    bool ready = false;
-    std::filesystem::path directory;
-    std::string family_name;
-};
-
-SwitchSubtitleFontCache& subtitle_font_cache() {
-    static SwitchSubtitleFontCache cache;
-    return cache;
-}
-
-bool prepare_switch_subtitle_fonts(std::string& font_directory, std::string& font_family) {
-    auto& cache = subtitle_font_cache();
-    if (cache.attempted) {
-        font_directory = cache.directory.string();
-        font_family = cache.family_name;
-        return cache.ready;
-    }
-
-    cache.attempted = true;
-
-    const auto font_directory_path = AppConfigStore::paths().base_directory / ".switchbox-mpv-fonts";
-    std::error_code error;
-    std::filesystem::create_directories(font_directory_path, error);
-    if (error) {
-        return false;
-    }
-
-    struct FontDumpRequest {
-        PlSharedFontType type;
-        const char* file_name;
-        bool use_for_family_name;
-    };
-
-    const FontDumpRequest requests[] = {
-        {PlSharedFontType_Standard, "standard.ttf", false},
-        {PlSharedFontType_ChineseSimplified, "zh-Hans.ttf", true},
-        {PlSharedFontType_ExtChineseSimplified, "zh-Hans-ext.ttf", false},
-    };
-
-    for (const auto& request : requests) {
-        PlFontData font_data {};
-        if (R_FAILED(plGetSharedFontByType(&font_data, request.type)) || font_data.address == nullptr || font_data.size == 0) {
-            continue;
-        }
-
-        if (!write_binary_file(font_directory_path / request.file_name, font_data.address, font_data.size)) {
-            continue;
-        }
-
-        if (request.use_for_family_name && cache.family_name.empty()) {
-            cache.family_name = extract_font_family_name_from_sfnt(font_data.address, font_data.size);
-        }
-    }
-
-    if (cache.family_name.empty()) {
-        return false;
-    }
-
-    cache.directory = font_directory_path;
-    cache.ready = true;
-    font_directory = cache.directory.string();
-    font_family = cache.family_name;
-    return true;
+    const std::string force_style = std::string("FontName=") + kEmbeddedSubtitleFontFamily;
+    mpv_set_option_string(handle, "sub-fonts-dir", kEmbeddedSubtitleFontDirectory);
+    mpv_set_option_string(handle, "sub-font", kEmbeddedSubtitleFontFamily);
+    mpv_set_option_string(handle, "osd-font", kEmbeddedSubtitleFontFamily);
+    mpv_set_option_string(handle, "sub-ass-force-style", force_style.c_str());
 }
 
 const mpv_node* node_map_find(const mpv_node_list* map, const char* key) {
@@ -1886,17 +1648,7 @@ private:
             "demuxer-readahead-secs",
             std::to_string(std::max(0, switchbox::core::AppConfigStore::current().general.demux_cache_sec)).c_str());
 
-        std::string subtitle_font_directory;
-        std::string subtitle_font_family;
-        if (prepare_switch_subtitle_fonts(subtitle_font_directory, subtitle_font_family)) {
-            mpv_set_option_string(this->handle, "sub-fonts-dir", subtitle_font_directory.c_str());
-            mpv_set_option_string(this->handle, "sub-font", subtitle_font_family.c_str());
-            mpv_set_option_string(this->handle, "osd-font", subtitle_font_family.c_str());
-            mpv_set_option_string(
-                this->handle,
-                "sub-ass-force-style",
-                ("FontName=" + subtitle_font_family).c_str());
-        }
+        configure_embedded_subtitle_fonts(this->handle);
 
         if (mpv_initialize(this->handle) < 0) {
             error_message = "mpv_initialize failed.";
