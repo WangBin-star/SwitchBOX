@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__SWITCH__)
+#include <deko3d.h>
+#endif
+
 #include "switchbox/core/playback_target.hpp"
 
 namespace switchbox::core {
@@ -20,6 +24,15 @@ std::string switch_mpv_backend_reason();
 
 bool switch_mpv_open(const PlaybackTarget& target, std::string& error_message);
 void switch_mpv_stop();
+void switch_mpv_shutdown();
+#if defined(__SWITCH__)
+bool switch_mpv_prepare_renderer_for_switch(
+    DkDevice device,
+    DkQueue queue,
+    int width,
+    int height,
+    std::string& error_message);
+#endif
 bool switch_mpv_session_active();
 bool switch_mpv_has_media();
 void switch_mpv_toggle_pause();
@@ -39,11 +52,15 @@ double switch_mpv_get_duration_seconds();
 bool switch_mpv_is_paused();
 std::string switch_mpv_consume_last_error();
 
-bool switch_mpv_render_rgba_frame(
+#if defined(__SWITCH__)
+bool switch_mpv_render_deko3d_frame(
+    DkDevice device,
+    DkQueue queue,
+    DkImage* texture,
     int width,
-    int height,
-    const std::uint8_t** rgba_data,
-    size_t* rgba_size,
-    int* rgba_stride);
+    int height);
+#endif
+
+void switch_mpv_report_render_swap();
 
 }  // namespace switchbox::core

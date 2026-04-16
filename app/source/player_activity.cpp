@@ -18,6 +18,10 @@
 #include <borealis/views/label.hpp>
 #include <borealis/views/scrolling_frame.hpp>
 
+#if defined(__SWITCH__)
+#include <borealis/platforms/switch/switch_video.hpp>
+#endif
+
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
 #include "switchbox/core/smb_browser.hpp"
@@ -26,6 +30,10 @@
 namespace switchbox::app {
 
 namespace {
+
+constexpr int kPlayerVerticalRepeatIntervalMs = 90;
+constexpr int kPlayerControlsHorizontalRepeatIntervalMs = 90;
+constexpr int kPlayerDirectionInitialRepeatDelayMs = 260;
 
 std::string tr(const std::string& key) {
     return brls::getStr("switchbox/" + key);
@@ -90,7 +98,6 @@ brls::View* create_switch_player_content(const switchbox::core::PlaybackTarget&)
     auto* container = new brls::Box(brls::Axis::COLUMN);
     container->setPadding(0, 0, 0, 0);
     container->setGrow(1.0f);
-    container->setBackgroundColor(nvgRGB(0, 0, 0));
 
     auto* video_surface = new PlayerVideoSurface();
     video_surface->setId("switchbox/player_surface");
@@ -189,56 +196,56 @@ void PlayerActivity::willAppear(bool resetState) {
         brls::BUTTON_UP,
         [this](brls::View*) { return handle_up_action(); },
         true,
-        true,
+        false,
         brls::SOUND_CLICK);
     registerAction(
         tr("actions/enable"),
         brls::BUTTON_DOWN,
         [this](brls::View*) { return handle_down_action(); },
         true,
-        true,
+        false,
         brls::SOUND_CLICK);
     registerAction(
         tr("actions/disable"),
         brls::BUTTON_NAV_UP,
         [](brls::View*) { return true; },
         true,
-        true,
+        false,
         brls::SOUND_NONE);
     registerAction(
         tr("actions/enable"),
         brls::BUTTON_NAV_DOWN,
         [](brls::View*) { return true; },
         true,
-        true,
+        false,
         brls::SOUND_NONE);
     registerAction(
         tr("actions/disable"),
         brls::BUTTON_LEFT,
         [this](brls::View*) { return handle_left_action(); },
         true,
-        true,
+        false,
         brls::SOUND_CLICK);
     registerAction(
         tr("actions/enable"),
         brls::BUTTON_RIGHT,
         [this](brls::View*) { return handle_right_action(); },
         true,
-        true,
+        false,
         brls::SOUND_CLICK);
     registerAction(
         tr("actions/disable"),
         brls::BUTTON_NAV_LEFT,
         [](brls::View*) { return true; },
         true,
-        true,
+        false,
         brls::SOUND_NONE);
     registerAction(
         tr("actions/enable"),
         brls::BUTTON_NAV_RIGHT,
         [](brls::View*) { return true; },
         true,
-        true,
+        false,
         brls::SOUND_NONE);
 
     this->runtime_tick.setPeriod(16);
@@ -286,6 +293,12 @@ void PlayerActivity::initialize_switch_player_state() {
 
 void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackTarget& next_target) {
     std::string startup_error;
+    if (!prepare_switch_renderer_if_needed(startup_error) && !startup_error.empty()) {
+        auto* dialog = new brls::Dialog(startup_error);
+        dialog->open();
+        return;
+    }
+
     if (!switchbox::core::switch_mpv_open(next_target, startup_error) && !startup_error.empty()) {
         auto* dialog = new brls::Dialog(startup_error);
         dialog->open();
@@ -303,6 +316,29 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
     switchbox::core::switch_mpv_set_speed(1.0);
     switchbox::core::switch_mpv_set_volume(this->session_volume);
     refresh_overlay_entries(true);
+}
+
+bool PlayerActivity::prepare_switch_renderer_if_needed(std::string& error_message) {
+    error_message.clear();
+
+#if defined(__SWITCH__)
+    auto* switch_video_context = dynamic_cast<brls::SwitchVideoContext*>(
+        brls::Application::getPlatform()->getVideoContext());
+    if (switch_video_context == nullptr) {
+        return true;
+    }
+
+    const int width = std::max(1, static_cast<int>(brls::Application::windowWidth));
+    const int height = std::max(1, static_cast<int>(brls::Application::windowHeight));
+    return switchbox::core::switch_mpv_prepare_renderer_for_switch(
+        switch_video_context->getDeko3dDevice(),
+        switch_video_context->getQueue(),
+        width,
+        height,
+        error_message);
+#else
+    return true;
+#endif
 }
 
 void PlayerActivity::save_player_volume_if_needed() {
@@ -375,14 +411,20 @@ bool PlayerActivity::handle_plus_action() {
 }
 
 bool PlayerActivity::handle_left_action() {
+    const auto& controller = brls::Application::getControllerState();
     if (this->controls_visible) {
+        if (controller.buttons[brls::BUTTON_LB] ||
+            controller.buttons[brls::BUTTON_RB] ||
+            controller.buttons[brls::BUTTON_LT] ||
+            controller.buttons[brls::BUTTON_RT]) {
+            return true;
+        }
         if (should_accept_controls_navigation_step(-1)) {
             move_controls_selection(-1);
         }
         return true;
     }
 
-    const auto& controller = brls::Application::getControllerState();
     if (controller.buttons[brls::BUTTON_LB] ||
         controller.buttons[brls::BUTTON_RB] ||
         controller.buttons[brls::BUTTON_LT] ||
@@ -395,7 +437,14 @@ bool PlayerActivity::handle_left_action() {
 }
 
 bool PlayerActivity::handle_right_action() {
+    const auto& controller = brls::Application::getControllerState();
     if (this->controls_visible) {
+        if (controller.buttons[brls::BUTTON_LB] ||
+            controller.buttons[brls::BUTTON_RB] ||
+            controller.buttons[brls::BUTTON_LT] ||
+            controller.buttons[brls::BUTTON_RT]) {
+            return true;
+        }
         if (should_accept_controls_navigation_step(1)) {
             move_controls_selection(1);
         }
@@ -424,10 +473,6 @@ bool PlayerActivity::handle_down_action() {
 }
 
 bool PlayerActivity::handle_short_backward() {
-    if (this->controls_visible) {
-        return true;
-    }
-
     const auto& controller = brls::Application::getControllerState();
     if (direction_left_pressed(controller) || direction_right_pressed(controller)) {
         return true;
@@ -437,10 +482,6 @@ bool PlayerActivity::handle_short_backward() {
 }
 
 bool PlayerActivity::handle_short_forward() {
-    if (this->controls_visible) {
-        return true;
-    }
-
     const auto& controller = brls::Application::getControllerState();
     if (direction_left_pressed(controller) || direction_right_pressed(controller)) {
         return true;
@@ -450,18 +491,10 @@ bool PlayerActivity::handle_short_forward() {
 }
 
 bool PlayerActivity::handle_long_backward() {
-    if (this->controls_visible) {
-        return true;
-    }
-
     return seek_relative(-static_cast<double>(switchbox::core::AppConfigStore::current().general.long_seek));
 }
 
 bool PlayerActivity::handle_long_forward() {
-    if (this->controls_visible) {
-        return true;
-    }
-
     return seek_relative(static_cast<double>(switchbox::core::AppConfigStore::current().general.long_seek));
 }
 
@@ -798,7 +831,7 @@ void PlayerActivity::move_controls_selection(int delta) {
     if (next < 0 || next >= kButtonCount) {
         next = 3;
     } else {
-        next = (next + delta + kButtonCount) % kButtonCount;
+        next = std::clamp(next + delta, 0, kButtonCount - 1);
     }
 
     this->controls_selected_index = next;
@@ -832,6 +865,8 @@ bool PlayerActivity::execute_controls_action(int action_index) {
 
 void PlayerActivity::tick_runtime_controls() {
     apply_directional_input_fallback_if_needed();
+    apply_vertical_repeat_if_needed();
+    apply_controls_horizontal_repeat_if_needed();
     apply_controls_hold_action_if_needed();
     apply_hold_speed_if_needed();
     apply_continuous_seek_if_needed();
@@ -875,6 +910,112 @@ void PlayerActivity::apply_directional_input_fallback_if_needed() {
     this->dpad_left_stick_down_pressed = down_pressed;
     this->dpad_left_stick_left_pressed = left_pressed;
     this->dpad_left_stick_right_pressed = right_pressed;
+}
+
+void PlayerActivity::apply_vertical_repeat_if_needed() {
+    const auto& controller = brls::Application::getControllerState();
+
+    const bool up_pressed =
+        controller.buttons[brls::BUTTON_UP] ||
+        controller.buttons[brls::BUTTON_NAV_UP] ||
+        left_stick_up_pressed(controller) ||
+        right_stick_up_pressed(controller);
+    const bool down_pressed =
+        controller.buttons[brls::BUTTON_DOWN] ||
+        controller.buttons[brls::BUTTON_NAV_DOWN] ||
+        left_stick_down_pressed(controller) ||
+        right_stick_down_pressed(controller);
+
+    int direction = 0;
+    if (up_pressed != down_pressed) {
+        direction = up_pressed ? -1 : 1;
+    }
+
+    if (direction == 0) {
+        this->last_vertical_repeat_direction = 0;
+        this->last_vertical_repeat_time = std::chrono::steady_clock::time_point::min();
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (direction != this->last_vertical_repeat_direction) {
+        this->last_vertical_repeat_direction = direction;
+        this->last_vertical_repeat_time = now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+        return;
+    }
+
+    if (this->last_vertical_repeat_time != std::chrono::steady_clock::time_point::min() &&
+        now < this->last_vertical_repeat_time) {
+        return;
+    }
+
+    this->last_vertical_repeat_time = now + std::chrono::milliseconds(kPlayerVerticalRepeatIntervalMs);
+    if (direction < 0) {
+        handle_up_action();
+    } else {
+        handle_down_action();
+    }
+}
+
+void PlayerActivity::apply_controls_horizontal_repeat_if_needed() {
+    if (!this->controls_visible) {
+        this->last_controls_horizontal_repeat_direction = 0;
+        this->last_controls_horizontal_repeat_time = std::chrono::steady_clock::time_point::min();
+        return;
+    }
+
+    const auto& controller = brls::Application::getControllerState();
+    if (controller.buttons[brls::BUTTON_LB] ||
+        controller.buttons[brls::BUTTON_RB] ||
+        controller.buttons[brls::BUTTON_LT] ||
+        controller.buttons[brls::BUTTON_RT]) {
+        this->last_controls_horizontal_repeat_direction = 0;
+        this->last_controls_horizontal_repeat_time = std::chrono::steady_clock::time_point::min();
+        return;
+    }
+
+    const bool left_pressed =
+        controller.buttons[brls::BUTTON_LEFT] ||
+        controller.buttons[brls::BUTTON_NAV_LEFT] ||
+        left_stick_left_pressed(controller) ||
+        right_stick_left_pressed(controller);
+    const bool right_pressed =
+        controller.buttons[brls::BUTTON_RIGHT] ||
+        controller.buttons[brls::BUTTON_NAV_RIGHT] ||
+        left_stick_right_pressed(controller) ||
+        right_stick_right_pressed(controller);
+
+    int direction = 0;
+    if (left_pressed != right_pressed) {
+        direction = left_pressed ? -1 : 1;
+    }
+
+    if (direction == 0) {
+        this->last_controls_horizontal_repeat_direction = 0;
+        this->last_controls_horizontal_repeat_time = std::chrono::steady_clock::time_point::min();
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (direction != this->last_controls_horizontal_repeat_direction) {
+        this->last_controls_horizontal_repeat_direction = direction;
+        this->last_controls_horizontal_repeat_time =
+            now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+        return;
+    }
+
+    if (this->last_controls_horizontal_repeat_time != std::chrono::steady_clock::time_point::min() &&
+        now < this->last_controls_horizontal_repeat_time) {
+        return;
+    }
+
+    this->last_controls_horizontal_repeat_time =
+        now + std::chrono::milliseconds(kPlayerControlsHorizontalRepeatIntervalMs);
+    if (direction < 0) {
+        handle_left_action();
+    } else {
+        handle_right_action();
+    }
 }
 
 void PlayerActivity::apply_controls_hold_action_if_needed() {
@@ -922,7 +1063,7 @@ void PlayerActivity::apply_controls_hold_action_if_needed() {
 }
 
 void PlayerActivity::apply_continuous_seek_if_needed() {
-    if (this->overlay_visible || this->controls_visible) {
+    if (this->overlay_visible) {
         this->last_continuous_seek_mode = 0;
         return;
     }

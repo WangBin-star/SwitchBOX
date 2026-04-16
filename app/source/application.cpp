@@ -11,6 +11,7 @@
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/build_info.hpp"
 #include "switchbox/core/language.hpp"
+#include "switchbox/core/switch_mpv_player.hpp"
 
 namespace switchbox::app {
 
@@ -98,6 +99,10 @@ int Application::run(const StartupContext& context) const {
         brls::Logger::error("Unable to init Borealis application");
         return EXIT_FAILURE;
     }
+
+    brls::Application::getExitEvent()->subscribe([]() {
+        switchbox::core::switch_mpv_shutdown();
+    });
 
 #ifdef __SWITCH__
     brls::Application::getPlatform()->exitToHomeMode(true);

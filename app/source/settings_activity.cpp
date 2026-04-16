@@ -1022,7 +1022,7 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         "settings/general/hardware_decode",
         tr("settings_page/general/hardware_decode/title"),
         bool_display_text(general.hardware_decode),
-        false,
+        true,
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/hardware_decode");
             toggle_hardware_decode(state);

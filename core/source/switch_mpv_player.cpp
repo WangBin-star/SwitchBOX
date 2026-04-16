@@ -1,20 +1,26 @@
 #include "switchbox/core/switch_mpv_player.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #if defined(__SWITCH__) && defined(SWITCHBOX_HAS_SWITCH_MPV)
+#include <deko3d.hpp>
 #include <mpv/client.h>
 #include <mpv/render.h>
+#include <mpv/render_dk3d.h>
 #endif
 
 #include "switchbox/core/app_config.hpp"
@@ -122,11 +128,42 @@ std::string pick_locator(const PlaybackTarget& target) {
     return target.fallback_locator;
 }
 
+constexpr const char* kHwdecCodecs =
+    "mpeg1video,mpeg2video,mpeg4,vc1,wmv3,h264,hevc,vp8,vp9,mjpeg";
+constexpr int kMpvImageCount = 3;
+constexpr unsigned kPresentCmdBufSlices = 3;
+constexpr uint32_t kPresentCmdBufSliceSize = 0x10000;
+
+uint32_t align_up_u32(uint64_t value, uint32_t alignment) {
+    const uint64_t aligned = (value + alignment - 1) & ~(static_cast<uint64_t>(alignment) - 1);
+    return static_cast<uint32_t>(aligned);
+}
+
 class SwitchMpvPlayer {
 public:
     static SwitchMpvPlayer& instance() {
         static SwitchMpvPlayer player;
         return player;
+    }
+
+    bool prepare_renderer_for_switch(
+        DkDevice device,
+        DkQueue queue,
+        int width,
+        int height,
+        std::string& error_message) {
+        if (!initialize(error_message)) {
+            return false;
+        }
+
+        if (!ensure_deko3d_context(device, queue, width, height, error_message)) {
+            if (!error_message.empty()) {
+                this->last_error = error_message;
+            }
+            return false;
+        }
+
+        return true;
     }
 
     bool open(const PlaybackTarget& target, std::string& error_message) {
@@ -135,9 +172,11 @@ public:
             return false;
         }
 
-        if (!stop_current_playback(false)) {
-            error_message = "Previous playback session did not stop cleanly.";
-            return false;
+        if (this->session_active.load() || this->has_media || !is_idle_active()) {
+            if (!stop_current_playback(false)) {
+                error_message = "Previous playback session did not stop cleanly.";
+                return false;
+            }
         }
 
         if (target.source_kind == PlaybackSourceKind::Smb && target.smb_locator.has_value()) {
@@ -166,10 +205,13 @@ public:
         this->playback_speed = 1.0;
         this->video_rotation_degrees = 0;
         this->playback_volume = std::clamp(switchbox::core::AppConfigStore::current().general.player_volume, 0, 100);
+        this->current_render_slot.store(-1);
 
         append_debug_log("[open] locator=" + locator);
 
         this->session_active.store(true);
+        apply_runtime_preferences();
+        (void)apply_video_rotation_degrees(0, false);
 
         const char* command[] = {"loadfile", locator.c_str(), "replace", nullptr};
         const int rc = mpv_command_async(this->handle, 0, command);
@@ -188,6 +230,39 @@ public:
 
     void stop() {
         (void)stop_current_playback(false);
+    }
+
+    void shutdown() {
+        stop_render_thread();
+
+        if (this->deko3d_queue != nullptr) {
+            dkQueueWaitIdle(this->deko3d_queue);
+        }
+
+        destroy_render_buffers();
+        this->deko3d_device = nullptr;
+        this->deko3d_queue = nullptr;
+
+        if (this->context != nullptr) {
+            mpv_render_context_free(this->context);
+            this->context = nullptr;
+        }
+
+        if (this->handle != nullptr) {
+            mpv_terminate_destroy(this->handle);
+            this->handle = nullptr;
+        }
+
+        this->ready = false;
+        this->has_media = false;
+        this->session_active.store(false);
+        this->paused.store(false);
+        this->frame_dirty.store(false);
+        this->current_render_slot.store(-1);
+        this->playback_speed = 1.0;
+        this->video_rotation_degrees = 0;
+        this->mpv_redraw_count = 0;
+        this->last_error.clear();
     }
 
     bool is_session_active() const {
@@ -277,8 +352,7 @@ public:
     }
 
     bool rotate_clockwise_90() {
-        this->video_rotation_degrees = (this->video_rotation_degrees + 90) % 360;
-        return true;
+        return apply_video_rotation_degrees((this->video_rotation_degrees + 90) % 360, true);
     }
 
     int get_video_rotation_degrees() const {
@@ -429,38 +503,69 @@ public:
         return this->paused.load();
     }
 
-    bool render_rgba_frame(
+    bool render_deko3d_frame(
+        DkDevice device,
+        DkQueue queue,
+        DkImage* texture,
         int width,
-        int height,
-        const std::uint8_t** rgba_data,
-        size_t* rgba_size,
-        int* rgba_stride) {
+        int height) {
         process_pending_events();
 
-        if (this->context == nullptr) {
+        if (device == nullptr || queue == nullptr || texture == nullptr) {
             return false;
         }
 
-        ensure_buffer(width, height);
-        (void)mpv_render_context_update(this->context);
-        if (this->session_active.load() || this->has_media) {
-            render_frame();
-        }
-        this->frame_dirty.store(false);
-
-        if (rgba_data != nullptr) {
-            *rgba_data = this->pixels.empty() ? nullptr : this->pixels.data();
+        std::string error_message;
+        if (!ensure_deko3d_context(device, queue, width, height, error_message)) {
+            if (!error_message.empty()) {
+                this->last_error = error_message;
+            }
+            return false;
         }
 
-        if (rgba_size != nullptr) {
-            *rgba_size = this->pixels.size();
+        if (!(this->session_active.load() || this->has_media)) {
+            return false;
         }
 
-        if (rgba_stride != nullptr) {
-            *rgba_stride = static_cast<int>(this->stride);
+        const int slot = this->current_render_slot.load();
+        if (slot < 0 || slot >= kMpvImageCount || !this->offscreen_ready) {
+            return false;
         }
 
-        return !this->pixels.empty();
+        this->present_cmd_fences[this->present_cmd_slice].wait();
+        this->present_cmd_buf.clear();
+        this->present_cmd_buf.addMemory(
+            this->present_cmd_memblock,
+            this->present_cmd_slice * kPresentCmdBufSliceSize,
+            kPresentCmdBufSliceSize);
+        auto& target_image = *reinterpret_cast<dk::Image*>(texture);
+
+        this->present_cmd_buf.copyImage(
+            dk::ImageView(this->mpv_images[slot]),
+            DkImageRect {
+                0,
+                0,
+                0,
+                static_cast<uint32_t>(this->offscreen_width),
+                static_cast<uint32_t>(this->offscreen_height),
+                1,
+            },
+            dk::ImageView(target_image),
+            DkImageRect {
+                0,
+                0,
+                0,
+                static_cast<uint32_t>(std::max(1, width)),
+                static_cast<uint32_t>(std::max(1, height)),
+                1,
+            });
+        this->present_cmd_buf.signalFence(this->present_cmd_fences[this->present_cmd_slice], false);
+        dkQueueSubmitCommands(queue, this->present_cmd_buf.finishList());
+        this->present_cmd_slice = (this->present_cmd_slice + 1) % kPresentCmdBufSlices;
+        return true;
+    }
+
+    void report_render_swap() {
     }
 
     std::string consume_last_error() {
@@ -470,10 +575,19 @@ public:
     }
 
 private:
+    void request_render_update() {
+        this->frame_dirty.store(true);
+        {
+            std::lock_guard<std::mutex> lock(this->mpv_redraw_mutex);
+            ++this->mpv_redraw_count;
+        }
+        this->mpv_redraw_condvar.notify_one();
+    }
+
     static void mpv_render_update(void* context) {
         auto* self = static_cast<SwitchMpvPlayer*>(context);
         if (self != nullptr) {
-            self->frame_dirty.store(true);
+            self->request_render_update();
         }
     }
 
@@ -503,6 +617,215 @@ private:
         return (!this->session_active.load() && !this->has_media) || is_idle_active();
     }
 
+    void set_property_string_relaxed(const char* property_name, const std::string& value) {
+        if (this->handle == nullptr || property_name == nullptr) {
+            return;
+        }
+
+        if (mpv_set_property_string(this->handle, property_name, value.c_str()) >= 0) {
+            return;
+        }
+
+        const char* command[] = {"set", property_name, value.c_str(), nullptr};
+        (void)mpv_command(this->handle, command);
+    }
+
+    void apply_runtime_preferences() {
+        if (this->handle == nullptr) {
+            return;
+        }
+
+        const auto& general = switchbox::core::AppConfigStore::current().general;
+        set_property_string_relaxed("hwdec", general.hardware_decode ? "nvtegra" : "no");
+        if (general.hardware_decode) {
+            set_property_string_relaxed("hwdec-codecs", kHwdecCodecs);
+        }
+
+        const int readahead_seconds = std::max(0, general.demux_cache_sec);
+        set_property_string_relaxed("demuxer-seekable-cache", readahead_seconds > 0 ? "yes" : "no");
+        set_property_string_relaxed("demuxer-readahead-secs", std::to_string(readahead_seconds));
+        set_property_string_relaxed(
+            "alang",
+            general.use_preferred_audio_language ? general.preferred_audio_language : "");
+        set_property_string_relaxed(
+            "slang",
+            general.use_preferred_subtitle_language ? general.preferred_subtitle_language : "");
+    }
+
+    bool apply_video_rotation_degrees(int degrees, bool update_error) {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        degrees %= 360;
+        if (degrees < 0) {
+            degrees += 360;
+        }
+
+        int64_t value = static_cast<int64_t>(degrees);
+        const int rc = mpv_set_property(this->handle, "video-rotate", MPV_FORMAT_INT64, &value);
+        if (rc < 0) {
+            if (update_error) {
+                this->last_error = std::string("Set rotation failed: ") + mpv_error_string(rc);
+                append_debug_log("[input] set_rotation failed: " + this->last_error);
+            }
+            return false;
+        }
+
+        this->video_rotation_degrees = degrees;
+        return true;
+    }
+
+    void stop_render_thread() {
+        if (!this->mpv_render_thread.joinable()) {
+            return;
+        }
+
+        this->mpv_render_thread.request_stop();
+        this->mpv_redraw_condvar.notify_all();
+        this->mpv_render_thread.join();
+    }
+
+    void ensure_render_thread() {
+        if (this->mpv_render_thread.joinable()) {
+            return;
+        }
+
+        this->mpv_render_thread = std::jthread([this](std::stop_token stop_token) {
+            dk::Fence done_fence {};
+            while (true) {
+                {
+                    std::unique_lock<std::mutex> lock(this->mpv_redraw_mutex);
+                    this->mpv_redraw_condvar.wait(lock, [this, &stop_token] {
+                        return stop_token.stop_requested() || this->mpv_redraw_count > 0;
+                    });
+                    if (stop_token.stop_requested()) {
+                        break;
+                    }
+                    --this->mpv_redraw_count;
+                }
+
+                std::scoped_lock<std::mutex> render_lock(this->render_mutex);
+                if (this->context == nullptr || !this->offscreen_ready) {
+                    continue;
+                }
+
+                if ((mpv_render_context_update(this->context) & MPV_RENDER_UPDATE_FRAME) == 0) {
+                    continue;
+                }
+
+                const int previous_slot = this->current_render_slot.load();
+                const int next_slot = previous_slot >= 0 ? (previous_slot + 1) % kMpvImageCount : 0;
+
+                mpv_deko3d_fbo fbo {
+                    &this->mpv_images[next_slot],
+                    &this->mpv_copy_fences[next_slot],
+                    &done_fence,
+                    this->offscreen_width,
+                    this->offscreen_height,
+                    DkImageFormat_RGBA8_Unorm,
+                };
+                mpv_render_param params[] = {
+                    {MPV_RENDER_PARAM_DEKO3D_FBO, &fbo},
+                    {MPV_RENDER_PARAM_INVALID, nullptr},
+                };
+
+                mpv_render_context_render(this->context, params);
+                done_fence.wait();
+                this->current_render_slot.store(next_slot);
+                this->frame_dirty.store(false);
+                mpv_render_context_report_swap(this->context);
+            }
+        });
+    }
+
+    void destroy_render_buffers() {
+        this->current_render_slot.store(-1);
+        this->offscreen_ready = false;
+        this->offscreen_width = 0;
+        this->offscreen_height = 0;
+        this->present_cmd_slice = 0;
+        this->present_cmd_buf = nullptr;
+        this->present_cmd_memblock = nullptr;
+        this->mpv_images_memblock = nullptr;
+    }
+
+    bool ensure_render_buffers(DkDevice device, DkQueue queue, int width, int height, std::string& error_message) {
+        const int safe_width = std::max(1, width);
+        const int safe_height = std::max(1, height);
+        if (this->offscreen_ready &&
+            this->deko3d_device == device &&
+            this->offscreen_width == safe_width &&
+            this->offscreen_height == safe_height &&
+            this->present_cmd_buf &&
+            this->present_cmd_memblock &&
+            this->mpv_images_memblock) {
+            this->deko3d_queue = queue;
+            return true;
+        }
+
+        std::scoped_lock<std::mutex> render_lock(this->render_mutex);
+        this->deko3d_device = device;
+        this->deko3d_queue = queue;
+        if (this->deko3d_queue != nullptr) {
+            dkQueueWaitIdle(this->deko3d_queue);
+        }
+
+        destroy_render_buffers();
+
+        dk::ImageLayout layout;
+        dk::ImageLayoutMaker { device }
+            .setFlags(DkImageFlags_UsageRender | DkImageFlags_Usage2DEngine | DkImageFlags_HwCompression)
+            .setFormat(DkImageFormat_RGBA8_Unorm)
+            .setDimensions(static_cast<uint32_t>(safe_width), static_cast<uint32_t>(safe_height))
+            .initialize(layout);
+
+        const uint32_t image_block_alignment =
+            std::max(layout.getAlignment(), static_cast<uint32_t>(DK_MEMBLOCK_ALIGNMENT));
+        const uint32_t image_block_size = align_up_u32(layout.getSize(), image_block_alignment);
+        this->mpv_images_memblock = dk::MemBlockMaker { device, image_block_size * kMpvImageCount }
+                                       .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image)
+                                       .create();
+        if (!this->mpv_images_memblock) {
+            error_message = "Failed to allocate deko3d offscreen images.";
+            return false;
+        }
+
+        for (int index = 0; index < kMpvImageCount; ++index) {
+            this->mpv_images[index].initialize(layout, this->mpv_images_memblock, index * image_block_size);
+        }
+
+        const uint32_t cmd_mem_size = kPresentCmdBufSlices * kPresentCmdBufSliceSize;
+        this->present_cmd_memblock = dk::MemBlockMaker { device, cmd_mem_size }
+                                        .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                                        .create();
+        if (!this->present_cmd_memblock) {
+            error_message = "Failed to allocate deko3d copy command memory.";
+            destroy_render_buffers();
+            return false;
+        }
+
+        this->present_cmd_buf = dk::CmdBufMaker { device }.create();
+        if (!this->present_cmd_buf) {
+            error_message = "Failed to create deko3d copy command buffer.";
+            destroy_render_buffers();
+            return false;
+        }
+
+        for (auto& fence : this->mpv_copy_fences) {
+            dkQueueSignalFence(queue, &fence, false);
+        }
+        for (auto& fence : this->present_cmd_fences) {
+            dkQueueSignalFence(queue, &fence, false);
+        }
+        dkQueueFlush(queue);
+
+        this->offscreen_width = safe_width;
+        this->offscreen_height = safe_height;
+        this->offscreen_ready = true;
+        return true;
+    }
+
     bool stop_current_playback(bool release_mount_after_stop) {
         bool fully_stopped = true;
         if (this->handle != nullptr) {
@@ -514,6 +837,7 @@ private:
         this->has_media = false;
         this->paused.store(false);
         this->frame_dirty.store(false);
+        this->current_render_slot.store(-1);
 
         if (release_mount_after_stop && fully_stopped) {
             switchbox::core::switch_smb_mount_release();
@@ -540,7 +864,7 @@ private:
                     this->session_active.store(true);
                     this->has_media = true;
                     this->paused.store(false);
-                    this->frame_dirty.store(true);
+                    request_render_update();
                     append_debug_log("[event] MPV_EVENT_FILE_LOADED");
                     break;
                 case MPV_EVENT_END_FILE: {
@@ -619,9 +943,27 @@ private:
         mpv_set_option_string(this->handle, "idle", "yes");
         mpv_set_option_string(this->handle, "vo", "libmpv");
         mpv_set_option_string(this->handle, "ao", "hos");
-        mpv_set_option_string(this->handle, "hwdec", "auto");
+        mpv_set_option_string(this->handle, "hwdec", "nvtegra");
+        mpv_set_option_string(this->handle, "hwdec-codecs", kHwdecCodecs);
         mpv_set_option_string(this->handle, "pause", "no");
         mpv_set_option_string(this->handle, "audio-display", "no");
+        mpv_set_option_string(this->handle, "vd-lavc-dr", "no");
+        mpv_set_option_string(this->handle, "vd-lavc-threads", "4");
+        mpv_set_option_string(this->handle, "correct-downscaling", "no");
+        mpv_set_option_string(this->handle, "linear-downscaling", "no");
+        mpv_set_option_string(this->handle, "sigmoid-upscaling", "no");
+        mpv_set_option_string(this->handle, "scale", "bilinear");
+        mpv_set_option_string(this->handle, "dscale", "bilinear");
+        mpv_set_option_string(this->handle, "cscale", "bilinear");
+        mpv_set_option_string(this->handle, "tscale", "oversample");
+        mpv_set_option_string(this->handle, "dither-depth", "no");
+        mpv_set_option_string(this->handle, "deband", "no");
+        mpv_set_option_string(this->handle, "hdr-compute-peak", "no");
+        mpv_set_option_string(this->handle, "demuxer-seekable-cache", "yes");
+        mpv_set_option_string(
+            this->handle,
+            "demuxer-readahead-secs",
+            std::to_string(std::max(0, switchbox::core::AppConfigStore::current().general.demux_cache_sec)).c_str());
 
         if (mpv_initialize(this->handle) < 0) {
             error_message = "mpv_initialize failed.";
@@ -629,66 +971,46 @@ private:
         }
 
         mpv_observe_property(this->handle, 0, "pause", MPV_FORMAT_FLAG);
-
-        mpv_render_param params[] = {
-            {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_SW)},
-            {MPV_RENDER_PARAM_INVALID, nullptr},
-        };
-        if (mpv_render_context_create(&this->context, this->handle, params) < 0) {
-            error_message = "mpv_render_context_create failed.";
-            return false;
-        }
-
-        mpv_render_context_set_update_callback(this->context, &SwitchMpvPlayer::mpv_render_update, this);
         this->ready = true;
         return true;
     }
 
-    void ensure_buffer(int width, int height) {
-        if (width == this->buffer_width && height == this->buffer_height) {
-            return;
+    bool ensure_deko3d_context(DkDevice device, DkQueue queue, int width, int height, std::string& error_message) {
+        if (this->handle == nullptr) {
+            error_message = "mpv handle is not initialized.";
+            return false;
         }
 
-        this->buffer_width = width;
-        this->buffer_height = height;
-        this->stride = static_cast<size_t>(this->buffer_width) * 4;
-        this->pixels.assign(this->stride * static_cast<size_t>(this->buffer_height), 0);
-        this->frame_dirty.store(true);
-    }
+        if (this->context == nullptr) {
+            int advanced_control = 1;
+            mpv_deko3d_init_params deko3d_init_params {device};
+            mpv_render_param params[] = {
+                {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_DEKO3D)},
+                {MPV_RENDER_PARAM_DEKO3D_INIT_PARAMS, &deko3d_init_params},
+                {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced_control},
+                {MPV_RENDER_PARAM_INVALID, nullptr},
+            };
 
-    void render_frame() {
-        if (this->context == nullptr || this->pixels.empty()) {
-            return;
+            if (mpv_render_context_create(&this->context, this->handle, params) < 0) {
+                error_message = "mpv_render_context_create failed.";
+                return false;
+            }
+
+            mpv_render_context_set_update_callback(this->context, &SwitchMpvPlayer::mpv_render_update, this);
         }
 
-        int size[] = {this->buffer_width, this->buffer_height};
-        const char* format = "rgba";
-        int stride_value = static_cast<int>(this->stride);
-        void* pixel_pointer = this->pixels.data();
+        if (!ensure_render_buffers(device, queue, width, height, error_message)) {
+            return false;
+        }
 
-        mpv_render_param params[] = {
-            {MPV_RENDER_PARAM_SW_SIZE, size},
-            {MPV_RENDER_PARAM_SW_FORMAT, const_cast<char*>(format)},
-            {MPV_RENDER_PARAM_SW_STRIDE, &stride_value},
-            {MPV_RENDER_PARAM_SW_POINTER, pixel_pointer},
-            {MPV_RENDER_PARAM_INVALID, nullptr},
-        };
-
-        mpv_render_context_render(this->context, params);
+        ensure_render_thread();
+        return true;
     }
 
     SwitchMpvPlayer() = default;
 
     ~SwitchMpvPlayer() {
-        if (this->context != nullptr) {
-            mpv_render_context_free(this->context);
-            this->context = nullptr;
-        }
-
-        if (this->handle != nullptr) {
-            mpv_terminate_destroy(this->handle);
-            this->handle = nullptr;
-        }
+        shutdown();
     }
 
     mpv_handle* handle = nullptr;
@@ -698,15 +1020,28 @@ private:
     std::atomic<bool> session_active = false;
     std::atomic<bool> paused = false;
     std::atomic<bool> frame_dirty = false;
+    std::atomic<int> current_render_slot = -1;
     double playback_speed = 1.0;
     int video_rotation_degrees = 0;
     int playback_volume = 80;
     std::string last_error;
-
-    int buffer_width = 0;
-    int buffer_height = 0;
-    size_t stride = 0;
-    std::vector<std::uint8_t> pixels;
+    DkDevice deko3d_device = nullptr;
+    DkQueue deko3d_queue = nullptr;
+    bool offscreen_ready = false;
+    int offscreen_width = 0;
+    int offscreen_height = 0;
+    std::array<dk::Image, kMpvImageCount> mpv_images {};
+    dk::UniqueMemBlock mpv_images_memblock;
+    std::array<dk::Fence, kMpvImageCount> mpv_copy_fences {};
+    dk::UniqueCmdBuf present_cmd_buf;
+    dk::UniqueMemBlock present_cmd_memblock;
+    std::array<dk::Fence, kPresentCmdBufSlices> present_cmd_fences {};
+    unsigned present_cmd_slice = 0;
+    std::mutex render_mutex;
+    std::mutex mpv_redraw_mutex;
+    std::condition_variable mpv_redraw_condvar;
+    int mpv_redraw_count = 0;
+    std::jthread mpv_render_thread;
 };
 
 }  // namespace
@@ -726,6 +1061,21 @@ bool switch_mpv_open(const PlaybackTarget& target, std::string& error_message) {
 void switch_mpv_stop() {
     SwitchMpvPlayer::instance().stop();
 }
+
+void switch_mpv_shutdown() {
+    SwitchMpvPlayer::instance().shutdown();
+}
+
+#if defined(__SWITCH__)
+bool switch_mpv_prepare_renderer_for_switch(
+    DkDevice device,
+    DkQueue queue,
+    int width,
+    int height,
+    std::string& error_message) {
+    return SwitchMpvPlayer::instance().prepare_renderer_for_switch(device, queue, width, height, error_message);
+}
+#endif
 
 bool switch_mpv_session_active() {
     return SwitchMpvPlayer::instance().is_session_active();
@@ -799,18 +1149,24 @@ std::string switch_mpv_consume_last_error() {
     return SwitchMpvPlayer::instance().consume_last_error();
 }
 
-bool switch_mpv_render_rgba_frame(
+#if defined(__SWITCH__)
+bool switch_mpv_render_deko3d_frame(
+    DkDevice device,
+    DkQueue queue,
+    DkImage* texture,
     int width,
-    int height,
-    const std::uint8_t** rgba_data,
-    size_t* rgba_size,
-    int* rgba_stride) {
-    return SwitchMpvPlayer::instance().render_rgba_frame(
+    int height) {
+    return SwitchMpvPlayer::instance().render_deko3d_frame(
+        device,
+        queue,
+        texture,
         std::max(1, width),
-        std::max(1, height),
-        rgba_data,
-        rgba_size,
-        rgba_stride);
+        std::max(1, height));
+}
+#endif
+
+void switch_mpv_report_render_swap() {
+    SwitchMpvPlayer::instance().report_render_swap();
 }
 
 #else
@@ -820,7 +1176,7 @@ bool switch_mpv_backend_available() {
 }
 
 std::string switch_mpv_backend_reason() {
-    return "switch-libmpv is not installed in devkitPro portlibs.";
+    return "Custom Switch libmpv/deko3d build not found under devkitPro tmp/switchbox-portlibs.";
 }
 
 bool switch_mpv_open(const PlaybackTarget&, std::string& error_message) {
@@ -830,6 +1186,21 @@ bool switch_mpv_open(const PlaybackTarget&, std::string& error_message) {
 
 void switch_mpv_stop() {
 }
+
+void switch_mpv_shutdown() {
+}
+
+#if defined(__SWITCH__)
+bool switch_mpv_prepare_renderer_for_switch(
+    DkDevice,
+    DkQueue,
+    int,
+    int,
+    std::string& error_message) {
+    error_message = switch_mpv_backend_reason();
+    return false;
+}
+#endif
 
 bool switch_mpv_session_active() {
     return false;
@@ -904,13 +1275,18 @@ std::string switch_mpv_consume_last_error() {
     return {};
 }
 
-bool switch_mpv_render_rgba_frame(
+#if defined(__SWITCH__)
+bool switch_mpv_render_deko3d_frame(
+    DkDevice,
+    DkQueue,
+    DkImage*,
     int,
-    int,
-    const std::uint8_t**,
-    size_t*,
-    int*) {
+    int) {
     return false;
+}
+#endif
+
+void switch_mpv_report_render_swap() {
 }
 
 #endif

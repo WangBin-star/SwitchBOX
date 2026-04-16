@@ -22,6 +22,7 @@ public:
 private:
     void initialize_switch_player_state();
     void start_playback_with_target(const switchbox::core::PlaybackTarget& next_target);
+    bool prepare_switch_renderer_if_needed(std::string& error_message);
     void save_player_volume_if_needed();
 
     bool handle_a_action();
@@ -50,6 +51,8 @@ private:
     bool execute_controls_action(int action_index);
     void tick_runtime_controls();
     void apply_directional_input_fallback_if_needed();
+    void apply_vertical_repeat_if_needed();
+    void apply_controls_horizontal_repeat_if_needed();
     void apply_controls_hold_action_if_needed();
     void apply_continuous_seek_if_needed();
     void apply_hold_speed_if_needed();
@@ -99,6 +102,11 @@ private:
     int last_controls_repeat_action = -1;
     std::chrono::steady_clock::time_point last_controls_nav_time = std::chrono::steady_clock::time_point::min();
     int last_controls_nav_direction = 0;
+    std::chrono::steady_clock::time_point last_controls_horizontal_repeat_time =
+        std::chrono::steady_clock::time_point::min();
+    int last_controls_horizontal_repeat_direction = 0;
+    std::chrono::steady_clock::time_point last_vertical_repeat_time = std::chrono::steady_clock::time_point::min();
+    int last_vertical_repeat_direction = 0;
     bool volume_osd_visible = false;
     std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     bool playback_error_dialog_open = false;

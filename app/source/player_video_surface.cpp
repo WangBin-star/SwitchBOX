@@ -14,6 +14,10 @@
 #include <borealis/core/application.hpp>
 #include <borealis/core/touch/tap_gesture.hpp>
 
+#if defined(__SWITCH__)
+#include <borealis/platforms/switch/switch_video.hpp>
+#endif
+
 #include "switchbox/core/switch_mpv_player.hpp"
 
 namespace switchbox::app {
@@ -296,20 +300,6 @@ void PlayerVideoSurface::draw(
     brls::FrameContext* ctx) {
     const int draw_width = std::max(1, static_cast<int>(width));
     const int draw_height = std::max(1, static_cast<int>(height));
-    const int video_rotation = switchbox::core::switch_mpv_get_video_rotation_degrees();
-    const bool quarter_turn = (video_rotation % 180) != 0;
-    const int render_width = quarter_turn ? draw_height : draw_width;
-    const int render_height = quarter_turn ? draw_width : draw_height;
-
-    const std::uint8_t* rgba_data = nullptr;
-    size_t rgba_size = 0;
-    int rgba_stride = 0;
-    const bool has_frame = switchbox::core::switch_mpv_render_rgba_frame(
-        render_width,
-        render_height,
-        &rgba_data,
-        &rgba_size,
-        &rgba_stride);
     const bool has_media = switchbox::core::switch_mpv_has_media();
     const bool session_active = switchbox::core::switch_mpv_session_active();
     const bool paused = switchbox::core::switch_mpv_is_paused();
@@ -318,55 +308,27 @@ void PlayerVideoSurface::draw(
         this->last_error = runtime_error;
     }
 
-    if (has_frame && rgba_data != nullptr && rgba_size > 0 && rgba_stride > 0) {
-        if (this->image == 0 || this->image_width != render_width || this->image_height != render_height) {
-            if (this->image != 0) {
-                nvgDeleteImage(vg, this->image);
-            }
-
-            this->image = nvgCreateImageRGBA(
-                vg,
-                render_width,
-                render_height,
-                0,
-                reinterpret_cast<const unsigned char*>(rgba_data));
-            this->image_width = render_width;
-            this->image_height = render_height;
-        } else {
-            nvgUpdateImage(vg, this->image, reinterpret_cast<const unsigned char*>(rgba_data));
+    bool rendered_video = false;
+#if defined(__SWITCH__)
+    auto* switch_video_context = dynamic_cast<brls::SwitchVideoContext*>(
+        brls::Application::getPlatform()->getVideoContext());
+    if (switch_video_context != nullptr && (session_active || has_media)) {
+        if (switchbox::core::switch_mpv_render_deko3d_frame(
+                switch_video_context->getDeko3dDevice(),
+                switch_video_context->getQueue(),
+                switch_video_context->getFramebuffer(),
+                draw_width,
+                draw_height)) {
+            rendered_video = true;
         }
     }
+#endif
 
-    nvgBeginPath(vg);
-    nvgRect(vg, x, y, width, height);
-    nvgFillColor(vg, nvgRGB(0, 0, 0));
-    nvgFill(vg);
-
-    if (this->image != 0) {
-        const float image_width = static_cast<float>(render_width);
-        const float image_height = static_cast<float>(render_height);
-        const float center_x = x + width * 0.5f;
-        const float center_y = y + height * 0.5f;
-
-        nvgSave(vg);
-        nvgIntersectScissor(vg, x, y, width, height);
-        nvgTranslate(vg, center_x, center_y);
-        nvgRotate(vg, static_cast<float>(video_rotation) * NVG_PI / 180.0f);
-
-        NVGpaint paint = nvgImagePattern(
-            vg,
-            -image_width * 0.5f,
-            -image_height * 0.5f,
-            image_width,
-            image_height,
-            0.0f,
-            this->image,
-            1.0f);
+    if (!rendered_video) {
         nvgBeginPath(vg);
-        nvgRect(vg, -image_width * 0.5f, -image_height * 0.5f, image_width, image_height);
-        nvgFillPaint(vg, paint);
+        nvgRect(vg, x, y, width, height);
+        nvgFillColor(vg, nvgRGB(0, 0, 0));
         nvgFill(vg);
-        nvgRestore(vg);
     }
 
     if (!this->last_error.empty()) {
@@ -805,7 +767,7 @@ void PlayerVideoSurface::draw(
         nvgText(vg, panel_x + panel_width * 0.5f, panel_y + panel_height - 30.0f, value_text.c_str(), nullptr);
     }
 
-    if (session_active || has_media || has_frame) {
+    if (session_active || has_media || rendered_video) {
         this->invalidate();
     }
 
