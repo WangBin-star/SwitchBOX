@@ -763,16 +763,23 @@ bool exit_settings_with_confirm_if_needed(const std::shared_ptr<SettingsDraftSta
 
     auto* dialog = new brls::Dialog(tr("settings_page/exit_confirm"));
     dialog->addButton(
-        tr("actions/save"),
-        [state]() {
-            (void)apply_draft_changes(state);
-        });
+        brls::getStr("hints/cancel"),
+        []() {});
     dialog->addButton(
-        tr("actions/discard"),
+        tr("actions/confirm"),
         []() {
             brls::Application::popActivity(brls::TransitionAnimation::FADE);
         });
+    if (auto* cancel_button = dialog->getView("brls/dialog/button1")) {
+        dialog->setLastFocusedView(cancel_button);
+    }
     dialog->open();
+    brls::delay(1, [dialog]() {
+        if (auto* cancel_button = dialog->getView("brls/dialog/button1")) {
+            dialog->setLastFocusedView(cancel_button);
+            brls::Application::giveFocus(cancel_button);
+        }
+    });
     return true;
 }
 

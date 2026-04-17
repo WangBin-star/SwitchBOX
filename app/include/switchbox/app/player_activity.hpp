@@ -80,6 +80,7 @@ private:
     bool open_audio_track_selector();
     bool open_subtitle_track_selector();
     void ensure_controls_panel_visible_for_touch();
+    void handle_touch_double_tap();
     void handle_touch_horizontal_pan(brls::GestureState state, float delta_ratio);
     void handle_touch_vertical_pan(brls::GestureState state, float delta_ratio);
     void handle_touch_progress_tap(float ratio);

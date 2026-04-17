@@ -25,6 +25,10 @@ namespace switchbox::app {
 
 namespace {
 
+constexpr double kDoubleTapMaxIntervalSeconds = 0.35;
+constexpr float kDoubleTapMaxDistance = 84.0f;
+constexpr float kTapCancelPanDistance = 18.0f;
+
 std::string format_time_seconds(double seconds) {
     if (seconds < 0.0) {
         seconds = 0.0;
@@ -266,47 +270,88 @@ PlayerVideoSurface::PlayerVideoSurface()
     setGrow(1.0f);
 
     addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound* sound_to_play) {
+        if (status.state == brls::GestureState::UNSURE || status.state == brls::GestureState::START) {
+            this->tap_blocked_by_pan = false;
+            return;
+        }
+
+        if (status.state == brls::GestureState::FAILED || status.state == brls::GestureState::INTERRUPTED) {
+            this->pending_double_tap = false;
+            return;
+        }
+
         if (status.state != brls::GestureState::END) {
             return;
         }
-        if (!this->pause_icon_visible || !this->overlay_model.touch_enable) {
-            if (this->overlay_model.controls_visible &&
-                this->overlay_model.touch_enable &&
-                this->overlay_model.touch_player_gestures) {
-                const float px = status.position.x;
-                const float py = status.position.y;
-                const bool inside_progress =
-                    px >= this->controls_progress_bounds.x &&
-                    px <= this->controls_progress_bounds.x + this->controls_progress_bounds.width &&
-                    py >= this->controls_progress_bounds.y &&
-                    py <= this->controls_progress_bounds.y + this->controls_progress_bounds.height;
-                if (inside_progress && this->progress_tap_handler && this->controls_progress_bounds.width > 1.0f) {
-                    const float ratio = std::clamp(
-                        (px - this->controls_progress_bounds.x) / this->controls_progress_bounds.width,
-                        0.0f,
-                        1.0f);
-                    this->progress_tap_handler(ratio);
-                    *sound_to_play = brls::SOUND_CLICK;
-                }
-            }
+
+        if (this->tap_blocked_by_pan) {
+            this->pending_double_tap = false;
             return;
         }
 
         const float px = status.position.x;
         const float py = status.position.y;
-        const bool inside =
-            px >= this->pause_icon_bounds.x &&
-            px <= this->pause_icon_bounds.x + this->pause_icon_bounds.width &&
-            py >= this->pause_icon_bounds.y &&
-            py <= this->pause_icon_bounds.y + this->pause_icon_bounds.height;
-        if (!inside) {
+        const bool touch_enabled = this->overlay_model.touch_enable;
+        const bool gestures_enabled = touch_enabled && this->overlay_model.touch_player_gestures;
+
+        if (this->pause_icon_visible && touch_enabled) {
+            const bool inside_pause_icon =
+                px >= this->pause_icon_bounds.x &&
+                px <= this->pause_icon_bounds.x + this->pause_icon_bounds.width &&
+                py >= this->pause_icon_bounds.y &&
+                py <= this->pause_icon_bounds.y + this->pause_icon_bounds.height;
+            if (inside_pause_icon) {
+                this->pending_double_tap = false;
+                if (this->pause_icon_tap_handler) {
+                    this->pause_icon_tap_handler();
+                    *sound_to_play = brls::SOUND_CLICK;
+                }
+                return;
+            }
+        }
+
+        const bool inside_progress =
+            px >= this->controls_progress_bounds.x &&
+            px <= this->controls_progress_bounds.x + this->controls_progress_bounds.width &&
+            py >= this->controls_progress_bounds.y &&
+            py <= this->controls_progress_bounds.y + this->controls_progress_bounds.height;
+        if (this->overlay_model.controls_visible &&
+            gestures_enabled &&
+            inside_progress &&
+            this->progress_tap_handler &&
+            this->controls_progress_bounds.width > 1.0f) {
+            this->pending_double_tap = false;
+            const float ratio = std::clamp(
+                (px - this->controls_progress_bounds.x) / this->controls_progress_bounds.width,
+                0.0f,
+                1.0f);
+            this->progress_tap_handler(ratio);
+            *sound_to_play = brls::SOUND_CLICK;
             return;
         }
 
-        if (this->pause_icon_tap_handler) {
-            this->pause_icon_tap_handler();
-            *sound_to_play = brls::SOUND_CLICK;
+        if (!gestures_enabled || this->pause_icon_visible || !this->double_tap_handler) {
+            this->pending_double_tap = false;
+            return;
         }
+
+        const double now_seconds = monotonic_seconds();
+        if (this->pending_double_tap) {
+            const double elapsed = now_seconds - this->pending_double_tap_seconds;
+            const float dx = px - this->pending_double_tap_position.x;
+            const float dy = py - this->pending_double_tap_position.y;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            if (elapsed <= kDoubleTapMaxIntervalSeconds && distance <= kDoubleTapMaxDistance) {
+                this->pending_double_tap = false;
+                this->double_tap_handler();
+                *sound_to_play = brls::SOUND_CLICK;
+                return;
+            }
+        }
+
+        this->pending_double_tap = true;
+        this->pending_double_tap_seconds = now_seconds;
+        this->pending_double_tap_position = status.position;
     }));
 
     addGestureRecognizer(new brls::PanGestureRecognizer([this](brls::PanGestureStatus status, brls::Sound*) {
@@ -329,6 +374,9 @@ PlayerVideoSurface::PlayerVideoSurface()
 
         const float delta_x = status.position.x - status.startPosition.x;
         const float delta_y = status.position.y - status.startPosition.y;
+        if (std::fabs(delta_x) >= kTapCancelPanDistance || std::fabs(delta_y) >= kTapCancelPanDistance) {
+            this->tap_blocked_by_pan = true;
+        }
 
         if (this->active_pan_axis == ActivePanAxis::None) {
             const float abs_delta_x = std::fabs(delta_x);
@@ -392,6 +440,10 @@ void PlayerVideoSurface::set_overlay_model(PlayerOverlayViewModel model) {
 
 void PlayerVideoSurface::set_pause_icon_tap_handler(std::function<void()> handler) {
     this->pause_icon_tap_handler = std::move(handler);
+}
+
+void PlayerVideoSurface::set_double_tap_handler(std::function<void()> handler) {
+    this->double_tap_handler = std::move(handler);
 }
 
 void PlayerVideoSurface::set_progress_tap_handler(std::function<void(float)> handler) {

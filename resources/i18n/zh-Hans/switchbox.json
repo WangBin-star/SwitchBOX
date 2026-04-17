@@ -4,11 +4,14 @@
             "app_name": "SwitchBOX"
         },
         "actions": {
+            "confirm": "\u786e\u8ba4",
             "settings": "\u8bbe\u7f6e",
             "save": "\u4fdd\u5b58",
+            "discard": "\u653e\u5f03",
             "enable": "\u542f\u7528",
             "disable": "\u505c\u7528",
-            "delete": "\u5220\u9664"
+            "delete": "\u5220\u9664",
+            "home": "\u9996\u9875"
         },
         "smb_browser": {
             "extensions_hint": "\u5f53\u524d\u663e\u793a\u7684\u6269\u5c55\u540d\uff1a{0}",
@@ -188,9 +191,10 @@
         "settings_page": {
             "eyebrow": "\u7cfb\u7edf\u504f\u597d",
             "header_subtitle": "\u5f53\u524d\u57fa\u7840\u8fd0\u884c\u8bbe\u7f6e\u5c06\u5199\u5165 switchbox.ini",
-            "summary": "\u8bbe\u7f6e\u4f1a\u5148\u4f5c\u4e3a\u8349\u7a3f\u4fdd\u7559\u5728\u8fd9\u4e2a\u9875\u9762\u3002\u4ece\u4e0b\u62c9\u6846\u9009\u62e9\u5b8c\u8fd4\u56de\u540e\uff0c\u6309 + \u624d\u4f1a\u5199\u5165\u5e76\u751f\u6548\uff1b\u6309 B \u5219\u653e\u5f03\u672c\u6b21\u4fee\u6539\u5e76\u9000\u51fa\u3002",
+            "summary": "\u8bbe\u7f6e\u4f1a\u5148\u4f5c\u4e3a\u8349\u7a3f\u4fdd\u7559\u5728\u8fd9\u4e2a\u9875\u9762\u3002\u4ece\u4e0b\u62c9\u6846\u9009\u62e9\u5b8c\u8fd4\u56de\u540e\uff0c\u6309 + \u624d\u4f1a\u5199\u5165\u5e76\u751f\u6548\uff1b\u6309 B \u4f1a\u8be2\u95ee\u662f\u5426\u786e\u8ba4\u9000\u51fa\u3002",
             "save_success": "\u8bbe\u5b9a\u5df2\u4fdd\u5b58\u3002",
             "save_failed": "\u8bbe\u5b9a\u4fdd\u5b58\u5931\u8d25\u3002",
+            "exit_confirm": "\u5b58\u5728\u672a\u4fdd\u5b58\u4fee\u6539\uff0c\u662f\u5426\u786e\u5b9a\u9000\u51fa\uff1f",
             "common": {
                 "not_set": "\u672a\u8bbe\u7f6e",
                 "edit_section": "\u7f16\u8f91\u5f53\u524d\u6761\u76ee",

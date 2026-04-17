@@ -45,6 +45,7 @@ public:
 
     void set_overlay_model(PlayerOverlayViewModel model);
     void set_pause_icon_tap_handler(std::function<void()> handler);
+    void set_double_tap_handler(std::function<void()> handler);
     void set_progress_tap_handler(std::function<void(float)> handler);
     void set_horizontal_pan_handler(std::function<void(brls::GestureState, float)> handler);
     void set_vertical_pan_handler(std::function<void(brls::GestureState, float)> handler);
@@ -74,9 +75,14 @@ private:
     double overlay_selected_since_seconds = 0.0;
     double overlay_visible_since_seconds = 0.0;
     std::function<void()> pause_icon_tap_handler;
+    std::function<void()> double_tap_handler;
     std::function<void(float)> progress_tap_handler;
     std::function<void(brls::GestureState, float)> horizontal_pan_handler;
     std::function<void(brls::GestureState, float)> vertical_pan_handler;
+    bool pending_double_tap = false;
+    double pending_double_tap_seconds = 0.0;
+    brls::Point pending_double_tap_position {};
+    bool tap_blocked_by_pan = false;
     bool pause_icon_visible = false;
     Rect pause_icon_bounds;
     Rect controls_progress_bounds;

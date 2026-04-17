@@ -52,6 +52,7 @@
             "group_empty": "This group does not contain any visible channels.",
             "favorite_added": "Added \"{0}\" to favorites.",
             "favorite_removed": "Removed \"{0}\" from favorites.",
+            "unfavorite_confirm": "Are you sure you want to remove this favorite?",
             "favorite_save_failed": "Failed to save favorite status.",
             "actions": {
                 "favorite": "Favorite",
@@ -229,10 +230,10 @@
         "settings_page": {
             "eyebrow": "SYSTEM PREFERENCES",
             "header_subtitle": "Basic runtime preferences stored in switchbox.ini",
-            "summary": "Changes first stay on this page as a draft. After choosing a value and returning from the dropdown, press + to save and apply it. Press B to cancel and leave.",
+            "summary": "Changes first stay on this page as a draft. After choosing a value and returning from the dropdown, press + to save and apply it. Press B to confirm whether to leave.",
             "save_success": "Settings saved.",
             "save_failed": "Failed to save settings.",
-            "exit_confirm": "You have unsaved changes. Save before leaving?",
+            "exit_confirm": "You have unsaved changes. Are you sure you want to leave?",
             "common": {
                 "not_set": "Not set",
                 "edit_section": "Edit current entry",

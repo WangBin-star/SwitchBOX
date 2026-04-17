@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -51,6 +50,23 @@ std::string tr(const std::string& key) {
 
 std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
+}
+
+void focus_dialog_button(brls::Dialog* dialog, const std::string& view_id) {
+    if (dialog == nullptr) {
+        return;
+    }
+
+    if (auto* target = dialog->getView(view_id)) {
+        dialog->setLastFocusedView(target);
+    }
+
+    brls::delay(1, [dialog, view_id]() {
+        if (auto* target = dialog->getView(view_id)) {
+            dialog->setLastFocusedView(target);
+            brls::Application::giveFocus(target);
+        }
+    });
 }
 
 std::filesystem::path iptv_debug_log_path() {
@@ -1005,6 +1021,12 @@ void IptvBrowserActivity::show_exit_confirm_dialog() {
     auto* dialog = new brls::Dialog(tr("iptv_browser/exit_confirm"));
     dialog->setCancelable(false);
     dialog->addButton(
+        brls::getStr("hints/cancel"),
+        [this]() {
+            this->exit_confirm_open = false;
+            append_iptv_debug_log("[iptv] exit_confirm cancelled");
+        });
+    dialog->addButton(
         tr("actions/confirm"),
         [this]() {
             this->exit_confirm_open = false;
@@ -1012,22 +1034,8 @@ void IptvBrowserActivity::show_exit_confirm_dialog() {
             append_iptv_debug_log("[iptv] exit_confirm accepted");
             return_to_previous_activity();
         });
-    dialog->addButton(
-        brls::getStr("hints/cancel"),
-        [this]() {
-            this->exit_confirm_open = false;
-            append_iptv_debug_log("[iptv] exit_confirm cancelled");
-        });
-    if (auto* cancel_button = dialog->getView("brls/dialog/button2")) {
-        dialog->setLastFocusedView(cancel_button);
-    }
     dialog->open();
-    brls::delay(1, [dialog]() {
-        if (auto* cancel_button = dialog->getView("brls/dialog/button2")) {
-            dialog->setLastFocusedView(cancel_button);
-            brls::Application::giveFocus(cancel_button);
-        }
-    });
+    focus_dialog_button(dialog, "brls/dialog/button1");
 }
 
 void IptvBrowserActivity::focus_sidebar() {
@@ -1125,47 +1133,70 @@ bool IptvBrowserActivity::persist_favorite_keys(const std::vector<std::string>& 
 bool IptvBrowserActivity::toggle_favorite_for_entry(
     const switchbox::core::IptvPlaylistEntry& entry,
     size_t fallback_index) {
-    std::vector<std::string> updated_keys = this->source.favorite_keys;
-    const auto existing = std::find(updated_keys.begin(), updated_keys.end(), entry.favorite_key);
-    const bool removing = existing != updated_keys.end();
+    auto apply_favorite_change = [this, entry, fallback_index](bool removing) {
+        std::vector<std::string> updated_keys = this->source.favorite_keys;
+        const auto existing = std::find(updated_keys.begin(), updated_keys.end(), entry.favorite_key);
 
-    if (removing) {
-        updated_keys.erase(existing);
-    } else {
-        updated_keys.push_back(entry.favorite_key);
-    }
+        if (removing) {
+            if (existing == updated_keys.end()) {
+                return;
+            }
+            updated_keys.erase(existing);
+        } else if (existing == updated_keys.end()) {
+            updated_keys.push_back(entry.favorite_key);
+        }
 
-    if (!persist_favorite_keys(updated_keys)) {
-        brls::Application::notify(tr("iptv_browser/favorite_save_failed"));
-        return true;
-    }
+        if (!persist_favorite_keys(updated_keys)) {
+            brls::Application::notify(tr("iptv_browser/favorite_save_failed"));
+            return;
+        }
 
-    brls::Application::notify(
-        tr(removing ? "iptv_browser/favorite_removed" : "iptv_browser/favorite_added", entry.title));
+        brls::Application::notify(
+            tr(removing ? "iptv_browser/favorite_removed" : "iptv_browser/favorite_added", entry.title));
 
-    const bool focus_in_right_panel = is_focus_in_right_panel();
-    const bool current_group_is_favorites =
-        this->selected_group_index < this->groups.size() && this->groups[this->selected_group_index].favorites;
-    const float previous_content_offset =
-        this->right_recycler_frame != nullptr ? this->right_recycler_frame->getContentOffsetY() : 0.0f;
+        const bool focus_in_right_panel = is_focus_in_right_panel();
+        const bool current_group_is_favorites =
+            this->selected_group_index < this->groups.size() && this->groups[this->selected_group_index].favorites;
+        const float previous_content_offset =
+            this->right_recycler_frame != nullptr ? this->right_recycler_frame->getContentOffsetY() : 0.0f;
 
-    if (current_group_is_favorites) {
-        const std::string preferred_key = removing ? std::string{} : entry.favorite_key;
-        rebuild_right_panel(preferred_key, fallback_index, true);
-        return true;
-    }
+        if (current_group_is_favorites) {
+            const std::string preferred_key = removing ? std::string{} : entry.favorite_key;
+            rebuild_right_panel(preferred_key, fallback_index, true);
+            return;
+        }
 
-    if (this->right_recycler_frame != nullptr) {
-        this->right_recycler_frame->setDefaultCellFocus(brls::IndexPath(0, fallback_index));
-        this->right_recycler_frame->reloadData();
-        this->right_recycler_frame->setContentOffsetY(previous_content_offset, false);
-        if (focus_in_right_panel) {
-            if (auto* focus_target = this->right_recycler_frame->getDefaultFocus()) {
-                brls::Application::giveFocus(focus_target);
-                this->right_recycler_frame->setContentOffsetY(previous_content_offset, false);
+        if (this->right_recycler_frame != nullptr) {
+            this->right_recycler_frame->setDefaultCellFocus(brls::IndexPath(0, fallback_index));
+            this->right_recycler_frame->reloadData();
+            this->right_recycler_frame->setContentOffsetY(previous_content_offset, false);
+            if (focus_in_right_panel) {
+                if (auto* focus_target = this->right_recycler_frame->getDefaultFocus()) {
+                    brls::Application::giveFocus(focus_target);
+                    this->right_recycler_frame->setContentOffsetY(previous_content_offset, false);
+                }
             }
         }
+    };
+
+    const bool removing = is_favorite_entry(entry);
+    if (!removing) {
+        apply_favorite_change(false);
+        return true;
     }
+
+    auto* dialog = new brls::Dialog(tr("iptv_browser/unfavorite_confirm"));
+    dialog->setCancelable(false);
+    dialog->addButton(
+        brls::getStr("hints/cancel"),
+        []() {});
+    dialog->addButton(
+        tr("actions/confirm"),
+        [apply_favorite_change]() {
+            apply_favorite_change(true);
+        });
+    dialog->open();
+    focus_dialog_button(dialog, "brls/dialog/button1");
     return true;
 }
 

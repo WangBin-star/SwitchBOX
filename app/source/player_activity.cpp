@@ -346,6 +346,9 @@ void PlayerActivity::initialize_switch_player_state() {
             }
             switchbox::core::switch_mpv_toggle_pause();
         });
+        this->video_surface->set_double_tap_handler([this]() {
+            handle_touch_double_tap();
+        });
         this->video_surface->set_progress_tap_handler([this](float ratio) {
             handle_touch_progress_tap(ratio);
         });
@@ -1674,6 +1677,27 @@ bool PlayerActivity::seek_relative(double seconds) {
 
 bool PlayerActivity::seek_absolute(double seconds) {
     return switchbox::core::switch_mpv_seek_absolute_seconds(seconds);
+}
+
+void PlayerActivity::handle_touch_double_tap() {
+    const auto& general = switchbox::core::AppConfigStore::current().general;
+    if (!general.touch_enable || !general.touch_player_gestures) {
+        return;
+    }
+
+    if (this->playback_error_dialog_open || this->startup_dialog_pending) {
+        return;
+    }
+
+    if (!switchbox::core::switch_mpv_session_active() && !switchbox::core::switch_mpv_has_media()) {
+        return;
+    }
+
+    if (switchbox::core::switch_mpv_is_paused()) {
+        return;
+    }
+
+    switchbox::core::switch_mpv_toggle_pause();
 }
 
 void PlayerActivity::handle_touch_horizontal_pan(brls::GestureState state, float delta_ratio) {
