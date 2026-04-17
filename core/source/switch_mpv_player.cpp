@@ -1316,6 +1316,8 @@ public:
         this->video_rotation_degrees = 0;
         this->playback_volume = std::clamp(switchbox::core::AppConfigStore::current().general.player_volume, 0, 100);
         this->current_render_slot.store(-1);
+        this->active_iptv_stream_class = switchbox::core::IptvPreparedStreamClass::Unknown;
+        this->disable_auto_track_selection_for_current_file = false;
         this->preferred_track_selection_pending = false;
         this->preferred_track_selection_applied = false;
         this->preferred_track_selection_waiting_for_restart = false;
@@ -1329,6 +1331,11 @@ public:
         this->last_audio_reapply_at_ms.store(0);
         this->open_requested_at_ms.store(monotonic_milliseconds());
         this->active_source_kind = target.source_kind;
+        if (target.source_kind == PlaybackSourceKind::Iptv && target.iptv_open_plan.has_value()) {
+            this->active_iptv_stream_class = target.iptv_open_plan->stream_class;
+            this->disable_auto_track_selection_for_current_file =
+                target.iptv_open_plan->stream_class == switchbox::core::IptvPreparedStreamClass::DirectFlv;
+        }
 
         const auto open_options = build_iptv_open_options(target, locator);
         append_debug_log(
@@ -1396,6 +1403,8 @@ public:
         this->last_render_kick_at_ms.store(0);
         this->last_audio_reapply_at_ms.store(0);
         this->open_requested_at_ms.store(0);
+        this->active_iptv_stream_class = switchbox::core::IptvPreparedStreamClass::Unknown;
+        this->disable_auto_track_selection_for_current_file = false;
         this->needs_full_reset_before_next_open = true;
         this->active_source_kind = PlaybackSourceKind::Unknown;
         append_debug_log("[stop] deferred backend reset until next open");
@@ -1887,7 +1896,8 @@ public:
     }
 
     void maybe_force_audio_track_reapply_after_black_screen() {
-        if (!this->force_audio_track_reapply_for_current_file ||
+        if (this->disable_auto_track_selection_for_current_file ||
+            !this->force_audio_track_reapply_for_current_file ||
             this->rendered_frame_for_current_file.load()) {
             return;
         }
@@ -2500,11 +2510,13 @@ private:
                     this->has_media = true;
                     this->paused.store(false);
                     this->open_requested_at_ms.store(0);
-                    this->preferred_track_selection_pending = true;
-                    this->preferred_track_selection_applied = false;
-                    this->preferred_track_selection_waiting_for_restart = true;
+                    this->preferred_track_selection_pending = !this->disable_auto_track_selection_for_current_file;
+                    this->preferred_track_selection_applied = this->disable_auto_track_selection_for_current_file;
+                    this->preferred_track_selection_waiting_for_restart =
+                        !this->disable_auto_track_selection_for_current_file;
                     this->preferred_track_selection_attempts = 0;
-                    this->force_audio_track_reapply_for_current_file = this->has_loaded_media_before;
+                    this->force_audio_track_reapply_for_current_file =
+                        !this->disable_auto_track_selection_for_current_file && this->has_loaded_media_before;
                     this->has_loaded_media_before = true;
                     this->rendered_frame_for_current_file.store(false);
                     this->playback_started_at_ms.store(monotonic_milliseconds());
@@ -2513,6 +2525,9 @@ private:
                     this->last_audio_reapply_at_ms.store(0);
                     request_render_update();
                     append_debug_log("[event] MPV_EVENT_FILE_LOADED");
+                    if (this->disable_auto_track_selection_for_current_file) {
+                        append_debug_log("[pref] auto track selection skipped for non-seekable direct_flv");
+                    }
                     break;
                 case MPV_EVENT_PLAYBACK_RESTART:
                     this->last_error.clear();
@@ -2537,6 +2552,8 @@ private:
                     this->playback_restart_at_ms.store(0);
                     this->last_render_kick_at_ms.store(0);
                     this->last_audio_reapply_at_ms.store(0);
+                    this->active_iptv_stream_class = switchbox::core::IptvPreparedStreamClass::Unknown;
+                    this->disable_auto_track_selection_for_current_file = false;
 
                     const auto* end_file = static_cast<mpv_event_end_file*>(event->data);
                     if (end_file != nullptr && end_file->reason == MPV_END_FILE_REASON_ERROR) {
@@ -2572,6 +2589,8 @@ private:
                         this->playback_restart_at_ms.store(0);
                         this->last_render_kick_at_ms.store(0);
                         this->last_audio_reapply_at_ms.store(0);
+                        this->active_iptv_stream_class = switchbox::core::IptvPreparedStreamClass::Unknown;
+                        this->disable_auto_track_selection_for_current_file = false;
                         if (this->suppress_stop_related_errors) {
                             append_debug_log("[event] MPV_EVENT_COMMAND_REPLY error suppressed during intentional stop");
                         } else {
@@ -2654,6 +2673,7 @@ private:
         mpv_set_option_string(this->handle, "idle", "yes");
         mpv_set_option_string(this->handle, "vo", "libmpv");
         mpv_set_option_string(this->handle, "ao", "hos");
+        mpv_set_option_string(this->handle, "user-agent", build_default_iptv_user_agent().c_str());
         mpv_set_option_string(this->handle, "reset-on-next-file", "aid,vid,sid,pause,speed,video-rotate");
         mpv_set_option_string(this->handle, "hwdec", "nvtegra");
         mpv_set_option_string(this->handle, "hwdec-codecs", kHwdecCodecs);
@@ -2773,6 +2793,9 @@ private:
     bool preferred_track_selection_applied = false;
     bool preferred_track_selection_waiting_for_restart = false;
     int preferred_track_selection_attempts = 0;
+    switchbox::core::IptvPreparedStreamClass active_iptv_stream_class =
+        switchbox::core::IptvPreparedStreamClass::Unknown;
+    bool disable_auto_track_selection_for_current_file = false;
     bool force_audio_track_reapply_for_current_file = false;
     bool has_loaded_media_before = false;
     bool suppress_stop_related_errors = false;

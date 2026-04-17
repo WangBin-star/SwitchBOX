@@ -37,6 +37,7 @@ struct IptvPlaylistResult {
 enum class IptvPreparedStreamClass {
     Unknown,
     DirectHttp,
+    DirectFlv,
     MasterHls,
     MediaHlsLive,
     MediaHlsVod,

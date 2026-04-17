@@ -17,12 +17,13 @@
 #include "switchbox/core/playback_target.hpp"
 #include "switchbox/core/switch_mpv_player.hpp"
 
-#if __has_include(<libavformat/avio.h>) && __has_include(<libavformat/avformat.h>) && __has_include(<libavutil/error.h>)
+#if __has_include(<libavformat/avio.h>) && __has_include(<libavformat/avformat.h>) && __has_include(<libavutil/error.h>) && __has_include(<libavutil/opt.h>)
 #define SWITCHBOX_HAS_IPTV_FFMPEG_IO 1
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 #include <libavutil/error.h>
+#include <libavutil/opt.h>
 }
 #else
 #define SWITCHBOX_HAS_IPTV_FFMPEG_IO 0
@@ -507,6 +508,8 @@ struct IptvHttpOptions {
 struct IptvPrefixProbeResult {
     std::string data;
     std::string error_message;
+    std::string resolved_url;
+    std::string mime_type;
     bool hit_read_limit = false;
     bool looks_like_text = true;
 };
@@ -544,6 +547,24 @@ bool locator_looks_like_hls_playlist(std::string_view locator) {
     return lower.size() >= 5 && lower.ends_with(".m3u8");
 }
 
+bool looks_like_probe_sensitive_direct_locator(std::string_view locator) {
+    if (!is_http_locator(locator) || locator_looks_like_hls_playlist(locator)) {
+        return false;
+    }
+
+    const std::string lower = ascii_lower(strip_query_and_fragment(locator));
+    return lower.find("live.metshop.top/huya/") != std::string::npos;
+}
+
+std::string rewrite_probe_sensitive_locator_for_playback(std::string locator) {
+    const std::string lower = ascii_lower(locator);
+    constexpr std::string_view https_prefix = "https://live.metshop.top/huya/";
+    if (lower.rfind(https_prefix, 0) == 0) {
+        locator.replace(0, 5, "http");
+    }
+    return locator;
+}
+
 bool looks_like_mpeg_ts_payload(std::string_view bytes) {
     if (bytes.size() < 188 * 3) {
         return false;
@@ -559,6 +580,13 @@ bool looks_like_mpeg_ts_payload(std::string_view bytes) {
     }
 
     return false;
+}
+
+bool looks_like_flv_payload(std::string_view bytes) {
+    return bytes.size() >= 3 &&
+           bytes[0] == 'F' &&
+           bytes[1] == 'L' &&
+           bytes[2] == 'V';
 }
 
 bool looks_like_text_payload(std::string_view bytes) {
@@ -584,6 +612,10 @@ IptvPreparedStreamClass guess_direct_stream_class(
     std::string_view locator,
     std::string_view prefix_bytes) {
     const std::string lower_locator = ascii_lower(strip_query_and_fragment(locator));
+    if (lower_locator.ends_with(".flv") || looks_like_flv_payload(prefix_bytes)) {
+        return IptvPreparedStreamClass::DirectFlv;
+    }
+
     if (lower_locator.find("mpegts") != std::string::npos ||
         lower_locator.ends_with(".ts") ||
         looks_like_mpeg_ts_payload(prefix_bytes)) {
@@ -845,6 +877,8 @@ std::string stream_class_name(IptvPreparedStreamClass stream_class) {
     switch (stream_class) {
         case IptvPreparedStreamClass::DirectHttp:
             return "direct_http";
+        case IptvPreparedStreamClass::DirectFlv:
+            return "direct_flv";
         case IptvPreparedStreamClass::MasterHls:
             return "master_hls";
         case IptvPreparedStreamClass::MediaHlsLive:
@@ -878,18 +912,41 @@ std::vector<std::pair<std::string, std::string>> build_open_options_for_class(
         trim(http_options.user_agent).empty() ? build_default_iptv_user_agent() : trim(http_options.user_agent);
     const std::string referrer = trim(http_options.referrer);
 
-    std::string demuxer_lavf_options = "http_persistent=1,http_multiple=1,tls_verify=0";
-    append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
-    append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+    std::string stream_lavf_options;
+    std::string demuxer_lavf_options;
+
+    if (stream_class == IptvPreparedStreamClass::MediaHlsVod) {
+        // Some IPTV VOD sources serve valid HLS content but break on HEAD or
+        // seek probes. Treat the stream as non-seekable so lavf goes directly
+        // to plain GET requests for the playlist and media segments.
+        stream_lavf_options =
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,"
+            "multiple_requests=0,tls_verify=0,seekable=0";
+        demuxer_lavf_options = "http_persistent=0,http_multiple=0,tls_verify=0,seekable=0";
+        append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
+        append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+    } else if (stream_class == IptvPreparedStreamClass::DirectFlv) {
+        // Some direct FLV live sources reject reconnect/multi-request probing
+        // patterns after the first chunk. Use a single plain HTTP session and
+        // force the demuxer format so FILE_LOADED does not wait on autodetect.
+        stream_lavf_options =
+            "reconnect=0,reconnect_streamed=0,reconnect_on_network_error=0,reconnect_delay_max=0,"
+            "multiple_requests=0,tls_verify=0,seekable=0";
+        demuxer_lavf_options = "http_persistent=0,http_multiple=0,tls_verify=0,seekable=0";
+        append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
+        append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+    } else if (stream_class == IptvPreparedStreamClass::DirectTs) {
+        stream_lavf_options =
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,"
+            "multiple_requests=1,tls_verify=0";
+        demuxer_lavf_options = "http_persistent=1,http_multiple=1,tls_verify=0";
+        append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
+        append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+    }
 
     set_open_option_pair(options, "user-agent", user_agent);
     set_open_option_pair(options, "tls-verify", "no");
     set_open_option_pair(options, "network-timeout", "45");
-    set_open_option_pair(
-        options,
-        "stream-lavf-o",
-        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,"
-        "multiple_requests=1,tls_verify=0");
 
     if (!referrer.empty()) {
         set_open_option_pair(options, "referrer", referrer);
@@ -900,17 +957,21 @@ std::vector<std::pair<std::string, std::string>> build_open_options_for_class(
         set_open_option_pair(options, "http-header-fields", joined_headers);
     }
 
-    if (stream_class == IptvPreparedStreamClass::MasterHls ||
-        stream_class == IptvPreparedStreamClass::MediaHlsLive ||
-        stream_class == IptvPreparedStreamClass::MediaHlsVod) {
+    if (!stream_lavf_options.empty()) {
+        set_open_option_pair(options, "stream-lavf-o", stream_lavf_options);
+    }
+
+    if (stream_class == IptvPreparedStreamClass::DirectFlv) {
         set_open_option_pair(options, "demuxer", "+lavf");
-        set_open_option_pair(options, "demuxer-lavf-format", "hls");
+        set_open_option_pair(options, "demuxer-lavf-format", "flv");
     } else if (stream_class == IptvPreparedStreamClass::DirectTs) {
         set_open_option_pair(options, "demuxer", "+lavf");
         set_open_option_pair(options, "demuxer-lavf-format", "mpegts");
     }
 
-    set_open_option_pair(options, "demuxer-lavf-o", demuxer_lavf_options);
+    if (!demuxer_lavf_options.empty()) {
+        set_open_option_pair(options, "demuxer-lavf-o", demuxer_lavf_options);
+    }
     return options;
 }
 
@@ -991,6 +1052,46 @@ std::vector<IptvPlaylistEntry> parse_iptv_playlist_text(
 }
 
 #if SWITCHBOX_HAS_IPTV_FFMPEG_IO
+std::string get_avio_child_string_option(AVIOContext* io_context, const char* option_name) {
+    if (io_context == nullptr || option_name == nullptr) {
+        return {};
+    }
+
+    uint8_t* raw_value = nullptr;
+    const int rc = av_opt_get(io_context, option_name, AV_OPT_SEARCH_CHILDREN, &raw_value);
+    if (rc < 0 || raw_value == nullptr) {
+        return {};
+    }
+
+    std::string value(reinterpret_cast<char*>(raw_value));
+    av_free(raw_value);
+    return trim(std::move(value));
+}
+
+std::string resolve_effective_http_url_from_avio(
+    const std::string& original_url,
+    AVIOContext* io_context) {
+    std::string candidate = get_avio_child_string_option(io_context, "location");
+    if (candidate.empty()) {
+        candidate = get_avio_child_string_option(io_context, "resource");
+    }
+
+    candidate = trim(std::move(candidate));
+    if (candidate.empty()) {
+        return {};
+    }
+
+    if (is_http_locator(candidate)) {
+        return candidate;
+    }
+
+    if (!candidate.empty() && (candidate.front() == '/' || !has_url_scheme(candidate))) {
+        return resolve_playlist_url(original_url, candidate);
+    }
+
+    return {};
+}
+
 std::string av_error_to_string(int error_code) {
     std::array<char, AV_ERROR_MAX_STRING_SIZE> buffer {};
     av_strerror(error_code, buffer.data(), buffer.size());
@@ -1052,10 +1153,18 @@ std::string fetch_bytes_via_ffmpeg_once(
     std::string& error_message,
     std::string_view timeout_us = "30000000",
     size_t max_bytes = 0,
-    bool* hit_read_limit = nullptr) {
+    bool* hit_read_limit = nullptr,
+    std::string* resolved_url = nullptr,
+    std::string* mime_type = nullptr) {
     error_message.clear();
     if (hit_read_limit != nullptr) {
         *hit_read_limit = false;
+    }
+    if (resolved_url != nullptr) {
+        resolved_url->clear();
+    }
+    if (mime_type != nullptr) {
+        mime_type->clear();
     }
     avformat_network_init();
 
@@ -1079,6 +1188,13 @@ std::string fetch_bytes_via_ffmpeg_once(
             error_message = "Open playlist failed: " + av_error_to_string(open_result);
         }
         return {};
+    }
+
+    if (resolved_url != nullptr) {
+        *resolved_url = resolve_effective_http_url_from_avio(url, io_context);
+    }
+    if (mime_type != nullptr) {
+        *mime_type = get_avio_child_string_option(io_context, "mime_type");
     }
 
     std::string text;
@@ -1213,6 +1329,8 @@ IptvPrefixProbeResult probe_prefix_via_ffmpeg(
         }
 
         bool hit_read_limit = false;
+        std::string resolved_url;
+        std::string mime_type;
         std::string data = fetch_bytes_via_ffmpeg_once(
             url,
             http_options,
@@ -1220,7 +1338,9 @@ IptvPrefixProbeResult probe_prefix_via_ffmpeg(
             last_error,
             "15000000",
             max_bytes,
-            &hit_read_limit);
+            &hit_read_limit,
+            &resolved_url,
+            &mime_type);
         if (!last_error.empty()) {
             if (is_cancelled(cancel_flag) || last_error == "Cancelled") {
                 result.error_message = "Cancelled";
@@ -1244,6 +1364,8 @@ IptvPrefixProbeResult probe_prefix_via_ffmpeg(
         }
 
         result.data = std::move(data);
+        result.resolved_url = std::move(resolved_url);
+        result.mime_type = std::move(mime_type);
         result.hit_read_limit = hit_read_limit;
         result.looks_like_text = looks_like_text_payload(result.data);
         return result;
@@ -1315,8 +1437,16 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
     const PlaybackTarget& target,
     const std::shared_ptr<std::atomic_bool>& cancel_flag) {
     IptvOpenPlan plan;
-    const std::string locator =
+    std::string locator =
         trim(target.primary_locator.empty() ? target.fallback_locator : target.primary_locator);
+    if (looks_like_probe_sensitive_direct_locator(locator)) {
+        const std::string rewritten_locator = rewrite_probe_sensitive_locator_for_playback(locator);
+        if (rewritten_locator != locator) {
+            switchbox::core::switch_mpv_append_debug_log_note(
+                "[iptv-prepare] locator_rewrite from=" + locator + " to=" + rewritten_locator);
+            locator = std::move(rewritten_locator);
+        }
+    }
     plan.final_locator = locator;
 
     const IptvHttpOptions http_options = build_playback_http_options(target);
@@ -1330,6 +1460,10 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
 
         switch (stream_class) {
             case IptvPreparedStreamClass::DirectHttp:
+                plan.analyzeduration_override = "1.2";
+                plan.probescore_override = "48";
+                break;
+            case IptvPreparedStreamClass::DirectFlv:
                 plan.analyzeduration_override = "1.2";
                 plan.probescore_override = "48";
                 break;
@@ -1360,6 +1494,14 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
 
     if (locator.empty() || !is_http_locator(locator)) {
         apply_class_defaults(IptvPreparedStreamClass::Unknown, "non_http_locator");
+        return plan;
+    }
+
+    if (looks_like_probe_sensitive_direct_locator(locator)) {
+        const IptvPreparedStreamClass direct_class = IptvPreparedStreamClass::DirectFlv;
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "[iptv-prepare] probe_skipped locator=" + locator + " reason=sensitive_direct_locator");
+        apply_class_defaults(direct_class, "probe_skipped_sensitive_direct_flv");
         return plan;
     }
 
@@ -1408,15 +1550,22 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
         return plan;
     }
 
-    std::string prepared_locator = locator;
+    std::string effective_playlist_url =
+        trim(initial_probe.resolved_url).empty() ? locator : trim(initial_probe.resolved_url);
+    if (effective_playlist_url != locator) {
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "[iptv-prepare] redirect_resolved from=" + locator +
+            " to=" + effective_playlist_url +
+            (trim(initial_probe.mime_type).empty() ? std::string() : " mime=" + trim(initial_probe.mime_type)));
+    }
+
+    std::string prepared_locator = effective_playlist_url;
     std::string prepared_playlist_text = initial_probe.data;
     IptvPreparedStreamClass stream_class = IptvPreparedStreamClass::MediaHlsLive;
     bool prepared_playlist_hit_limit = initial_probe.hit_read_limit;
-    bool keep_master_locator_for_open = false;
-
     if (initial_probe.data.find("#EXT-X-STREAM-INF") != std::string::npos) {
         stream_class = IptvPreparedStreamClass::MasterHls;
-        const std::string variant_url = resolve_hls_master_variant_url(locator, initial_probe.data);
+        const std::string variant_url = resolve_hls_master_variant_url(effective_playlist_url, initial_probe.data);
         if (!variant_url.empty()) {
             prepared_locator = variant_url;
             switchbox::core::switch_mpv_append_debug_log_note(
@@ -1446,12 +1595,11 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
                 prepared_playlist_text = variant_probe.data;
                 prepared_playlist_hit_limit = variant_probe.hit_read_limit;
                 if (is_static_hls_playlist(variant_probe.data)) {
-                    keep_master_locator_for_open = true;
-                    prepared_locator = locator;
-                    stream_class = IptvPreparedStreamClass::MasterHls;
+                    prepared_locator = variant_url;
+                    stream_class = IptvPreparedStreamClass::MediaHlsVod;
                     switchbox::core::switch_mpv_append_debug_log_note(
-                        "[iptv-prepare] master_vod_passthrough locator=" + locator +
-                        " selected_variant=" + variant_url);
+                        "[iptv-prepare] variant_vod_passthrough locator=" + variant_url +
+                        " from_master=" + locator);
                 }
             } else if (seems_like_html_or_proxy_text(variant_probe.data)) {
                 plan.success = false;
@@ -1478,12 +1626,12 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
         stream_class = IptvPreparedStreamClass::MediaHlsLive;
     }
 
-    plan.final_locator = keep_master_locator_for_open ? locator : prepared_locator;
     std::string reason;
-    if (keep_master_locator_for_open) {
-        reason = "master_vod_passthrough";
-    } else if (prepared_locator != locator) {
+    plan.final_locator = prepared_locator;
+    if (prepared_locator != locator && prepared_locator != effective_playlist_url) {
         reason = "variant_selected";
+    } else if (effective_playlist_url != locator) {
+        reason = "redirect_resolved";
     } else if (prepared_playlist_hit_limit) {
         reason = "probe_limited_hls_passthrough";
     } else {
@@ -1491,8 +1639,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
     }
     apply_class_defaults(stream_class, std::move(reason));
 
-    if (!keep_master_locator_for_open &&
-        prepared_locator != locator &&
+    if (prepared_locator != locator &&
         stream_class == IptvPreparedStreamClass::MasterHls) {
         switchbox::core::switch_mpv_append_debug_log_note(
             "[iptv-prepare] variant_passthrough locator=" + prepared_locator);
