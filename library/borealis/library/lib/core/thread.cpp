@@ -116,6 +116,10 @@ void Threading::performSyncTasks()
         {
             brls::Logger::error("error: performSyncTasks: {}", e.what());
         }
+        catch (...)
+        {
+            brls::Logger::error("error: performSyncTasks: unknown exception");
+        }
     }
 
     m_delay_mutex.lock();
@@ -151,6 +155,10 @@ void Threading::performSyncTasks()
             catch (std::exception& e)
             {
                 brls::Logger::error("error: performSyncTasks(delay): {}", e.what());
+            }
+            catch (...)
+            {
+                brls::Logger::error("error: performSyncTasks(delay): unknown exception");
             }
 
             m_delay_mutex.lock();
@@ -201,7 +209,18 @@ void* Threading::task_loop(void* a)
 
         for (auto task : m_tasks_copy)
         {
-            task();
+            try
+            {
+                task();
+            }
+            catch (std::exception& e)
+            {
+                brls::Logger::error("error: async task: {}", e.what());
+            }
+            catch (...)
+            {
+                brls::Logger::error("error: async task: unknown exception");
+            }
         }
 
         retro_sleep(500);

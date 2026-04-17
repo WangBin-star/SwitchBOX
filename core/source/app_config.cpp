@@ -302,8 +302,8 @@ std::string normalize_line_endings_to_crlf(std::string_view text) {
     return normalized;
 }
 
-const std::array<std::string_view, 20>& required_general_keys() {
-    static constexpr std::array<std::string_view, 20> keys = {
+const std::array<std::string_view, 21>& required_general_keys() {
+    static constexpr std::array<std::string_view, 21> keys = {
         "language",
         "playable_extensions",
         "sort_order",
@@ -314,6 +314,7 @@ const std::array<std::string_view, 20>& required_general_keys() {
         "continuous_seek_interval_ms",
         "player_volume",
         "player_volume_osd_duration_ms",
+        "player_loading_overlay_delay_ms",
         "overlay_marquee_delay_ms",
         "use_preferred_audio_language",
         "preferred_audio_language",
@@ -420,6 +421,9 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
     }
     if (key == "player_volume_osd_duration_ms") {
         return std::to_string(general.player_volume_osd_duration_ms);
+    }
+    if (key == "player_loading_overlay_delay_ms") {
+        return std::to_string(general.player_loading_overlay_delay_ms);
     }
     if (key == "overlay_marquee_delay_ms") {
         return std::to_string(general.overlay_marquee_delay_ms);
@@ -593,6 +597,10 @@ bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const A
         for (const auto& comment_line : general_key_comment_lines(key)) {
             missing_lines.push_back(comment_line);
         }
+        if (key == std::string_view("player_loading_overlay_delay_ms")) {
+            missing_lines.push_back(
+                "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
+        }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
 
@@ -724,6 +732,10 @@ bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfi
         for (const auto& comment_line : general_key_comment_lines(key)) {
             missing_lines.push_back(comment_line);
         }
+        if (key == std::string_view("player_loading_overlay_delay_ms")) {
+            missing_lines.push_back(
+                "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
+        }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
 
@@ -799,6 +811,12 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         config.general.player_volume_osd_duration_ms);
     if (config.general.player_volume_osd_duration_ms < 0) {
         config.general.player_volume_osd_duration_ms = 0;
+    }
+    config.general.player_loading_overlay_delay_ms = parse_int(
+        get_value(document, "general", "player_loading_overlay_delay_ms"),
+        config.general.player_loading_overlay_delay_ms);
+    if (config.general.player_loading_overlay_delay_ms < 0) {
+        config.general.player_loading_overlay_delay_ms = 0;
     }
     config.general.overlay_marquee_delay_ms = parse_int(
         get_value(document, "general", "overlay_marquee_delay_ms"),
@@ -970,6 +988,10 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << '\n';
     output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
     output << "player_volume_osd_duration_ms=" << config.general.player_volume_osd_duration_ms << '\n';
+    output << '\n';
+    output << "; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
+    output << "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate" << '\n';
+    output << "player_loading_overlay_delay_ms=" << config.general.player_loading_overlay_delay_ms << '\n';
     output << '\n';
     output << "; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
     output << "overlay_marquee_delay_ms=" << config.general.overlay_marquee_delay_ms << '\n';

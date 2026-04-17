@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -24,6 +27,17 @@ private:
     void start_playback_with_target(const switchbox::core::PlaybackTarget& next_target);
     bool prepare_switch_renderer_if_needed(std::string& error_message);
     void save_player_volume_if_needed();
+    void begin_async_startup_for_target(const switchbox::core::PlaybackTarget& next_target);
+    void poll_pending_startup_task();
+    void cancel_pending_startup_task();
+    void apply_started_target_state(const switchbox::core::PlaybackTarget& next_target);
+    void update_startup_loading_overlay_state();
+    void queue_startup_dialog(
+        std::string message,
+        bool return_to_previous_activity,
+        bool stop_playback_before_dialog = false);
+    void present_startup_dialog_if_needed();
+    void dismiss_to_previous_activity_if_still_top();
 
     bool handle_a_action();
     bool handle_b_action();
@@ -79,6 +93,14 @@ private:
         bool selected = false;
     };
 
+    struct PendingStartupTask {
+        std::shared_ptr<std::atomic_bool> cancel_flag = std::make_shared<std::atomic_bool>(false);
+        std::atomic<bool> finished = false;
+        std::mutex mutex;
+        switchbox::core::PlaybackTarget prepared_target;
+        std::string startup_error;
+    };
+
     switchbox::core::SmbSourceSettings smb_source;
     bool has_smb_source = false;
     std::string current_relative_path;
@@ -115,6 +137,15 @@ private:
     bool volume_osd_visible = false;
     std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     bool playback_error_dialog_open = false;
+    bool startup_dialog_pending = false;
+    bool startup_dialog_returns_to_previous = false;
+    bool startup_dialog_stops_playback_before_open = false;
+    std::string startup_dialog_message;
+    std::shared_ptr<PendingStartupTask> pending_startup_task;
+    bool startup_loading_active = false;
+    bool startup_loading_overlay_visible = false;
+    std::string startup_loading_message;
+    std::chrono::steady_clock::time_point startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     bool playback_session_stopped = false;
     bool touch_horizontal_pan_active = false;
     double touch_seek_anchor_seconds = 0.0;

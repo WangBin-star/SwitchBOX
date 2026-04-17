@@ -140,6 +140,15 @@
                 "start": "Playback Test",
                 "toggle_pause": "Play/Pause"
             },
+            "loading": {
+                "title": "Opening Channel",
+                "resolving_stream": "Resolving channel address...",
+                "opening_stream": "Connecting to stream...",
+                "waiting_first_frame": "Waiting for first frame..."
+            },
+            "errors": {
+                "unsupported_web_stream": "This IPTV entry currently points to a {0} web page rather than a directly playable media stream."
+            },
             "launch_started": "Playback request sent.",
             "status": {
                 "title": "Current status",

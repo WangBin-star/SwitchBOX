@@ -29,6 +29,12 @@
 namespace brls
 {
 
+enum class RecyclerFocusScrollBehavior
+{
+    CENTERED,
+    ENSURE_VISIBLE,
+};
+
 struct IndexPath
 {
     size_t section;
@@ -177,6 +183,7 @@ class RecyclerFrame : public ScrollingFrame
 
     View* getNextCellFocus(FocusDirection direction, View* currentView);
     void draw(NVGcontext* vg, float x, float y, float width, float height, Style style, FrameContext* ctx) override;
+    void onChildFocusGained(View* directChild, View* focusedView) override;
     void onLayout() override;
     void setPadding(float padding) override;
     void setPadding(float top, float right, float bottom, float left) override;
@@ -234,6 +241,16 @@ class RecyclerFrame : public ScrollingFrame
         this->defaultCellFocus = indexPath;
     }
 
+    void setFocusScrollBehavior(RecyclerFocusScrollBehavior behavior)
+    {
+        this->focusScrollBehavior = behavior;
+    }
+
+    RecyclerFocusScrollBehavior getFocusScrollBehavior() const
+    {
+        return this->focusScrollBehavior;
+    }
+
     static View* create();
 
   private:
@@ -256,8 +273,11 @@ class RecyclerFrame : public ScrollingFrame
     std::vector<IndexPath> cacheIndexPathData;
     std::map<std::string, std::vector<RecyclerCell*>*> queueMap;
     std::map<std::string, std::function<RecyclerCell*(void)>> allocationMap;
+    RecyclerFocusScrollBehavior focusScrollBehavior = RecyclerFocusScrollBehavior::CENTERED;
 
     bool checkWidth();
+    float getIndexTopOffset(IndexPath indexPath) const;
+    void ensureViewVisible(View* focusedView, bool animated);
 
     void cacheCellFrames();
     void cellsRecyclingLoop();

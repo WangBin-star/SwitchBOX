@@ -7,6 +7,7 @@
 
 #include "switchbox/app/config_missing_activity.hpp"
 #include "switchbox/app/home_activity.hpp"
+#include "switchbox/app/iptv_browser_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/build_info.hpp"
@@ -99,6 +100,8 @@ int Application::run(const StartupContext& context) const {
     Application::set_runtime_context(context);
     switchbox::core::AppConfigStore::set_runtime_executable_path(context.executable_path);
     const bool configReady = switchbox::core::AppConfigStore::initialize();
+    switchbox::core::switch_mpv_begin_debug_log_session();
+    switchbox::app::begin_iptv_debug_log_session();
     switchbox::core::LanguageState languageState{};
     const auto& paths = switchbox::core::AppConfigStore::paths();
     brls::setTranslationSearchPaths({paths.languages_directory.string()});
@@ -120,7 +123,7 @@ int Application::run(const StartupContext& context) const {
     });
 
 #ifdef __SWITCH__
-    brls::Application::getPlatform()->exitToHomeMode(true);
+    brls::Application::getPlatform()->exitToHomeMode(false);
 #endif
 
     if (configReady) {

@@ -9,6 +9,7 @@
 #include <borealis/core/application.hpp>
 #include <borealis/core/box.hpp>
 #include <borealis/core/i18n.hpp>
+#include <borealis/core/thread.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/cells/cell_detail.hpp>
 #include <borealis/views/dialog.hpp>
@@ -25,6 +26,7 @@
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
 #include "switchbox/core/smb_browser.hpp"
+#include "switchbox/core/smb2_mount_fs.hpp"
 #include "switchbox/core/switch_mpv_player.hpp"
 
 namespace switchbox::app {
@@ -43,6 +45,50 @@ std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
 }
 
+std::string ascii_lower(std::string value) {
+    for (char& character : value) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return value;
+}
+
+std::string pick_target_locator(const switchbox::core::PlaybackTarget& target) {
+    if (!target.primary_locator.empty()) {
+        return target.primary_locator;
+    }
+    return target.fallback_locator;
+}
+
+std::string playback_source_kind_name(switchbox::core::PlaybackSourceKind kind) {
+    switch (kind) {
+        case switchbox::core::PlaybackSourceKind::Smb:
+            return "smb";
+        case switchbox::core::PlaybackSourceKind::Iptv:
+            return "iptv";
+        default:
+            return "unknown";
+    }
+}
+
+std::string detect_unsupported_iptv_web_platform(const switchbox::core::PlaybackTarget& target) {
+    if (target.source_kind != switchbox::core::PlaybackSourceKind::Iptv) {
+        return {};
+    }
+
+    const std::string locator = ascii_lower(pick_target_locator(target));
+    if (locator.find("youtube.com") != std::string::npos || locator.find("youtu.be") != std::string::npos) {
+        return "YouTube";
+    }
+    if (locator.find("twitch.tv") != std::string::npos) {
+        return "Twitch";
+    }
+
+    return {};
+}
+
 std::string file_name_from_relative_path(const std::string& relative_path) {
     const auto separator = relative_path.find_last_of("/\\");
     if (separator == std::string::npos) {
@@ -52,6 +98,23 @@ std::string file_name_from_relative_path(const std::string& relative_path) {
         return relative_path;
     }
     return relative_path.substr(separator + 1);
+}
+
+bool ensure_smb_locator_on_target(switchbox::core::PlaybackTarget& target) {
+    if (target.source_kind != switchbox::core::PlaybackSourceKind::Smb) {
+        return false;
+    }
+    if (target.smb_locator.has_value()) {
+        return true;
+    }
+
+    switchbox::core::PlaybackTarget::SmbLocator parsed_locator;
+    if (!switchbox::core::try_parse_smb_locator_from_uri(pick_target_locator(target), parsed_locator)) {
+        return false;
+    }
+
+    target.smb_locator = std::move(parsed_locator);
+    return true;
 }
 
 bool direction_left_pressed(const brls::ControllerState& state) {
@@ -263,6 +326,14 @@ PlayerActivity::~PlayerActivity() {
 }
 
 void PlayerActivity::initialize_switch_player_state() {
+    switchbox::core::switch_mpv_append_debug_log_note("player_session_begin");
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "activity_enter source_kind=" + playback_source_kind_name(this->target.source_kind) +
+        " source_label=" + this->target.source_label +
+        " title=" + this->target.title +
+        " subtitle=" + this->target.subtitle +
+        " display_locator=" + pick_target_locator(this->target));
+
     this->video_surface = dynamic_cast<PlayerVideoSurface*>(this->getView("switchbox/player_surface"));
     if (this->video_surface != nullptr) {
         brls::Application::giveFocus(this->video_surface);
@@ -286,8 +357,7 @@ void PlayerActivity::initialize_switch_player_state() {
         });
     }
 
-    if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
-        this->target.smb_locator.has_value()) {
+    if (ensure_smb_locator_on_target(this->target)) {
         this->has_smb_source = true;
         this->smb_source = make_smb_source_from_target();
         this->current_relative_path = this->target.smb_locator->relative_path;
@@ -300,41 +370,334 @@ void PlayerActivity::initialize_switch_player_state() {
     switchbox::core::switch_mpv_set_volume(this->session_volume);
 }
 
-void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackTarget& next_target) {
-    const bool switching_inside_player =
-        !this->playback_session_stopped &&
-        (switchbox::core::switch_mpv_session_active() || switchbox::core::switch_mpv_has_media());
-    if (switching_inside_player) {
-        switchbox::core::switch_mpv_stop();
-        (void)switchbox::core::switch_mpv_consume_last_error();
-    }
-
-    std::string startup_error;
-    if (!prepare_switch_renderer_if_needed(startup_error) && !startup_error.empty()) {
-        auto* dialog = new brls::Dialog(startup_error);
-        dialog->open();
+void PlayerActivity::cancel_pending_startup_task() {
+    if (this->pending_startup_task == nullptr) {
         return;
     }
 
-    if (!switchbox::core::switch_mpv_open(next_target, startup_error) && !startup_error.empty()) {
-        auto* dialog = new brls::Dialog(startup_error);
-        dialog->open();
-        return;
+    this->pending_startup_task->cancel_flag->store(true);
+    this->pending_startup_task.reset();
+}
+
+void PlayerActivity::begin_async_startup_for_target(const switchbox::core::PlaybackTarget& next_target) {
+    cancel_pending_startup_task();
+
+    auto task = std::make_shared<PendingStartupTask>();
+    {
+        std::scoped_lock lock(task->mutex);
+        task->prepared_target = next_target;
     }
 
+    this->pending_startup_task = task;
+    this->startup_loading_active = true;
+    this->startup_loading_message = tr("player_page/loading/resolving_stream");
+    this->startup_loading_started_at = std::chrono::steady_clock::now();
+    update_startup_loading_overlay_state();
+    switchbox::core::switch_mpv_append_debug_log_note("iptv_async_prepare begin");
+
+    brls::async([task]() {
+        switchbox::core::PlaybackTarget prepared_target;
+        {
+            std::scoped_lock lock(task->mutex);
+            prepared_target = task->prepared_target;
+        }
+
+        if (task->cancel_flag->load()) {
+            task->finished.store(true);
+            return;
+        }
+
+        if (prepared_target.source_kind == switchbox::core::PlaybackSourceKind::Iptv &&
+            !prepared_target.primary_locator.empty()) {
+            const auto open_plan = switchbox::core::prepare_iptv_open_plan_for_playback(
+                prepared_target,
+                task->cancel_flag);
+            if (!open_plan.success) {
+                std::scoped_lock lock(task->mutex);
+                task->startup_error =
+                    open_plan.user_visible_reason.empty() ? "Unsupported IPTV source." : open_plan.user_visible_reason;
+                task->finished.store(true);
+                return;
+            }
+
+            prepared_target.primary_locator = open_plan.final_locator;
+            prepared_target.http_user_agent = open_plan.effective_user_agent;
+            prepared_target.http_referrer = open_plan.effective_referrer;
+            prepared_target.http_header_fields = open_plan.effective_header_fields;
+            prepared_target.iptv_open_plan = open_plan;
+            prepared_target.locator_pre_resolved = true;
+        }
+
+        {
+            std::scoped_lock lock(task->mutex);
+            task->prepared_target = std::move(prepared_target);
+        }
+        task->finished.store(true);
+    });
+}
+
+void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackTarget& next_target) {
     this->playback_session_stopped = false;
     this->touch_horizontal_pan_active = false;
     this->touch_vertical_pan_active = false;
     this->target = next_target;
-    if (this->target.smb_locator.has_value()) {
+
+    if (ensure_smb_locator_on_target(this->target)) {
+        this->has_smb_source = true;
+        this->smb_source = make_smb_source_from_target();
         this->current_relative_path = this->target.smb_locator->relative_path;
         this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+    } else {
+        this->has_smb_source = false;
+        this->smb_source = {};
+        this->current_relative_path.clear();
+        this->overlay_relative_path.clear();
+        this->overlay_entries.clear();
+        this->overlay_selected_index = -1;
+        this->overlay_message.clear();
+        this->overlay_visible = false;
     }
 
     this->applied_speed = 1.0;
     switchbox::core::switch_mpv_set_speed(1.0);
     switchbox::core::switch_mpv_set_volume(this->session_volume);
     refresh_overlay_entries(true);
+}
+
+void PlayerActivity::poll_pending_startup_task() {
+    const auto task = this->pending_startup_task;
+    if (task == nullptr || !task->finished.load()) {
+        return;
+    }
+
+    this->pending_startup_task.reset();
+    if (task->cancel_flag->load()) {
+        update_startup_loading_overlay_state();
+        return;
+    }
+
+    switchbox::core::PlaybackTarget prepared_target;
+    std::string startup_error;
+    {
+        std::scoped_lock lock(task->mutex);
+        prepared_target = task->prepared_target;
+        startup_error = task->startup_error;
+    }
+
+    if (!startup_error.empty()) {
+        this->startup_loading_active = false;
+        this->startup_loading_overlay_visible = false;
+        this->startup_loading_message.clear();
+        this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+        sync_overlay_to_surface();
+        queue_startup_dialog(startup_error, true, true);
+        return;
+    }
+
+    switchbox::core::switch_mpv_append_debug_log_note("iptv_async_prepare ready");
+
+    startup_error.clear();
+    this->startup_loading_message = tr("player_page/loading/opening_stream");
+    if (!switchbox::core::switch_mpv_open(prepared_target, startup_error) && !startup_error.empty()) {
+        this->startup_loading_active = false;
+        this->startup_loading_overlay_visible = false;
+        this->startup_loading_message.clear();
+        this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+        sync_overlay_to_surface();
+        queue_startup_dialog(startup_error, true, true);
+        return;
+    }
+
+    apply_started_target_state(prepared_target);
+    update_startup_loading_overlay_state();
+}
+
+void PlayerActivity::update_startup_loading_overlay_state() {
+    const bool previous_active = this->startup_loading_active;
+    const bool previous_visible = this->startup_loading_overlay_visible;
+    const std::string previous_message = this->startup_loading_message;
+    const auto previous_started_at = this->startup_loading_started_at;
+    const auto now = std::chrono::steady_clock::now();
+
+    if (this->playback_error_dialog_open || this->startup_dialog_pending) {
+        this->startup_loading_active = false;
+        this->startup_loading_message.clear();
+        this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+    } else if (this->pending_startup_task != nullptr) {
+        this->startup_loading_active = true;
+        if (this->startup_loading_started_at == std::chrono::steady_clock::time_point::min()) {
+            this->startup_loading_started_at = now;
+        }
+        this->startup_loading_message = tr("player_page/loading/resolving_stream");
+    } else if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Iptv &&
+               switchbox::core::switch_mpv_session_active() &&
+               !switchbox::core::switch_mpv_has_rendered_video_frame()) {
+        this->startup_loading_active = true;
+        if (this->startup_loading_started_at == std::chrono::steady_clock::time_point::min()) {
+            this->startup_loading_started_at = now;
+        }
+        this->startup_loading_message = switchbox::core::switch_mpv_has_media()
+                                            ? tr("player_page/loading/waiting_first_frame")
+                                            : tr("player_page/loading/opening_stream");
+    } else {
+        this->startup_loading_active = false;
+        this->startup_loading_message.clear();
+        this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+    }
+
+    if (!this->startup_loading_active) {
+        this->startup_loading_overlay_visible = false;
+    } else {
+        const int delay_ms = std::max(
+            0,
+            switchbox::core::AppConfigStore::current().general.player_loading_overlay_delay_ms);
+        this->startup_loading_overlay_visible =
+            delay_ms == 0 ||
+            (this->startup_loading_started_at != std::chrono::steady_clock::time_point::min() &&
+             now >= this->startup_loading_started_at + std::chrono::milliseconds(delay_ms));
+    }
+
+    if (previous_active != this->startup_loading_active ||
+        previous_visible != this->startup_loading_overlay_visible ||
+        previous_message != this->startup_loading_message ||
+        previous_started_at != this->startup_loading_started_at) {
+        sync_overlay_to_surface();
+    }
+}
+
+void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackTarget& next_target) {
+    const bool has_existing_playback_session =
+        switchbox::core::switch_mpv_session_active() || switchbox::core::switch_mpv_has_media();
+    const bool switching_inside_player =
+        !this->playback_session_stopped &&
+        (has_existing_playback_session || this->pending_startup_task != nullptr);
+    const bool return_to_previous_activity_on_error = !switching_inside_player;
+    const bool full_backend_restart_for_switch =
+        switching_inside_player &&
+        has_existing_playback_session &&
+        this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
+        next_target.source_kind == switchbox::core::PlaybackSourceKind::Smb;
+
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "start_playback source_kind=" + playback_source_kind_name(next_target.source_kind) +
+        " source_label=" + next_target.source_label +
+        " title=" + next_target.title +
+        " subtitle=" + next_target.subtitle +
+        " locator=" + pick_target_locator(next_target));
+
+    if (const std::string platform = detect_unsupported_iptv_web_platform(next_target); !platform.empty()) {
+        queue_startup_dialog(
+            tr("player_page/errors/unsupported_web_stream", platform),
+            return_to_previous_activity_on_error,
+            false);
+        return;
+    }
+
+    cancel_pending_startup_task();
+    if (full_backend_restart_for_switch) {
+        switchbox::core::switch_mpv_append_debug_log_note("start_playback restart_backend_for_switch");
+        switchbox::core::switch_mpv_shutdown();
+        switchbox::core::switch_smb_mount_release();
+    } else if (has_existing_playback_session) {
+        switchbox::core::switch_mpv_append_debug_log_note("start_playback stop_previous_session");
+        switchbox::core::switch_mpv_stop();
+        (void)switchbox::core::switch_mpv_consume_last_error();
+    }
+
+    std::string startup_error;
+    if (!prepare_switch_renderer_if_needed(startup_error) && !startup_error.empty()) {
+        queue_startup_dialog(startup_error, return_to_previous_activity_on_error, true);
+        return;
+    }
+
+    if (next_target.source_kind == switchbox::core::PlaybackSourceKind::Iptv) {
+        begin_async_startup_for_target(next_target);
+        return;
+    }
+
+    if (!switchbox::core::switch_mpv_open(next_target, startup_error) && !startup_error.empty()) {
+        queue_startup_dialog(startup_error, return_to_previous_activity_on_error, true);
+        return;
+    }
+
+    this->startup_loading_active = false;
+    this->startup_loading_overlay_visible = false;
+    this->startup_loading_message.clear();
+    this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+    apply_started_target_state(next_target);
+}
+
+void PlayerActivity::queue_startup_dialog(
+    std::string message,
+    bool return_to_previous_activity,
+    bool stop_playback_before_dialog) {
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "startup_dialog queued return=" + std::string(return_to_previous_activity ? "true" : "false") +
+        " stop_before_open=" + std::string(stop_playback_before_dialog ? "true" : "false") +
+        " message=" + message);
+    this->startup_dialog_message = std::move(message);
+    this->startup_dialog_pending = !this->startup_dialog_message.empty();
+    this->startup_dialog_returns_to_previous = return_to_previous_activity;
+    this->startup_dialog_stops_playback_before_open = stop_playback_before_dialog;
+}
+
+void PlayerActivity::present_startup_dialog_if_needed() {
+    if (!this->startup_dialog_pending || this->playback_error_dialog_open) {
+        return;
+    }
+
+    this->startup_dialog_pending = false;
+    this->playback_error_dialog_open = true;
+    this->startup_loading_active = false;
+    this->startup_loading_overlay_visible = false;
+    this->startup_loading_message.clear();
+    this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
+    this->controls_visible = false;
+    this->overlay_visible = false;
+    this->volume_osd_visible = false;
+    this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+    sync_overlay_to_surface();
+
+    if (this->startup_dialog_stops_playback_before_open) {
+        stop_playback_session_before_leave();
+    }
+
+    const bool return_to_previous_activity = this->startup_dialog_returns_to_previous;
+    auto* dialog = new brls::Dialog(this->startup_dialog_message);
+    dialog->setCancelable(false);
+    dialog->addButton(brls::getStr("hints/ok"), [this, return_to_previous_activity]() {
+        this->playback_error_dialog_open = false;
+        if (return_to_previous_activity) {
+            dismiss_to_previous_activity_if_still_top();
+        }
+    });
+    dialog->open();
+}
+
+void PlayerActivity::dismiss_to_previous_activity_if_still_top() {
+    const auto activities = brls::Application::getActivitiesStack();
+    if (activities.empty() || activities.back() != this) {
+        return;
+    }
+
+    brls::Application::popActivity(
+        brls::TransitionAnimation::FADE,
+        []() {
+            const auto remaining_activities = brls::Application::getActivitiesStack();
+            if (remaining_activities.empty()) {
+                return;
+            }
+
+            auto* current_activity = remaining_activities.back();
+            auto* current_focus = brls::Application::getCurrentFocus();
+            if (current_focus != nullptr && current_focus->getParentActivity() == current_activity) {
+                return;
+            }
+
+            if (auto* fallback_focus = current_activity->getDefaultFocus()) {
+                brls::Application::giveFocus(fallback_focus);
+            }
+        });
 }
 
 bool PlayerActivity::prepare_switch_renderer_if_needed(std::string& error_message) {
@@ -396,6 +759,11 @@ bool PlayerActivity::handle_a_action() {
 }
 
 bool PlayerActivity::handle_b_action() {
+    switchbox::core::switch_mpv_append_debug_log_note("input_b pressed");
+    if (this->playback_error_dialog_open || this->startup_dialog_pending) {
+        return true;
+    }
+
     if (this->controls_visible) {
         this->controls_visible = false;
         sync_overlay_to_surface();
@@ -408,7 +776,7 @@ bool PlayerActivity::handle_b_action() {
     }
 
     stop_playback_session_before_leave();
-    brls::Application::popActivity(brls::TransitionAnimation::FADE);
+    dismiss_to_previous_activity_if_still_top();
     return true;
 }
 
@@ -730,6 +1098,9 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.audio_track_selectable = this->audio_track_selectable;
     model.subtitle_track_label = this->selected_subtitle_track_label;
     model.subtitle_track_selectable = this->subtitle_track_selectable;
+    model.loading_overlay_visible = this->startup_loading_overlay_visible;
+    model.loading_overlay_title = tr("player_page/loading/title");
+    model.loading_overlay_message = this->startup_loading_message;
     model.overlay_marquee_delay_ms = general.overlay_marquee_delay_ms;
     model.touch_enable = general.touch_enable;
     model.touch_player_gestures = general.touch_player_gestures;
@@ -905,6 +1276,13 @@ bool PlayerActivity::execute_controls_action(int action_index) {
 }
 
 void PlayerActivity::tick_runtime_controls() {
+    poll_pending_startup_task();
+    update_startup_loading_overlay_state();
+    present_startup_dialog_if_needed();
+    if (this->playback_error_dialog_open) {
+        return;
+    }
+
     apply_directional_input_fallback_if_needed();
     apply_vertical_repeat_if_needed();
     apply_controls_horizontal_repeat_if_needed();
@@ -1214,7 +1592,17 @@ void PlayerActivity::present_runtime_error_if_needed() {
         return;
     }
 
+    if (switchbox::core::switch_mpv_session_active() || switchbox::core::switch_mpv_has_media()) {
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "runtime_error_ignored_while_session_active message=" + error_message);
+        return;
+    }
+
     this->playback_error_dialog_open = true;
+    this->startup_loading_active = false;
+    this->startup_loading_overlay_visible = false;
+    this->startup_loading_message.clear();
+    this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     this->controls_visible = false;
     this->overlay_visible = false;
     this->volume_osd_visible = false;
@@ -1226,7 +1614,7 @@ void PlayerActivity::present_runtime_error_if_needed() {
     dialog->setCancelable(false);
     dialog->addButton(brls::getStr("hints/ok"), [this]() {
         this->playback_error_dialog_open = false;
-        brls::Application::popActivity(brls::TransitionAnimation::FADE);
+        dismiss_to_previous_activity_if_still_top();
     });
     dialog->open();
 }
@@ -1236,17 +1624,24 @@ void PlayerActivity::stop_playback_session_before_leave() {
         return;
     }
 
+    switchbox::core::switch_mpv_append_debug_log_note("stop_before_leave begin");
     this->playback_session_stopped = true;
+    cancel_pending_startup_task();
     if (this->runtime_initialized) {
         this->runtime_tick.stop();
     }
 
+    this->startup_loading_active = false;
+    this->startup_loading_overlay_visible = false;
+    this->startup_loading_message.clear();
+    this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     this->controls_visible = false;
     this->overlay_visible = false;
     this->volume_osd_visible = false;
     this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     sync_overlay_to_surface();
     switchbox::core::switch_mpv_stop();
+    switchbox::core::switch_mpv_append_debug_log_note("stop_before_leave end");
 }
 
 void PlayerActivity::adjust_volume(int delta) {
@@ -1377,7 +1772,7 @@ void PlayerActivity::confirm_delete_current_file() {
             directory,
             next_focus,
             deleting_relative_path);
-        brls::Application::popActivity(brls::TransitionAnimation::FADE);
+        dismiss_to_previous_activity_if_still_top();
     });
     dialog->open();
 }
@@ -1432,6 +1827,15 @@ switchbox::core::SmbSourceSettings PlayerActivity::make_smb_source_from_target()
         source.share = this->target.smb_locator->share;
         source.username = this->target.smb_locator->username;
         source.password = this->target.smb_locator->password;
+        return source;
+    }
+
+    switchbox::core::PlaybackTarget::SmbLocator parsed_locator;
+    if (switchbox::core::try_parse_smb_locator_from_uri(pick_target_locator(this->target), parsed_locator)) {
+        source.host = parsed_locator.host;
+        source.share = parsed_locator.share;
+        source.username = parsed_locator.username;
+        source.password = parsed_locator.password;
     }
     return source;
 }

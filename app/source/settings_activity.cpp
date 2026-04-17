@@ -412,6 +412,14 @@ void request_focus_restore(const std::shared_ptr<SettingsDraftState>& state, con
     state->focus_restore_id = view_id;
 }
 
+std::string make_iptv_source_view_id(const std::string& key) {
+    return "settings/iptv/source/" + key;
+}
+
+std::string make_smb_source_view_id(const std::string& key) {
+    return "settings/smb/source/" + key;
+}
+
 std::string status_icon_title(bool enabled, const std::string& title) {
     return std::string(enabled ? "● " : "○ ") + visible_entry_title(title);
 }
@@ -1269,12 +1277,14 @@ void rebuild_iptv_panel(const std::shared_ptr<SettingsDraftState>& state) {
                     open_iptv_editor(state, *selected);
                 }
                 return true;
-            });
+            },
+            make_iptv_source_view_id(source.key));
         cell->registerAction(
             source.enabled ? tr("actions/disable") : tr("actions/enable"),
             brls::BUTTON_Y,
             [state, key = source.key](brls::View*) {
                 if (auto* selected = find_iptv_source(state, key)) {
+                    request_focus_restore(state, make_iptv_source_view_id(key));
                     selected->enabled = !selected->enabled;
                     sync_dirty_state(state);
                     rebuild_right_panel(state);
@@ -1343,12 +1353,14 @@ void rebuild_smb_panel(const std::shared_ptr<SettingsDraftState>& state) {
                     open_smb_editor(state, *selected);
                 }
                 return true;
-            });
+            },
+            make_smb_source_view_id(source.key));
         cell->registerAction(
             source.enabled ? tr("actions/disable") : tr("actions/enable"),
             brls::BUTTON_Y,
             [state, key = source.key](brls::View*) {
                 if (auto* selected = find_smb_source(state, key)) {
+                    request_focus_restore(state, make_smb_source_view_id(key));
                     selected->enabled = !selected->enabled;
                     sync_dirty_state(state);
                     rebuild_right_panel(state);

@@ -28,6 +28,9 @@ struct PlayerOverlayViewModel {
     bool audio_track_selectable = false;
     std::string subtitle_track_label;
     bool subtitle_track_selectable = false;
+    bool loading_overlay_visible = false;
+    std::string loading_overlay_title;
+    std::string loading_overlay_message;
     int overlay_marquee_delay_ms = 500;
     bool touch_enable = true;
     bool touch_player_gestures = false;

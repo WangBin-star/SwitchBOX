@@ -4,6 +4,7 @@
             "app_name": "SwitchBOX"
         },
         "actions": {
+            "confirm": "\u786e\u8ba4",
             "settings": "\u8bbe\u7f6e",
             "save": "\u4fdd\u5b58",
             "discard": "\u653e\u5f03",
@@ -41,6 +42,7 @@
             "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a IPTV \u64ad\u653e\u5217\u8868\u3002",
             "unexpected_error": "\u8bf7\u6c42 IPTV \u5217\u8868\u65f6\u53d1\u751f\u4e86\u672a\u77e5\u9519\u8bef\u3002",
             "empty": "\u5f53\u524d\u64ad\u653e\u5217\u8868\u4e2d\u6ca1\u6709\u53ef\u663e\u793a\u7684\u9891\u9053\u3002",
+            "exit_confirm": "\u786e\u8ba4\u8fd4\u56de\u9996\u9875\u5417\uff1f\u4e0b\u6b21\u8fdb\u5165\u8fd9\u4e2a IPTV \u6e90\u65f6\u4f1a\u91cd\u65b0\u52a0\u8f7d\u64ad\u653e\u5217\u8868\u3002",
             "groups": {
                 "favorites": "\u6536\u85cf",
                 "ungrouped": "\u672a\u5206\u7ec4"
@@ -170,6 +172,15 @@
                 "toggle_pause": "\u64ad\u653e/\u6682\u505c"
             },
             "volume_label": "\u97f3\u91cf: {0}",
+            "loading": {
+                "title": "\u6b63\u5728\u6253\u5f00\u9891\u9053",
+                "resolving_stream": "\u6b63\u5728\u89e3\u6790\u9891\u9053\u5730\u5740\u2026",
+                "opening_stream": "\u6b63\u5728\u8fde\u63a5\u89c6\u9891\u6d41\u2026",
+                "waiting_first_frame": "\u6b63\u5728\u7b49\u5f85\u9996\u5e27\u753b\u9762\u2026"
+            },
+            "errors": {
+                "unsupported_web_stream": "\u8fd9\u4e2a IPTV \u6761\u76ee\u5f53\u524d\u6307\u5411 {0} \u7f51\u9875\u5730\u5740\uff0c\u800c\u4e0d\u662f\u53ef\u76f4\u63a5\u64ad\u653e\u7684\u5a92\u4f53\u6d41\u3002"
+            },
             "audio": {
                 "title": "\u97f3\u8f68",
                 "no_options": "\u65e0\u53ef\u9009\u97f3\u8f68"

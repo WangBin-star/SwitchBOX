@@ -2,6 +2,8 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/iptv_playlist.hpp"
@@ -30,6 +32,11 @@ struct PlaybackTarget {
     std::string display_locator;
     std::string primary_locator;
     std::string fallback_locator;
+    std::string http_user_agent;
+    std::string http_referrer;
+    std::vector<std::string> http_header_fields;
+    std::optional<IptvOpenPlan> iptv_open_plan;
+    bool locator_pre_resolved = false;
     bool locator_is_direct = false;
     std::optional<SmbLocator> smb_locator;
 };
@@ -40,5 +47,8 @@ PlaybackTarget make_smb_playback_target(
 PlaybackTarget make_iptv_playback_target(
     const IptvSourceSettings& source,
     const IptvPlaylistEntry& entry);
+bool try_parse_smb_locator_from_uri(
+    std::string_view locator_uri,
+    PlaybackTarget::SmbLocator& smb_locator);
 
 }  // namespace switchbox::core

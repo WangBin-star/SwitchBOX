@@ -8,12 +8,16 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,9 +26,11 @@
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include <mpv/render_dk3d.h>
+#include <mpv/stream_cb.h>
 #endif
 
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/build_info.hpp"
 #include "switchbox/core/smb2_mount_fs.hpp"
 
 namespace switchbox::core {
@@ -33,8 +39,98 @@ namespace switchbox::core {
 
 namespace {
 
+struct PlaybackDebugLogState {
+    std::mutex mutex;
+    bool initialized = false;
+    uint64_t sequence = 0;
+    uint64_t session_token = 0;
+    std::chrono::steady_clock::time_point session_start = std::chrono::steady_clock::time_point::min();
+};
+
+PlaybackDebugLogState& playback_debug_log_state() {
+    static PlaybackDebugLogState state;
+    return state;
+}
+
+std::filesystem::path playback_debug_log_path() {
+    return switchbox::core::AppConfigStore::paths().base_directory / "playback_debug.log";
+}
+
+uint64_t make_playback_debug_session_token() {
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    const auto token = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+    return token == 0 ? 1 : token;
+}
+
+std::string sanitize_debug_log_message(std::string value) {
+    for (char& ch : value) {
+        if (ch == '\r' || ch == '\n') {
+            ch = ' ';
+        }
+    }
+    return value;
+}
+
+void append_debug_log_locked(PlaybackDebugLogState& state, const std::string& message) {
+    std::ofstream output(playback_debug_log_path(), std::ios::binary | std::ios::app);
+    if (!output.is_open()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (state.session_start == std::chrono::steady_clock::time_point::min()) {
+        state.session_start = now;
+    }
+
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - state.session_start).count();
+    output << "[t+" << elapsed_ms << "ms]"
+           << "[#" << (++state.sequence) << "] "
+           << sanitize_debug_log_message(message)
+           << '\n';
+}
+
+void reset_debug_log_session_locked(PlaybackDebugLogState& state) {
+    std::error_code error;
+    const auto log_path = playback_debug_log_path();
+    std::filesystem::create_directories(log_path.parent_path(), error);
+
+    std::ofstream output(log_path, std::ios::binary | std::ios::out | std::ios::app);
+    if (!output.is_open()) {
+        return;
+    }
+
+    state.initialized = true;
+    state.session_start = std::chrono::steady_clock::now();
+    state.session_token = make_playback_debug_session_token();
+
+    output << "\n========== PLAYBACK LOG SESSION BEGIN ==========\n";
+    output << "[t+0ms][#" << (++state.sequence) << "] [session] log_format=2026-04-17f\n";
+    output << "[t+0ms][#" << (++state.sequence) << "] [session] session_token=" << state.session_token << '\n';
+    output << "[t+0ms][#" << (++state.sequence) << "] [session] base_directory="
+           << switchbox::core::AppConfigStore::paths().base_directory.string()
+           << '\n';
+    output << "[t+0ms][#" << (++state.sequence) << "] [session] config_file="
+           << switchbox::core::AppConfigStore::paths().config_file.string()
+           << '\n';
+    output.flush();
+}
+
+void begin_debug_log_session_impl() {
+    auto& state = playback_debug_log_state();
+    std::scoped_lock lock(state.mutex);
+    reset_debug_log_session_locked(state);
+}
+
 void append_debug_log(const std::string& message) {
-    (void)message;
+    auto& state = playback_debug_log_state();
+
+    std::scoped_lock lock(state.mutex);
+    if (!state.initialized) {
+        reset_debug_log_session_locked(state);
+    }
+    append_debug_log_locked(state, message);
 }
 
 std::string trim(std::string value) {
@@ -49,6 +145,27 @@ std::string trim(std::string value) {
 
 constexpr const char* kEmbeddedSubtitleFontDirectory = "romfs:/font";
 constexpr const char* kEmbeddedSubtitleFontFamily = "Droid Sans Fallback";
+constexpr uint64_t kInitialLoadTimeoutMs = 15000;
+constexpr uint64_t kIptvInitialLoadTimeoutMs = 45000;
+constexpr const char* kMemoryTextProtocol = "switchboxmem";
+constexpr const char* kMemoryTextProtocolPrefix = "switchboxmem://";
+
+struct MemoryTextStreamData {
+    std::vector<char> bytes;
+};
+
+struct MemoryTextStreamCookie {
+    std::string key;
+    std::shared_ptr<MemoryTextStreamData> data;
+    uint64_t position = 0;
+    std::atomic_bool cancelled = false;
+};
+
+struct MemoryTextStreamRegistry {
+    std::mutex mutex;
+    uint64_t next_id = 0;
+    std::unordered_map<std::string, std::shared_ptr<MemoryTextStreamData>> streams;
+};
 
 void configure_embedded_subtitle_fonts(mpv_handle* handle) {
     if (handle == nullptr) {
@@ -60,6 +177,222 @@ void configure_embedded_subtitle_fonts(mpv_handle* handle) {
     mpv_set_option_string(handle, "sub-font", kEmbeddedSubtitleFontFamily);
     mpv_set_option_string(handle, "osd-font", kEmbeddedSubtitleFontFamily);
     mpv_set_option_string(handle, "sub-ass-force-style", force_style.c_str());
+}
+
+uint64_t fnv1a64(std::string_view value) {
+    uint64_t hash = 14695981039346656037ull;
+    for (const unsigned char character : value) {
+        hash ^= character;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string to_hex(uint64_t value) {
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result(16, '0');
+    for (int index = 15; index >= 0; --index) {
+        result[static_cast<size_t>(index)] = hex[value & 0x0F];
+        value >>= 4;
+    }
+    return result;
+}
+
+MemoryTextStreamRegistry& memory_text_stream_registry() {
+    static MemoryTextStreamRegistry registry;
+    return registry;
+}
+
+std::string sanitize_memory_text_extension(std::string extension) {
+    extension = trim(std::move(extension));
+    while (!extension.empty() && extension.front() == '.') {
+        extension.erase(extension.begin());
+    }
+
+    std::string sanitized;
+    sanitized.reserve(extension.size());
+    for (char& character : extension) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (std::isalnum(unsigned_character) != 0 || character == '-' || character == '_') {
+            sanitized.push_back(
+                unsigned_character < 0x80 ? static_cast<char>(std::tolower(unsigned_character)) : character);
+        }
+    }
+
+    return sanitized.empty() ? "txt" : sanitized;
+}
+
+bool is_memory_text_locator(std::string_view locator) {
+    return locator.rfind(kMemoryTextProtocolPrefix, 0) == 0;
+}
+
+bool is_inline_data_locator(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return lower.rfind("data://", 0) == 0;
+}
+
+bool is_builtin_memory_locator(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return lower.rfind("memory://", 0) == 0 || lower.rfind("hex://", 0) == 0;
+}
+
+bool is_edl_locator(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return lower.rfind("edl://", 0) == 0;
+}
+
+std::string summarize_locator_for_debug_log(std::string_view locator) {
+    constexpr size_t kMaxVisibleLength = 240;
+
+    if (is_inline_data_locator(locator)) {
+        const std::string value(locator);
+        const size_t comma = value.find(',');
+        const std::string prefix =
+            comma == std::string::npos ? value : value.substr(0, comma);
+        return prefix + ",...(len=" + std::to_string(value.size()) + ")";
+    }
+
+    if (is_builtin_memory_locator(locator)) {
+        std::string value(locator);
+        const size_t separator = value.find("://");
+        const std::string prefix =
+            separator == std::string::npos ? value : value.substr(0, separator + 3);
+        return prefix + "...(len=" + std::to_string(value.size()) + ")";
+    }
+
+    if (is_edl_locator(locator)) {
+        return "edl://...(len=" + std::to_string(locator.size()) + ")";
+    }
+
+    std::string value(locator);
+    if (value.size() <= kMaxVisibleLength) {
+        return value;
+    }
+
+    return value.substr(0, kMaxVisibleLength) + "...(len=" + std::to_string(value.size()) + ")";
+}
+
+std::string extract_memory_text_key(std::string_view uri) {
+    if (!is_memory_text_locator(uri)) {
+        return {};
+    }
+
+    return std::string(uri.substr(std::char_traits<char>::length(kMemoryTextProtocolPrefix)));
+}
+
+int64_t memory_text_stream_read(void* cookie_ptr, char* buffer, uint64_t byte_count) {
+    auto* cookie = static_cast<MemoryTextStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->data == nullptr || buffer == nullptr) {
+        return -1;
+    }
+    if (cookie->cancelled.load()) {
+        return -1;
+    }
+
+    const uint64_t size = cookie->data->bytes.size();
+    if (cookie->position >= size) {
+        return 0;
+    }
+
+    const uint64_t remaining = size - cookie->position;
+    const uint64_t to_copy = std::min(byte_count, remaining);
+    std::memcpy(
+        buffer,
+        cookie->data->bytes.data() + static_cast<size_t>(cookie->position),
+        static_cast<size_t>(to_copy));
+    cookie->position += to_copy;
+    return static_cast<int64_t>(to_copy);
+}
+
+int64_t memory_text_stream_seek(void* cookie_ptr, int64_t offset) {
+    auto* cookie = static_cast<MemoryTextStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->data == nullptr) {
+        return MPV_ERROR_GENERIC;
+    }
+    if (cookie->cancelled.load()) {
+        return MPV_ERROR_GENERIC;
+    }
+    if (offset < 0 || static_cast<uint64_t>(offset) > cookie->data->bytes.size()) {
+        return MPV_ERROR_GENERIC;
+    }
+
+    cookie->position = static_cast<uint64_t>(offset);
+    return offset;
+}
+
+int64_t memory_text_stream_size(void* cookie_ptr) {
+    auto* cookie = static_cast<MemoryTextStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->data == nullptr) {
+        return MPV_ERROR_UNSUPPORTED;
+    }
+
+    return static_cast<int64_t>(cookie->data->bytes.size());
+}
+
+void memory_text_stream_cancel(void* cookie_ptr) {
+    auto* cookie = static_cast<MemoryTextStreamCookie*>(cookie_ptr);
+    if (cookie != nullptr) {
+        cookie->cancelled.store(true);
+    }
+}
+
+void memory_text_stream_close(void* cookie_ptr) {
+    std::unique_ptr<MemoryTextStreamCookie> cookie(static_cast<MemoryTextStreamCookie*>(cookie_ptr));
+}
+
+int memory_text_stream_open_ro(void*, char* uri, mpv_stream_cb_info* info) {
+    if (uri == nullptr || info == nullptr) {
+        return MPV_ERROR_LOADING_FAILED;
+    }
+
+    const std::string key = extract_memory_text_key(uri);
+    if (key.empty()) {
+        return MPV_ERROR_LOADING_FAILED;
+    }
+
+    auto& registry = memory_text_stream_registry();
+    std::shared_ptr<MemoryTextStreamData> data;
+    {
+        std::scoped_lock lock(registry.mutex);
+        const auto iterator = registry.streams.find(key);
+        if (iterator == registry.streams.end()) {
+            return MPV_ERROR_LOADING_FAILED;
+        }
+        data = iterator->second;
+    }
+
+    auto* cookie = new (std::nothrow) MemoryTextStreamCookie();
+    if (cookie == nullptr) {
+        return MPV_ERROR_GENERIC;
+    }
+
+    cookie->key = key;
+    cookie->data = std::move(data);
+    info->cookie = cookie;
+    info->read_fn = &memory_text_stream_read;
+    info->seek_fn = &memory_text_stream_seek;
+    info->size_fn = &memory_text_stream_size;
+    info->close_fn = &memory_text_stream_close;
+    info->cancel_fn = &memory_text_stream_cancel;
+    return 0;
 }
 
 const mpv_node* node_map_find(const mpv_node_list* map, const char* key) {
@@ -144,6 +477,240 @@ std::string pick_locator(const PlaybackTarget& target) {
     return target.fallback_locator;
 }
 
+bool is_http_locator(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return lower.rfind("http://", 0) == 0 || lower.rfind("https://", 0) == 0;
+}
+
+bool locator_looks_like_hls_playlist(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+
+    const size_t query_begin = lower.find_first_of("?#");
+    if (query_begin != std::string::npos) {
+        lower.resize(query_begin);
+    }
+
+    return lower.size() >= 5 && lower.ends_with(".m3u8");
+}
+
+std::string build_default_iptv_user_agent() {
+    // Match the proven UA used by nxmp/libmpv on Switch to reduce the chance
+    // of source-specific server gating on unusual client identifiers.
+    return "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0";
+}
+
+std::string join_http_header_fields_for_mpv(const std::vector<std::string>& fields) {
+    std::string result;
+    for (const std::string& field : fields) {
+        if (field.empty()) {
+            continue;
+        }
+
+        if (!result.empty()) {
+            result += ",";
+        }
+        result += field;
+    }
+    return result;
+}
+
+std::string join_option_keys_for_debug_log(const std::vector<std::pair<std::string, std::string>>& options) {
+    std::string result;
+    for (const auto& option : options) {
+        if (option.first.empty()) {
+            continue;
+        }
+
+        if (!result.empty()) {
+            result += ",";
+        }
+        result += option.first;
+    }
+    return result;
+}
+
+void append_lavf_key_value(std::string& destination, std::string_view key, std::string value) {
+    value = trim(std::move(value));
+    if (value.empty()) {
+        return;
+    }
+
+    if (value.find(',') != std::string::npos ||
+        value.find('\r') != std::string::npos ||
+        value.find('\n') != std::string::npos) {
+        return;
+    }
+
+    if (!destination.empty()) {
+        destination += ",";
+    }
+    destination += std::string(key);
+    destination += "=";
+    destination += value;
+}
+
+void set_option_pair(
+    std::vector<std::pair<std::string, std::string>>& options,
+    std::string key,
+    std::string value) {
+    key = trim(std::move(key));
+    value = trim(std::move(value));
+    if (key.empty() || value.empty()) {
+        return;
+    }
+
+    for (auto& option : options) {
+        if (option.first == key) {
+            option.second = std::move(value);
+            return;
+        }
+    }
+
+    options.emplace_back(std::move(key), std::move(value));
+}
+
+std::vector<std::pair<std::string, std::string>> build_iptv_open_options(
+    const PlaybackTarget& target,
+    const std::string& locator) {
+    std::vector<std::pair<std::string, std::string>> options;
+    if (target.source_kind != PlaybackSourceKind::Iptv) {
+        return options;
+    }
+
+    if (target.iptv_open_plan.has_value() && !target.iptv_open_plan->option_pairs.empty()) {
+        return target.iptv_open_plan->option_pairs;
+    }
+
+    const bool locator_is_http = is_http_locator(locator);
+    const bool locator_is_hls_http = locator_is_http && locator_looks_like_hls_playlist(locator);
+    const bool locator_is_memory_text = is_memory_text_locator(locator);
+    const bool locator_is_inline_data = is_inline_data_locator(locator);
+    const bool locator_is_builtin_memory = is_builtin_memory_locator(locator);
+    const bool locator_is_edl = is_edl_locator(locator);
+    const std::string user_agent =
+        trim(target.http_user_agent).empty() ? build_default_iptv_user_agent() : trim(target.http_user_agent);
+    const std::string referrer = trim(target.http_referrer);
+
+    std::vector<std::string> header_fields = target.http_header_fields;
+    std::string demuxer_lavf_options = "http_persistent=1,http_multiple=1,tls_verify=0";
+    append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
+    append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+
+    if (locator_is_http || locator_is_memory_text || locator_is_builtin_memory || locator_is_edl) {
+        set_option_pair(options, "user-agent", user_agent);
+        set_option_pair(options, "tls-verify", "no");
+        set_option_pair(options, "network-timeout", "45");
+        set_option_pair(
+            options,
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,"
+            "multiple_requests=1,tls_verify=0");
+        if (!referrer.empty()) {
+            set_option_pair(options, "referrer", referrer);
+        }
+
+        const std::string joined_headers = join_http_header_fields_for_mpv(header_fields);
+        if (!joined_headers.empty()) {
+            set_option_pair(options, "http-header-fields", joined_headers);
+        }
+    }
+
+    if (locator_is_hls_http || locator_is_memory_text || locator_is_inline_data || locator_is_builtin_memory) {
+        // In-memory HLS playlists are already rewritten to absolute child URLs,
+        // so mpv should bypass its generic playlist parser and hand them
+        // directly to FFmpeg's HLS demuxer. We apply the same hint to direct
+        // .m3u8 IPTV URLs because some servers expose non-standard MIME types
+        // and Switch libmpv otherwise stalls before FILE_LOADED.
+        set_option_pair(options, "demuxer", "+lavf");
+        set_option_pair(options, "demuxer-lavf-format", "hls");
+    }
+
+    set_option_pair(options, "demuxer-lavf-o", demuxer_lavf_options);
+
+    return options;
+}
+
+uint64_t initial_load_timeout_ms_for_source(PlaybackSourceKind source_kind) {
+    switch (source_kind) {
+        case PlaybackSourceKind::Iptv:
+            return kIptvInitialLoadTimeoutMs;
+        case PlaybackSourceKind::Smb:
+        case PlaybackSourceKind::Unknown:
+        default:
+            return kInitialLoadTimeoutMs;
+    }
+}
+
+int command_loadfile_with_options(
+    mpv_handle* handle,
+    const std::string& locator,
+    const std::vector<std::pair<std::string, std::string>>& option_pairs) {
+    if (handle == nullptr) {
+        return MPV_ERROR_INVALID_PARAMETER;
+    }
+
+    if (option_pairs.empty()) {
+        const char* command[] = {"loadfile", locator.c_str(), "replace", nullptr};
+        return mpv_command_async(handle, 0, command);
+    }
+
+    std::string command_name = "loadfile";
+    std::string replace_mode = "replace";
+    std::vector<std::pair<std::string, std::string>> mutable_options = option_pairs;
+    std::vector<char*> option_keys;
+    std::vector<mpv_node> option_values;
+    option_keys.reserve(mutable_options.size());
+    option_values.reserve(mutable_options.size());
+
+    for (auto& option : mutable_options) {
+        option_keys.push_back(option.first.data());
+        mpv_node value {};
+        value.format = MPV_FORMAT_STRING;
+        value.u.string = option.second.data();
+        option_values.push_back(value);
+    }
+
+    mpv_node_list option_map {};
+    option_map.num = static_cast<int>(mutable_options.size());
+    option_map.keys = option_keys.data();
+    option_map.values = option_values.data();
+
+    std::array<mpv_node, 4> arguments {};
+    arguments[0].format = MPV_FORMAT_STRING;
+    arguments[0].u.string = command_name.data();
+    arguments[1].format = MPV_FORMAT_STRING;
+    arguments[1].u.string = const_cast<char*>(locator.c_str());
+    arguments[2].format = MPV_FORMAT_STRING;
+    arguments[2].u.string = replace_mode.data();
+    // The Switch libmpv build in this project follows the older loadfile
+    // command shape: loadfile <url> [<flags> [<options>]].
+    // Passing the newer optional index argument makes the command fail with
+    // "invalid parameter", so keep the options map as the 4th argument.
+    arguments[3].format = MPV_FORMAT_NODE_MAP;
+    arguments[3].u.list = &option_map;
+
+    mpv_node_list command_array {};
+    command_array.num = 4;
+    command_array.values = arguments.data();
+
+    mpv_node root {};
+    root.format = MPV_FORMAT_NODE_ARRAY;
+    root.u.list = &command_array;
+    return mpv_command_node_async(handle, 0, &root);
+}
+
 constexpr const char* kHwdecCodecs =
     "mpeg1video,mpeg2video,mpeg4,vc1,wmv3,h264,hevc,vp8,vp9,mjpeg";
 constexpr int kMpvImageCount = 3;
@@ -184,6 +751,178 @@ std::string normalized_token(std::string value) {
 bool starts_with(const std::string& value, const std::string& prefix) {
     return value.size() >= prefix.size() &&
            std::equal(prefix.begin(), prefix.end(), value.begin());
+}
+
+bool should_capture_iptv_warning_as_error(
+    PlaybackSourceKind active_source_kind,
+    const std::string& prefix,
+    const std::string& level,
+    const std::string& text) {
+    if (active_source_kind != PlaybackSourceKind::Iptv) {
+        return false;
+    }
+
+    const std::string normalized_text = ascii_lower(text);
+    if (prefix == "stream" && level == "error") {
+        return true;
+    }
+
+    if (prefix != "ffmpeg") {
+        return false;
+    }
+
+    if (level == "fatal" || level == "error") {
+        return true;
+    }
+
+    if (level != "warn") {
+        return false;
+    }
+
+    return normalized_text.find("http error") != std::string::npos ||
+           normalized_text.find("server returned") != std::string::npos ||
+           normalized_text.find("failed to resolve hostname") != std::string::npos ||
+           normalized_text.find("connection refused") != std::string::npos ||
+           normalized_text.find("forbidden") != std::string::npos;
+}
+
+bool looks_like_domain_segment(const std::string& value) {
+    if (value.empty() || value.find('.') == std::string::npos) {
+        return false;
+    }
+
+    if (value.front() == '.' || value.back() == '.' || value.front() == '-' || value.back() == '-') {
+        return false;
+    }
+
+    for (const unsigned char character : value) {
+        if (!(std::isalnum(character) != 0 || character == '.' || character == '-')) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string maybe_rewrite_ipv6_literal_http_locator(const std::string& locator) {
+    const std::string lower = ascii_lower(locator);
+    if (!starts_with(lower, "http://") && !starts_with(lower, "https://")) {
+        return locator;
+    }
+
+    const size_t scheme_separator = locator.find("://");
+    if (scheme_separator == std::string::npos) {
+        return locator;
+    }
+
+    const size_t host_begin = scheme_separator + 3;
+    if (host_begin >= locator.size() || locator[host_begin] != '[') {
+        return locator;
+    }
+
+    const size_t host_end = locator.find(']', host_begin + 1);
+    if (host_end == std::string::npos) {
+        return locator;
+    }
+
+    size_t path_begin = std::string::npos;
+    std::string port_text;
+    const size_t after_host = host_end + 1;
+    if (after_host < locator.size() && locator[after_host] == ':') {
+        const size_t port_begin = after_host + 1;
+        const size_t port_end = locator.find_first_of("/?#", port_begin);
+        if (port_end == std::string::npos) {
+            return locator;
+        }
+
+        port_text = locator.substr(port_begin, port_end - port_begin);
+        if (port_text.empty() ||
+            !std::all_of(port_text.begin(), port_text.end(), [](unsigned char character) {
+                return std::isdigit(character) != 0;
+            })) {
+            return locator;
+        }
+
+        path_begin = port_end;
+    } else {
+        path_begin = locator.find_first_of("/?#", after_host);
+        if (path_begin == std::string::npos) {
+            return locator;
+        }
+    }
+
+    if (path_begin >= locator.size() || locator[path_begin] != '/') {
+        return locator;
+    }
+
+    const size_t suffix_begin = locator.find_first_of("?#", path_begin);
+    const std::string path =
+        suffix_begin == std::string::npos ? locator.substr(path_begin)
+                                          : locator.substr(path_begin, suffix_begin - path_begin);
+    const std::string suffix = suffix_begin == std::string::npos ? std::string {} : locator.substr(suffix_begin);
+
+    const size_t first_segment_end = path.find('/', 1);
+    const std::string first_segment =
+        first_segment_end == std::string::npos ? path.substr(1) : path.substr(1, first_segment_end - 1);
+    if (!looks_like_domain_segment(first_segment)) {
+        return locator;
+    }
+
+    const std::string remaining_path =
+        first_segment_end == std::string::npos ? std::string("/") : path.substr(first_segment_end);
+
+    std::string rewritten = locator.substr(0, host_begin);
+    rewritten += first_segment;
+    if (!port_text.empty()) {
+        rewritten += ":";
+        rewritten += port_text;
+    }
+    rewritten += remaining_path;
+    rewritten += suffix;
+    return rewritten;
+}
+
+std::string playback_source_kind_label(PlaybackSourceKind kind) {
+    switch (kind) {
+        case PlaybackSourceKind::Smb:
+            return "smb";
+        case PlaybackSourceKind::Iptv:
+            return "iptv";
+        default:
+            return "unknown";
+    }
+}
+
+std::string detect_locator_stream_kind(const std::string& locator) {
+    std::string lower = ascii_lower(locator);
+    if (lower.find("youtube.com") != std::string::npos || lower.find("youtu.be") != std::string::npos) {
+        return "YouTube";
+    }
+    if (lower.find("twitch.tv") != std::string::npos) {
+        return "Twitch";
+    }
+    if (starts_with(lower, "edl://")) {
+        return "HLS";
+    }
+    if (starts_with(lower, "hex://") || starts_with(lower, "memory://")) {
+        return "HLS";
+    }
+    if (starts_with(lower, "data://")) {
+        return "HLS";
+    }
+    if (lower.find(".m3u8") != std::string::npos) {
+        return "HLS";
+    }
+    if (lower.find(".mpd") != std::string::npos) {
+        return "DASH";
+    }
+    if (starts_with(lower, "rtmp://")) {
+        return "RTMP";
+    }
+    if (starts_with(lower, "http://") || starts_with(lower, "https://")) {
+        return "HTTP";
+    }
+    return {};
 }
 
 bool language_code_matches(const std::string& actual, const std::string& expected) {
@@ -465,33 +1204,103 @@ public:
 
     bool open(const PlaybackTarget& target, std::string& error_message) {
         std::string locator;
-        if (this->session_active.load() || this->has_media || !is_idle_active()) {
-            if (!stop_current_playback(false)) {
-                error_message = "Previous playback session did not stop cleanly.";
-                return false;
-            }
-        }
-
         if (this->needs_full_reset_before_next_open) {
+            append_debug_log("[open] pending deferred-stop cleanup before open");
+            this->suppress_stop_related_errors = true;
+            process_pending_events(0.0);
+            if (!is_idle_active() && this->handle != nullptr) {
+                const char* command[] = {"stop", nullptr};
+                const int rc = mpv_command_async(this->handle, 0, command);
+                if (rc < 0) {
+                    append_debug_log(
+                        std::string("[open] deferred-stop cleanup stop command failed: ") + mpv_error_string(rc));
+                } else {
+                    append_debug_log("[open] deferred-stop cleanup stop command queued");
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+                    do {
+                        process_pending_events(0.02);
+                        if (is_idle_active()) {
+                            break;
+                        }
+                    } while (std::chrono::steady_clock::now() < deadline);
+                }
+            }
+            process_pending_events(0.0);
+            this->suppress_stop_related_errors = false;
+            this->session_active.store(false);
+            this->has_media = false;
+            this->paused.store(false);
+            this->frame_dirty.store(false);
+            this->current_render_slot.store(-1);
+            this->preferred_track_selection_pending = false;
+            this->preferred_track_selection_applied = false;
+            this->preferred_track_selection_waiting_for_restart = false;
+            this->preferred_track_selection_attempts = 0;
+            this->force_audio_track_reapply_for_current_file = false;
+            this->rendered_frame_for_current_file.store(false);
+            this->playback_started_at_ms.store(0);
+            this->playback_restart_at_ms.store(0);
+            this->last_render_kick_at_ms.store(0);
+            this->last_audio_reapply_at_ms.store(0);
+            this->open_requested_at_ms.store(0);
+            this->active_source_kind = PlaybackSourceKind::Unknown;
+            this->needs_full_reset_before_next_open = false;
+            append_debug_log(
+                "[open] deferred-stop cleanup complete idle=" + std::string(is_idle_active() ? "true" : "false"));
+        } else if (this->session_active.load() || this->has_media || !is_idle_active()) {
+            append_debug_log("[open] existing session detected, resetting backend before open");
             reset_backend_core_state();
+            switchbox::core::switch_smb_mount_release();
         }
 
         if (!initialize(error_message)) {
             return false;
         }
 
-        if (target.source_kind == PlaybackSourceKind::Smb && target.smb_locator.has_value()) {
-            if (!switchbox::core::switch_smb_mount_resolve_playback_path(
-                    target.smb_locator.value(),
+        if (target.source_kind == PlaybackSourceKind::Smb) {
+            std::optional<PlaybackTarget::SmbLocator> smb_locator = target.smb_locator;
+            if (!smb_locator.has_value()) {
+                PlaybackTarget::SmbLocator parsed_locator;
+                if (try_parse_smb_locator_from_uri(pick_locator(target), parsed_locator)) {
+                    append_debug_log("[open] smb_locator reconstructed from uri");
+                    smb_locator = std::move(parsed_locator);
+                }
+            }
+
+            if (smb_locator.has_value() &&
+                !switchbox::core::switch_smb_mount_resolve_playback_path(
+                    smb_locator.value(),
                     locator,
                     error_message)) {
                 this->last_error = error_message;
                 append_debug_log("[open] SMB mount failed: " + error_message);
                 return false;
             }
+            if (!locator.empty()) {
+                append_debug_log("[open] smb_mounted locator=" + summarize_locator_for_debug_log(locator));
+            } else {
+                switchbox::core::switch_smb_mount_release();
+                locator = pick_locator(target);
+                append_debug_log("[open] smb_mount unavailable, fallback locator=" + summarize_locator_for_debug_log(locator));
+            }
         } else {
             switchbox::core::switch_smb_mount_release();
             locator = pick_locator(target);
+            if (target.source_kind == PlaybackSourceKind::Iptv) {
+                if (!target.locator_pre_resolved) {
+                    const std::string resolved_locator =
+                        switchbox::core::resolve_iptv_stream_url_for_playback(locator);
+                    if (!resolved_locator.empty() && resolved_locator != locator) {
+                        append_debug_log("[open] resolved_hls_variant from=" + locator + " to=" + resolved_locator);
+                        locator = resolved_locator;
+                    }
+                }
+                const std::string rewritten_locator = maybe_rewrite_ipv6_literal_http_locator(locator);
+                if (rewritten_locator != locator) {
+                    append_debug_log("[open] ipv6_host_rewrite from=" + locator + " to=" + rewritten_locator);
+                    locator = rewritten_locator;
+                }
+            }
         }
 
         if (locator.empty()) {
@@ -518,15 +1327,33 @@ public:
         this->playback_restart_at_ms.store(0);
         this->last_render_kick_at_ms.store(0);
         this->last_audio_reapply_at_ms.store(0);
+        this->open_requested_at_ms.store(monotonic_milliseconds());
+        this->active_source_kind = target.source_kind;
 
-        append_debug_log("[open] locator=" + locator);
+        const auto open_options = build_iptv_open_options(target, locator);
+        append_debug_log(
+            "[open] source_kind=" + playback_source_kind_label(target.source_kind) +
+            " stream_kind=" + detect_locator_stream_kind(locator) +
+            " title=" + target.title +
+            " locator=" + summarize_locator_for_debug_log(locator));
+        if (target.source_kind == PlaybackSourceKind::Iptv && !open_options.empty()) {
+            append_debug_log(
+                "[open] iptv_options count=" + std::to_string(open_options.size()) +
+                " has_user_agent=" + std::string(trim(target.http_user_agent).empty() ? "false" : "true") +
+                " has_referrer=" + std::string(trim(target.http_referrer).empty() ? "false" : "true") +
+                " header_count=" + std::to_string(target.http_header_fields.size()));
+            append_debug_log("[open] iptv_option_keys=" + join_option_keys_for_debug_log(open_options));
+            if (target.iptv_open_plan.has_value() && !target.iptv_open_plan->debug_summary.empty()) {
+                append_debug_log("[open] iptv_plan " + target.iptv_open_plan->debug_summary);
+            }
+        }
 
         this->session_active.store(true);
         apply_runtime_preferences();
+        apply_source_open_tuning(target);
         (void)apply_video_rotation_degrees(0, false);
 
-        const char* command[] = {"loadfile", locator.c_str(), "replace", nullptr};
-        const int rc = mpv_command_async(this->handle, 0, command);
+        const int rc = command_loadfile_with_options(this->handle, locator, open_options);
         if (rc < 0) {
             this->session_active.store(false);
             error_message = mpv_error_string(rc);
@@ -534,6 +1361,7 @@ public:
             return false;
         }
 
+        append_debug_log("[open] mpv_command_async queued successfully");
         this->set_speed(1.0);
         this->set_volume(this->playback_volume);
         process_pending_events();
@@ -541,8 +1369,36 @@ public:
     }
 
     void stop() {
-        (void)stop_current_playback(false);
-        reset_backend_core_state();
+        append_debug_log("[stop] requested");
+        if (this->handle != nullptr) {
+            const char* command[] = {"stop", nullptr};
+            const int rc = mpv_command_async(this->handle, 0, command);
+            if (rc < 0) {
+                append_debug_log(std::string("[stop] async stop command failed: ") + mpv_error_string(rc));
+            } else {
+                append_debug_log("[stop] async stop command queued");
+            }
+        }
+
+        this->session_active.store(false);
+        this->has_media = false;
+        this->paused.store(false);
+        this->frame_dirty.store(false);
+        this->current_render_slot.store(-1);
+        this->preferred_track_selection_pending = false;
+        this->preferred_track_selection_applied = false;
+        this->preferred_track_selection_waiting_for_restart = false;
+        this->preferred_track_selection_attempts = 0;
+        this->force_audio_track_reapply_for_current_file = false;
+        this->rendered_frame_for_current_file.store(false);
+        this->playback_started_at_ms.store(0);
+        this->playback_restart_at_ms.store(0);
+        this->last_render_kick_at_ms.store(0);
+        this->last_audio_reapply_at_ms.store(0);
+        this->open_requested_at_ms.store(0);
+        this->needs_full_reset_before_next_open = true;
+        this->active_source_kind = PlaybackSourceKind::Unknown;
+        append_debug_log("[stop] deferred backend reset until next open");
     }
 
     void shutdown() {
@@ -560,6 +1416,10 @@ public:
 
     bool has_active_media() const {
         return this->has_media;
+    }
+
+    bool has_rendered_frame_for_current_file() const {
+        return this->rendered_frame_for_current_file.load();
     }
 
     void toggle_pause() {
@@ -693,6 +1553,20 @@ public:
 
     int get_volume() const {
         return this->playback_volume;
+    }
+
+    int64_t get_transfer_speed_bytes_per_second() {
+        if (this->handle == nullptr) {
+            return 0;
+        }
+
+        int64_t value = 0;
+        const int rc = mpv_get_property(this->handle, "cache-speed", MPV_FORMAT_INT64, &value);
+        if (rc < 0 || value < 0) {
+            return 0;
+        }
+
+        return value;
     }
 
     bool read_track_list(std::vector<ParsedTrackInfo>& tracks) {
@@ -1116,6 +1990,7 @@ public:
         int width,
         int height) {
         process_pending_events();
+        maybe_fail_slow_initial_load();
         maybe_request_render_kick();
 
         if (device == nullptr || queue == nullptr || texture == nullptr) {
@@ -1184,6 +2059,31 @@ public:
         return value;
     }
 
+    std::string register_memory_text_stream(std::string extension, std::string data) {
+        if (data.empty()) {
+            return {};
+        }
+
+        extension = sanitize_memory_text_extension(std::move(extension));
+        auto stream = std::make_shared<MemoryTextStreamData>();
+        stream->bytes.assign(data.begin(), data.end());
+
+        auto& registry = memory_text_stream_registry();
+        std::string key;
+        {
+            std::scoped_lock lock(registry.mutex);
+            const uint64_t id = ++registry.next_id;
+            key = "stream-" + to_hex(id) + "-" + to_hex(fnv1a64(data)) + "." + extension;
+            registry.streams[key] = stream;
+        }
+
+        const std::string locator = std::string(kMemoryTextProtocolPrefix) + key;
+        append_debug_log(
+            "[mem] registered locator=" + locator +
+            " bytes=" + std::to_string(stream->bytes.size()));
+        return locator;
+    }
+
 private:
     void reset_backend_core_state() {
         stop_render_thread();
@@ -1203,6 +2103,7 @@ private:
         }
 
         this->ready = false;
+        this->memory_text_protocol_registered = false;
         this->has_media = false;
         this->session_active.store(false);
         this->paused.store(false);
@@ -1221,6 +2122,7 @@ private:
         this->playback_restart_at_ms.store(0);
         this->last_render_kick_at_ms.store(0);
         this->last_audio_reapply_at_ms.store(0);
+        this->open_requested_at_ms.store(0);
         this->needs_full_reset_before_next_open = false;
     }
 
@@ -1266,6 +2168,43 @@ private:
         return (!this->session_active.load() && !this->has_media) || is_idle_active();
     }
 
+    void maybe_fail_slow_initial_load() {
+        if (!this->session_active.load() || this->has_media || this->handle == nullptr) {
+            return;
+        }
+
+        const uint64_t requested_at_ms = this->open_requested_at_ms.load();
+        if (requested_at_ms == 0) {
+            return;
+        }
+
+        const uint64_t now_ms = monotonic_milliseconds();
+        const uint64_t timeout_ms = initial_load_timeout_ms_for_source(this->active_source_kind);
+        if (now_ms <= requested_at_ms || now_ms - requested_at_ms < timeout_ms) {
+            return;
+        }
+
+        const uint64_t elapsed_ms = now_ms - requested_at_ms;
+        this->open_requested_at_ms.store(0);
+        this->session_active.store(false);
+        this->has_media = false;
+        this->paused.store(false);
+        this->last_error = "Playback ended: loading timed out";
+        append_debug_log(
+            "[event] initial load timed out before FILE_LOADED source_kind=" +
+            playback_source_kind_label(this->active_source_kind) +
+            " waited_ms=" + std::to_string(elapsed_ms) +
+            " timeout_ms=" + std::to_string(timeout_ms));
+
+        const char* command[] = {"stop", nullptr};
+        const int rc = mpv_command_async(this->handle, 0, command);
+        if (rc < 0) {
+            append_debug_log(std::string("[event] timeout stop command failed: ") + mpv_error_string(rc));
+        } else {
+            append_debug_log("[event] timeout stop command queued");
+        }
+    }
+
     void set_property_string_relaxed(const char* property_name, const std::string& value) {
         if (this->handle == nullptr || property_name == nullptr) {
             return;
@@ -1277,6 +2216,30 @@ private:
 
         const char* command[] = {"set", property_name, value.c_str(), nullptr};
         (void)mpv_command(this->handle, command);
+    }
+
+    void apply_source_open_tuning(const PlaybackTarget& target) {
+        if (this->handle == nullptr) {
+            return;
+        }
+
+        std::string analyzeduration = "0.4";
+        std::string probescore = "24";
+        if (target.source_kind == PlaybackSourceKind::Iptv && target.iptv_open_plan.has_value()) {
+            if (!trim(target.iptv_open_plan->analyzeduration_override).empty()) {
+                analyzeduration = trim(target.iptv_open_plan->analyzeduration_override);
+            }
+            if (!trim(target.iptv_open_plan->probescore_override).empty()) {
+                probescore = trim(target.iptv_open_plan->probescore_override);
+            }
+        }
+
+        set_property_string_relaxed("demuxer-lavf-analyzeduration", analyzeduration);
+        set_property_string_relaxed("demuxer-lavf-probescore", probescore);
+        append_debug_log(
+            "[open] source_tuning analyzeduration=" + analyzeduration +
+            " probescore=" + probescore +
+            " source_kind=" + playback_source_kind_label(target.source_kind));
     }
 
     void apply_runtime_preferences() {
@@ -1476,8 +2439,18 @@ private:
         bool fully_stopped = true;
         if (this->handle != nullptr) {
             this->suppress_stop_related_errors = true;
-            mpv_command_string(this->handle, "stop");
-            fully_stopped = wait_for_stop_completion(std::chrono::milliseconds(1500));
+            const char* command[] = {"stop", nullptr};
+            const int rc = mpv_command_async(this->handle, 0, command);
+            if (rc < 0) {
+                append_debug_log(std::string("[stop] async stop command failed: ") + mpv_error_string(rc));
+                fully_stopped = false;
+            } else {
+                append_debug_log("[stop] async stop command queued");
+                fully_stopped = wait_for_stop_completion(std::chrono::milliseconds(300));
+                if (!fully_stopped) {
+                    append_debug_log("[stop] wait_for_stop_completion timed out");
+                }
+            }
         }
         this->suppress_stop_related_errors = false;
 
@@ -1496,7 +2469,9 @@ private:
         this->playback_restart_at_ms.store(0);
         this->last_render_kick_at_ms.store(0);
         this->last_audio_reapply_at_ms.store(0);
+        this->open_requested_at_ms.store(0);
         this->needs_full_reset_before_next_open = true;
+        this->active_source_kind = PlaybackSourceKind::Unknown;
 
         if (release_mount_after_stop && fully_stopped) {
             switchbox::core::switch_smb_mount_release();
@@ -1520,9 +2495,11 @@ private:
 
             switch (event->event_id) {
                 case MPV_EVENT_FILE_LOADED:
+                    this->last_error.clear();
                     this->session_active.store(true);
                     this->has_media = true;
                     this->paused.store(false);
+                    this->open_requested_at_ms.store(0);
                     this->preferred_track_selection_pending = true;
                     this->preferred_track_selection_applied = false;
                     this->preferred_track_selection_waiting_for_restart = true;
@@ -1538,15 +2515,18 @@ private:
                     append_debug_log("[event] MPV_EVENT_FILE_LOADED");
                     break;
                 case MPV_EVENT_PLAYBACK_RESTART:
+                    this->last_error.clear();
                     this->preferred_track_selection_waiting_for_restart = false;
                     this->playback_restart_at_ms.store(monotonic_milliseconds());
                     request_render_update();
                     append_debug_log("[event] MPV_EVENT_PLAYBACK_RESTART");
                     break;
                 case MPV_EVENT_END_FILE: {
+                    const uint64_t requested_at_ms = this->open_requested_at_ms.load();
                     this->has_media = false;
                     this->paused.store(false);
                     this->session_active.store(false);
+                    this->open_requested_at_ms.store(0);
                     this->preferred_track_selection_pending = false;
                     this->preferred_track_selection_applied = false;
                     this->preferred_track_selection_waiting_for_restart = false;
@@ -1569,6 +2549,9 @@ private:
                             this->last_error = "Playback ended with an unknown error.";
                             append_debug_log("[event] MPV_EVENT_END_FILE error: " + this->last_error);
                         }
+                    } else if (requested_at_ms != 0 && !this->suppress_stop_related_errors) {
+                        this->last_error = "Playback ended before media loaded.";
+                        append_debug_log("[event] MPV_EVENT_END_FILE normal before FILE_LOADED");
                     } else {
                         append_debug_log("[event] MPV_EVENT_END_FILE normal");
                     }
@@ -1578,6 +2561,7 @@ private:
                     if (event->error < 0) {
                         this->has_media = false;
                         this->session_active.store(false);
+                        this->open_requested_at_ms.store(0);
                         this->preferred_track_selection_pending = false;
                         this->preferred_track_selection_applied = false;
                         this->preferred_track_selection_waiting_for_restart = false;
@@ -1614,14 +2598,34 @@ private:
                     if (message != nullptr &&
                         message->prefix != nullptr &&
                         message->level != nullptr &&
-                        message->text != nullptr &&
-                        std::strcmp(message->prefix, "ffmpeg") == 0 &&
-                        std::strcmp(message->level, "error") == 0) {
-                        if (this->suppress_stop_related_errors) {
-                            append_debug_log("[event] ffmpeg error suppressed during intentional stop");
-                        } else {
-                            this->last_error = message->text;
-                            append_debug_log(std::string("[event] ffmpeg error: ") + this->last_error);
+                        message->text != nullptr) {
+                        const std::string prefix = message->prefix;
+                        const std::string level = message->level;
+                        const std::string text = trim(message->text);
+                        const bool relevant_prefix =
+                            prefix == "ffmpeg" ||
+                            prefix == "stream" ||
+                            prefix == "demux" ||
+                            prefix == "cache" ||
+                            prefix == "cplayer";
+                        const bool important_level =
+                            level == "fatal" ||
+                            level == "error" ||
+                            level == "warn" ||
+                            (this->active_source_kind == PlaybackSourceKind::Iptv && level == "info");
+
+                        if (relevant_prefix && important_level && !text.empty()) {
+                            append_debug_log("[mpv][" + prefix + "][" + level + "] " + text);
+                        }
+
+                        if (((level == "fatal" || level == "error") &&
+                             (prefix == "ffmpeg" || prefix == "stream" || prefix == "demux")) ||
+                            should_capture_iptv_warning_as_error(this->active_source_kind, prefix, level, text)) {
+                            if (this->suppress_stop_related_errors) {
+                                append_debug_log("[event] log error suppressed during intentional stop");
+                            } else {
+                                this->last_error = text;
+                            }
                         }
                     }
                     break;
@@ -1668,6 +2672,8 @@ private:
         mpv_set_option_string(this->handle, "deband", "no");
         mpv_set_option_string(this->handle, "hdr-compute-peak", "no");
         mpv_set_option_string(this->handle, "demuxer-seekable-cache", "yes");
+        mpv_set_option_string(this->handle, "demuxer-lavf-analyzeduration", "0.4");
+        mpv_set_option_string(this->handle, "demuxer-lavf-probescore", "24");
         mpv_set_option_string(
             this->handle,
             "demuxer-readahead-secs",
@@ -1680,8 +2686,36 @@ private:
             return false;
         }
 
+        if (!register_memory_text_protocol(error_message)) {
+            mpv_terminate_destroy(this->handle);
+            this->handle = nullptr;
+            return false;
+        }
+
+        mpv_request_log_messages(this->handle, "info");
         mpv_observe_property(this->handle, 0, "pause", MPV_FORMAT_FLAG);
         this->ready = true;
+        return true;
+    }
+
+    bool register_memory_text_protocol(std::string& error_message) {
+        if (this->handle == nullptr) {
+            error_message = "mpv handle is not initialized.";
+            return false;
+        }
+        if (this->memory_text_protocol_registered) {
+            return true;
+        }
+
+        const int rc =
+            mpv_stream_cb_add_ro(this->handle, kMemoryTextProtocol, nullptr, &memory_text_stream_open_ro);
+        if (rc < 0) {
+            error_message = std::string("mpv_stream_cb_add_ro failed: ") + mpv_error_string(rc);
+            return false;
+        }
+
+        this->memory_text_protocol_registered = true;
+        append_debug_log("[mem] protocol registered");
         return true;
     }
 
@@ -1726,6 +2760,7 @@ private:
     mpv_handle* handle = nullptr;
     mpv_render_context* context = nullptr;
     bool ready = false;
+    bool memory_text_protocol_registered = false;
     bool has_media = false;
     std::atomic<bool> session_active = false;
     std::atomic<bool> paused = false;
@@ -1746,7 +2781,9 @@ private:
     std::atomic<uint64_t> playback_restart_at_ms = 0;
     std::atomic<uint64_t> last_render_kick_at_ms = 0;
     std::atomic<uint64_t> last_audio_reapply_at_ms = 0;
+    std::atomic<uint64_t> open_requested_at_ms = 0;
     bool needs_full_reset_before_next_open = false;
+    PlaybackSourceKind active_source_kind = PlaybackSourceKind::Unknown;
     std::string last_error;
     DkDevice deko3d_device = nullptr;
     DkQueue deko3d_queue = nullptr;
@@ -1775,6 +2812,20 @@ bool switch_mpv_backend_available() {
 
 std::string switch_mpv_backend_reason() {
     return {};
+}
+
+void switch_mpv_begin_debug_log_session() {
+    begin_debug_log_session_impl();
+}
+
+void switch_mpv_append_debug_log_note(const std::string& message) {
+    append_debug_log("[note] " + message);
+}
+
+std::string switch_mpv_register_memory_text_stream(
+    std::string extension,
+    std::string data) {
+    return SwitchMpvPlayer::instance().register_memory_text_stream(std::move(extension), std::move(data));
 }
 
 bool switch_mpv_open(const PlaybackTarget& target, std::string& error_message) {
@@ -1806,6 +2857,10 @@ bool switch_mpv_session_active() {
 
 bool switch_mpv_has_media() {
     return SwitchMpvPlayer::instance().has_active_media();
+}
+
+bool switch_mpv_has_rendered_video_frame() {
+    return SwitchMpvPlayer::instance().has_rendered_frame_for_current_file();
 }
 
 void switch_mpv_toggle_pause() {
@@ -1842,6 +2897,10 @@ bool switch_mpv_set_volume(int volume) {
 
 int switch_mpv_get_volume() {
     return SwitchMpvPlayer::instance().get_volume();
+}
+
+int64_t switch_mpv_get_transfer_speed_bytes_per_second() {
+    return SwitchMpvPlayer::instance().get_transfer_speed_bytes_per_second();
 }
 
 std::vector<MpvTrackOption> switch_mpv_list_audio_tracks() {
@@ -1906,6 +2965,16 @@ std::string switch_mpv_backend_reason() {
     return "Custom Switch libmpv/deko3d build not found under devkitPro tmp/switchbox-portlibs.";
 }
 
+void switch_mpv_begin_debug_log_session() {
+}
+
+void switch_mpv_append_debug_log_note(const std::string&) {
+}
+
+std::string switch_mpv_register_memory_text_stream(std::string, std::string) {
+    return {};
+}
+
 bool switch_mpv_open(const PlaybackTarget&, std::string& error_message) {
     error_message = switch_mpv_backend_reason();
     return false;
@@ -1934,6 +3003,10 @@ bool switch_mpv_session_active() {
 }
 
 bool switch_mpv_has_media() {
+    return false;
+}
+
+bool switch_mpv_has_rendered_video_frame() {
     return false;
 }
 
@@ -1970,6 +3043,10 @@ bool switch_mpv_set_volume(int) {
 
 int switch_mpv_get_volume() {
     return 100;
+}
+
+int64_t switch_mpv_get_transfer_speed_bytes_per_second() {
+    return 0;
 }
 
 std::vector<MpvTrackOption> switch_mpv_list_audio_tracks() {

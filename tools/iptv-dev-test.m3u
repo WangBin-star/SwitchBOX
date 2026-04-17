@@ -1,0 +1,13 @@
+#EXTM3U
+
+# Development-focused IPTV test list for SwitchBOX.
+# Verified reachable on 2026-04-16 during development.
+
+#EXTINF:-1 group-title="Dev Test" tvg-id="apple.bipbop" tvg-name="Apple BipBop",Apple BipBop
+https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8
+
+#EXTINF:-1 group-title="Dev Test" tvg-id="mux.x36xhzz" tvg-name="Mux x36xhzz",Mux x36xhzz
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+
+#EXTINF:-1 group-title="Live Test" tvg-id="AlbKanaleMusicTV.al" tvg-name="AlbKanale Music TV" tvg-country="AL",AlbKanale Music TV
+https://albportal.net/albkanalemusic.m3u8

@@ -165,7 +165,7 @@ View* RecyclerFrame::getNextCellFocus(FocusDirection direction, View* currentVie
         currentFocusIndex += offset;
     }
 
-    currentFocus = getParentNavigationDecision(this, currentFocus, direction);
+    currentFocus = getParentNavigationDecision(this->contentBox, currentFocus, direction);
     if (!currentFocus && hasParent())
         currentFocus = getParent()->getNextFocus(direction, this);
     return currentFocus;
@@ -237,6 +237,8 @@ void RecyclerFrame::reloadData()
     if (!layouted)
         return;
 
+    this->contentBox->setLastFocusedView(nullptr);
+
     auto children = this->contentBox->getChildren();
     for (auto const& child : children)
     {
@@ -307,30 +309,89 @@ RecyclerCell* RecyclerFrame::dequeueReusableCell(std::string identifier)
 // TODO: Implement it normally
 void RecyclerFrame::selectRowAt(IndexPath indexPath, bool animated)
 {
-    size_t count    = 0;
-    float offset = 0;
+    size_t flatIndex = this->cacheIndexPathData.size();
+    float cellTop = getIndexTopOffset(indexPath);
+    float cellHeight = 0.0f;
 
-    for (size_t j = 0; j < indexPath.section; j++)
-        for (int i = -1; i < (dataSource->numberOfRows(this, j)); i++)
+    for (size_t i = 0; i < this->cacheIndexPathData.size(); ++i)
+    {
+        const auto& cachedIndexPath = this->cacheIndexPathData[i];
+        if (cachedIndexPath.section == indexPath.section && cachedIndexPath.row == indexPath.row)
         {
-            offset += this->cacheFramesData[count++].height;
+            flatIndex = i;
+            break;
         }
+    }
 
-    for (int i = -1; i <= indexPath.row; i++)
-        offset += this->cacheFramesData[count++].height;
+    if (flatIndex >= this->cacheFramesData.size())
+        return;
 
-    offset -= this->getHeight() / 2;
+    cellHeight = this->cacheFramesData[flatIndex].height;
+
+    float offset = this->getContentOffsetY();
+    if (this->focusScrollBehavior == RecyclerFocusScrollBehavior::CENTERED)
+        offset = cellTop + cellHeight - this->getHeight() / 2;
+    else
+    {
+        if (cellTop < offset)
+            offset = cellTop;
+        else if (cellTop + cellHeight > offset + this->getHeight())
+            offset = cellTop + cellHeight - this->getHeight();
+    }
+
     this->setContentOffsetY(offset, animated);
     this->cellsRecyclingLoop();
 
     for (View* view : contentBox->getChildren())
     {
-        if (*((size_t*)view->getParentUserData()) == count - 1)
+        if (*((size_t*)view->getParentUserData()) == flatIndex)
         {
             contentBox->setLastFocusedView(view);
             break;
         }
     }
+}
+
+float RecyclerFrame::getIndexTopOffset(IndexPath indexPath) const
+{
+    size_t count = 0;
+    float offset = 0.0f;
+
+    for (size_t j = 0; j < indexPath.section; j++)
+    {
+        for (int i = -1; i < dataSource->numberOfRows(const_cast<RecyclerFrame*>(this), static_cast<int>(j)); i++)
+            offset += this->cacheFramesData[count++].height;
+    }
+
+    for (int i = -1; i < indexPath.row; i++)
+        offset += this->cacheFramesData[count++].height;
+
+    return offset;
+}
+
+void RecyclerFrame::ensureViewVisible(View* focusedView, bool animated)
+{
+    if (!focusedView)
+        return;
+
+    float localY = focusedView->getLocalY();
+    float itemHeight = focusedView->getHeight();
+    View* parent = focusedView->getParent();
+
+    while (parent && dynamic_cast<ScrollingFrame*>(parent->getParent()) == nullptr)
+    {
+        localY += parent->getLocalY();
+        parent = parent->getParent();
+    }
+
+    float newScroll = this->getContentOffsetY();
+    if (localY < newScroll)
+        newScroll = localY;
+    else if (localY + itemHeight > newScroll + this->getHeight())
+        newScroll = localY + itemHeight - this->getHeight();
+
+    this->setContentOffsetY(newScroll, animated);
+    this->cellsRecyclingLoop();
 }
 
 void RecyclerFrame::queueReusableCell(RecyclerCell* cell)
@@ -382,6 +443,7 @@ bool RecyclerFrame::checkWidth()
 void RecyclerFrame::cellsRecyclingLoop()
 {
     Rect visibleFrame = getVisibleFrame();
+    float preloadMargin = this->estimatedRowHeight > 0 ? this->estimatedRowHeight : 44.0f;
 
     while (true)
     {
@@ -390,7 +452,7 @@ void RecyclerFrame::cellsRecyclingLoop()
             if (*((size_t*)it->getParentUserData()) == visibleMin)
                 minCell = (RecyclerCell*)it;
 
-        if (!minCell || minCell->getDetachedPosition().y + minCell->getHeight() >= visibleFrame.getMinY())
+        if (!minCell || minCell->getDetachedPosition().y + minCell->getHeight() >= visibleFrame.getMinY() - preloadMargin)
             break;
 
         float cellHeight = minCell->getHeight();
@@ -412,7 +474,7 @@ void RecyclerFrame::cellsRecyclingLoop()
             if (*((size_t*)it->getParentUserData()) == visibleMax)
                 maxCell = (RecyclerCell*)it;
 
-        if (!maxCell || maxCell->getDetachedPosition().y <= visibleFrame.getMaxY())
+        if (!maxCell || maxCell->getDetachedPosition().y <= visibleFrame.getMaxY() + preloadMargin)
             break;
 
         float cellHeight = maxCell->getHeight();
@@ -426,17 +488,35 @@ void RecyclerFrame::cellsRecyclingLoop()
         visibleMax--;
     }
 
-    while (visibleMin - 1 < cacheFramesData.size() && renderedFrame.getMinY() > visibleFrame.getMinY() - paddingTop)
+    while (visibleMin - 1 < cacheFramesData.size() && renderedFrame.getMinY() > visibleFrame.getMinY() - paddingTop - preloadMargin)
     {
         int i = visibleMin - 1;
         addCellAt(i, false);
     }
 
-    while (visibleMax + 1 < cacheFramesData.size() && renderedFrame.getMaxY() < visibleFrame.getMaxY() - paddingBottom)
+    while (visibleMax + 1 < cacheFramesData.size() && renderedFrame.getMaxY() < visibleFrame.getMaxY() - paddingBottom + preloadMargin)
     {
         int i = visibleMax + 1;
         addCellAt(i, true);
     }
+}
+
+void RecyclerFrame::onChildFocusGained(View* directChild, View* focusedView)
+{
+    Box::onChildFocusGained(directChild, focusedView);
+    this->childFocused = true;
+
+    if (Application::getInputType() != InputType::GAMEPAD)
+        return;
+
+    if (this->focusScrollBehavior == RecyclerFocusScrollBehavior::ENSURE_VISIBLE)
+    {
+        this->ensureViewVisible(focusedView, true);
+        return;
+    }
+
+    if (behavior == ScrollingBehavior::CENTERED)
+        this->updateScrolling(true);
 }
 
 void RecyclerFrame::addCellAt(size_t index, size_t downSide)

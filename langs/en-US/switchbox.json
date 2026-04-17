@@ -4,6 +4,7 @@
             "app_name": "SwitchBOX"
         },
         "actions": {
+            "confirm": "Confirm",
             "settings": "Settings",
             "save": "Save",
             "discard": "Discard",
@@ -41,6 +42,7 @@
             "open_failed": "Failed to open this IPTV playlist.",
             "unexpected_error": "An unexpected error occurred while requesting the IPTV playlist.",
             "empty": "This playlist does not contain any visible channels.",
+            "exit_confirm": "Return to Home? Opening this IPTV source again will reload the playlist.",
             "groups": {
                 "favorites": "Favorites",
                 "ungrouped": "Ungrouped"
@@ -170,6 +172,15 @@
                 "toggle_pause": "Play/Pause"
             },
             "volume_label": "Volume: {0}",
+            "loading": {
+                "title": "Opening Channel",
+                "resolving_stream": "Resolving channel address...",
+                "opening_stream": "Connecting to stream...",
+                "waiting_first_frame": "Waiting for first frame..."
+            },
+            "errors": {
+                "unsupported_web_stream": "This IPTV entry currently points to a {0} web page rather than a directly playable media stream."
+            },
             "audio": {
                 "title": "Audio",
                 "no_options": "No audio tracks available"

@@ -93,6 +93,12 @@ class ScrollingFrame : public Box
         showScrollingIndicator = visible;
     }
 
+    void setScrollingIndicatorInsets(float top, float bottom)
+    {
+        this->scrollingIndicatorTopInset = top;
+        this->scrollingIndicatorBottomInset = bottom;
+    }
+
     static View* create();
 
   protected:
@@ -102,6 +108,8 @@ class ScrollingFrame : public Box
     bool updateScrollingOnNextFrame = false;
     bool childFocused               = false;
     bool showScrollingIndicator     = true;
+    float scrollingIndicatorTopInset = 0.0f;
+    float scrollingIndicatorBottomInset = 0.0f;
 
     float middleY = 0; // y + height/2
     float bottomY = 0; // y + height

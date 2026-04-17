@@ -112,17 +112,25 @@ void ScrollingFrame::updateScrollingIndicatior()
 {
     float contentHeight = getContentHeight();
     float viewHeight    = getHeight();
+    float trackTop      = this->scrollingIndicatorTopInset;
+    float trackBottom   = this->scrollingIndicatorBottomInset;
+    float trackHeight   = viewHeight - trackTop - trackBottom;
 
-    if (contentHeight <= viewHeight || !showScrollingIndicator)
+    if (contentHeight <= viewHeight || !showScrollingIndicator || trackHeight <= 0)
     {
         scrollingIndicator->setAlpha(0);
         return;
     }
 
     scrollingIndicator->setAlpha(contentHeight <= viewHeight ? 0 : 0.3f);
-    scrollingIndicator->setHeight(viewHeight / contentHeight * viewHeight);
+    float indicatorHeight = trackHeight * (viewHeight / contentHeight);
+    if (indicatorHeight > trackHeight)
+        indicatorHeight = trackHeight;
+    scrollingIndicator->setHeight(indicatorHeight);
 
-    float scrollViewOffset = getContentOffsetY() / contentHeight * getHeight();
+    float bottomLimit = contentHeight - viewHeight;
+    float progress = bottomLimit <= 0 ? 0.0f : getContentOffsetY() / bottomLimit;
+    float scrollViewOffset = trackTop + progress * (trackHeight - indicatorHeight);
     scrollingIndicator->setDetachedPosition(getWidth() - 14 - SCROLLING_INDICATOR_WIDTH, scrollViewOffset);
 }
 
@@ -450,6 +458,9 @@ View* ScrollingFrame::getNextFocus(FocusDirection direction, View* currentView)
 
 View* ScrollingFrame::getDefaultFocus()
 {
+    if (this->getVisibility() != Visibility::VISIBLE || this->getAlpha() == 0.0f)
+        return nullptr;
+
     if (behavior == ScrollingBehavior::CENTERED)
     {
         View* focus = contentView->getDefaultFocus();

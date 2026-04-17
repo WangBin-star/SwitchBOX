@@ -1,0 +1,26 @@
+#EXTM3U
+
+# Self-hosted IPTV template for SwitchBOX development.
+# Replace the example URLs below with media URLs you control.
+# Recommended:
+# - 1 short MP4 for fast regression checks
+# - 1 higher bitrate MP4 for performance checks
+# - 1 HLS .m3u8 for live/segmented playback checks
+# - 1 optional audio-first stream if you want to test non-video behavior
+#
+# Notes:
+# - Use HTTP or HTTPS URLs reachable by the Switch.
+# - If you host the playlist yourself, the playlist URL can also be added
+#   directly as an IPTV source in SwitchBOX.
+
+#EXTINF:-1 group-title="Local Dev" tvg-id="local.short.mp4" tvg-name="Local Short MP4",Local Short MP4
+https://example.com/media/local-short.mp4
+
+#EXTINF:-1 group-title="Local Dev" tvg-id="local.high-bitrate.mp4" tvg-name="Local High Bitrate MP4",Local High Bitrate MP4
+https://example.com/media/local-high-bitrate.mp4
+
+#EXTINF:-1 group-title="Local Dev" tvg-id="local.hls" tvg-name="Local HLS Stream",Local HLS Stream
+https://example.com/live/local-test/master.m3u8
+
+#EXTINF:-1 group-title="Local Dev" tvg-id="local.alt" tvg-name="Local Alternate Test Stream",Local Alternate Test Stream
+https://example.com/media/local-alt-test.mp4

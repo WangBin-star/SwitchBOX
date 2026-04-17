@@ -169,6 +169,9 @@ Sidebar::Sidebar()
         style["brls/sidebar/padding_left"]);
 
     this->setContentView(this->contentBox);
+    this->setScrollingIndicatorInsets(
+        style["brls/sidebar/padding_top"],
+        style["brls/sidebar/padding_bottom"]);
     this->setScrollingIndicatorVisible(false);
 }
 

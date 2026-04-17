@@ -140,6 +140,15 @@
                 "start": "\u64ad\u653e\u6d4b\u8bd5",
                 "toggle_pause": "\u64ad\u653e/\u6682\u505c"
             },
+            "loading": {
+                "title": "\u6b63\u5728\u6253\u5f00\u9891\u9053",
+                "resolving_stream": "\u6b63\u5728\u89e3\u6790\u9891\u9053\u5730\u5740\u2026",
+                "opening_stream": "\u6b63\u5728\u8fde\u63a5\u89c6\u9891\u6d41\u2026",
+                "waiting_first_frame": "\u6b63\u5728\u7b49\u5f85\u9996\u5e27\u753b\u9762\u2026"
+            },
+            "errors": {
+                "unsupported_web_stream": "\u8fd9\u4e2a IPTV \u6761\u76ee\u5f53\u524d\u6307\u5411 {0} \u7f51\u9875\u5730\u5740\uff0c\u800c\u4e0d\u662f\u53ef\u76f4\u63a5\u64ad\u653e\u7684\u5a92\u4f53\u6d41\u3002"
+            },
             "launch_started": "\u5df2\u53d1\u8d77\u64ad\u653e\u8bf7\u6c42\u3002",
             "status": {
                 "title": "\u5f53\u524d\u72b6\u6001",

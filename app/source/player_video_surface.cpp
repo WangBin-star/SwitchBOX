@@ -45,6 +45,45 @@ std::string format_time_seconds(double seconds) {
     return buffer;
 }
 
+std::string format_transfer_speed_text(int64_t bytes_per_second) {
+    if (bytes_per_second <= 0) {
+        return "0B/s";
+    }
+
+    constexpr double kKilobyte = 1000.0;
+    constexpr double kMegabyte = 1000.0 * 1000.0;
+    char buffer[32] = {};
+
+    if (static_cast<double>(bytes_per_second) >= 2.0 * kMegabyte) {
+        const double value = static_cast<double>(bytes_per_second) / kMegabyte;
+        if (value < 10.0) {
+            std::snprintf(buffer, sizeof(buffer), "%.2fM/s", value);
+        } else if (value < 100.0) {
+            std::snprintf(buffer, sizeof(buffer), "%.1fM/s", value);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%.0fM/s", value);
+        }
+        return buffer;
+    }
+
+    const double value = static_cast<double>(bytes_per_second) / kKilobyte;
+    if (value < 1.0) {
+        std::snprintf(buffer, sizeof(buffer), "%.3fK/s", value);
+    } else if (value < 10.0) {
+        std::snprintf(buffer, sizeof(buffer), "%.2fK/s", value);
+    } else if (value < 100.0) {
+        std::snprintf(buffer, sizeof(buffer), "%.1fK/s", value);
+    } else {
+        std::snprintf(buffer, sizeof(buffer), "%.0fK/s", value);
+    }
+    return buffer;
+}
+
+std::string format_transfer_direction_text(int64_t rx_bytes_per_second, int64_t tx_bytes_per_second) {
+    return "RX " + format_transfer_speed_text(rx_bytes_per_second) +
+           "   TX " + format_transfer_speed_text(tx_bytes_per_second);
+}
+
 std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
 }
@@ -608,7 +647,7 @@ void PlayerVideoSurface::draw(
     if (this->overlay_model.controls_visible) {
         nvgFontFaceId(vg, brls::Application::getDefaultFont());
 
-        const float panel_width = width * 0.84f;
+        const float panel_width = width * 0.88f;
         const float panel_height = 132.0f;
         const float panel_x = x + (width - panel_width) * 0.5f;
         const float panel_y = y + height - panel_height - 26.0f;
@@ -666,7 +705,7 @@ void PlayerVideoSurface::draw(
         const float buttons_y = panel_y + 58.0f;
         const float row_gap = 12.0f;
         float selector_width = std::clamp(progress_width * 0.14f, 124.0f, 172.0f);
-        const float volume_group_width = std::clamp(progress_width * 0.23f, 210.0f, 260.0f);
+        const float volume_group_width = std::clamp(progress_width * 0.30f, 290.0f, 360.0f);
         float buttons_area_width = progress_width - volume_group_width - selector_width * 2.0f - row_gap * 3.0f;
         if (buttons_area_width < 396.0f) {
             const float deficit = 396.0f - buttons_area_width;
@@ -783,14 +822,18 @@ void PlayerVideoSurface::draw(
         }
 
         const int volume = std::clamp(switchbox::core::switch_mpv_get_volume(), 0, 100);
+        const std::string transfer_speed_text =
+            format_transfer_speed_text(switchbox::core::switch_mpv_get_transfer_speed_bytes_per_second());
         const float volume_ratio = static_cast<float>(volume) / 100.0f;
         const float volume_bar_height = 10.0f;
         const float volume_row_top = buttons_y + (button_height - volume_bar_height) * 0.5f;
         const float volume_center_y = buttons_y + button_height * 0.5f;
         const float volume_text_x = volume_group_x;
         const float volume_text_width = 100.0f;
+        const float speed_text_width = 92.0f;
         const float volume_bar_x = volume_text_x + volume_text_width + 12.0f;
-        const float volume_bar_width = std::max(56.0f, panel_x + panel_width - 26.0f - volume_bar_x);
+        const float speed_text_x = panel_x + panel_width - 26.0f - speed_text_width;
+        const float volume_bar_width = std::max(56.0f, speed_text_x - 14.0f - volume_bar_x);
 
         const std::string volume_text = tr("player_page/volume_label", std::to_string(volume));
         nvgFontSize(vg, 17.0f);
@@ -807,6 +850,11 @@ void PlayerVideoSurface::draw(
         nvgRoundedRect(vg, volume_bar_x, volume_row_top, volume_bar_width * volume_ratio, volume_bar_height, 5.0f);
         nvgFillColor(vg, nvgRGBA(120, 220, 130, 220));
         nvgFill(vg);
+
+        nvgFontSize(vg, 16.0f);
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 205));
+        nvgText(vg, speed_text_x + speed_text_width, volume_center_y, transfer_speed_text.c_str(), nullptr);
     }
 
     if (this->overlay_model.volume_osd_visible) {
@@ -851,7 +899,66 @@ void PlayerVideoSurface::draw(
         nvgText(vg, panel_x + panel_width * 0.5f, panel_y + panel_height - 30.0f, value_text.c_str(), nullptr);
     }
 
-    if (session_active || has_media || rendered_video) {
+    if (this->overlay_model.loading_overlay_visible && !this->overlay_model.loading_overlay_message.empty()) {
+        nvgFontFaceId(vg, brls::Application::getDefaultFont());
+
+        const float panel_width = std::min(width * 0.62f, 620.0f);
+        const float panel_height = 152.0f;
+        const float panel_x = x + (width - panel_width) * 0.5f;
+        const float panel_y = y + (height - panel_height) * 0.5f;
+        const std::string transfer_text = format_transfer_direction_text(
+            switchbox::core::switch_mpv_get_transfer_speed_bytes_per_second(),
+            0);
+
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, panel_x, panel_y, panel_width, panel_height, 20.0f);
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 178));
+        nvgFill(vg);
+
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, panel_x, panel_y, panel_width, panel_height, 20.0f);
+        nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 36));
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+
+        nvgFontSize(vg, 28.0f);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 240));
+        nvgText(
+            vg,
+            panel_x + panel_width * 0.5f,
+            panel_y + 18.0f,
+            this->overlay_model.loading_overlay_title.c_str(),
+            nullptr);
+
+        nvgFontSize(vg, 22.0f);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+        nvgFillColor(vg, nvgRGBA(220, 225, 230, 225));
+        nvgTextBox(
+            vg,
+            panel_x + 28.0f,
+            panel_y + 58.0f,
+            panel_width - 56.0f,
+            this->overlay_model.loading_overlay_message.c_str(),
+            nullptr);
+
+        nvgBeginPath(vg);
+        nvgRect(vg, panel_x + 24.0f, panel_y + panel_height - 46.0f, panel_width - 48.0f, 1.0f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 34));
+        nvgFill(vg);
+
+        nvgFontSize(vg, 18.0f);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgFillColor(vg, nvgRGBA(200, 255, 210, 215));
+        nvgText(
+            vg,
+            panel_x + panel_width * 0.5f,
+            panel_y + panel_height - 24.0f,
+            transfer_text.c_str(),
+            nullptr);
+    }
+
+    if (session_active || has_media || rendered_video || this->overlay_model.loading_overlay_visible) {
         this->invalidate();
     }
 

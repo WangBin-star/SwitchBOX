@@ -25,6 +25,7 @@ struct GeneralSettings {
     int continuous_seek_interval_ms = 300;
     int player_volume = 50;
     int player_volume_osd_duration_ms = 500;
+    int player_loading_overlay_delay_ms = 1000;
     int overlay_marquee_delay_ms = 500;
     bool use_preferred_audio_language = false;
     std::string preferred_audio_language = "zh";

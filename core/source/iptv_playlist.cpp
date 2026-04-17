@@ -2,14 +2,20 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <sstream>
+#include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
-#include "switchbox/core/build_info.hpp"
+#include "switchbox/core/playback_target.hpp"
+#include "switchbox/core/switch_mpv_player.hpp"
 
 #if __has_include(<libavformat/avio.h>) && __has_include(<libavformat/avformat.h>) && __has_include(<libavutil/error.h>)
 #define SWITCHBOX_HAS_IPTV_FFMPEG_IO 1
@@ -25,6 +31,10 @@ extern "C" {
 namespace switchbox::core {
 
 namespace {
+
+bool is_cancelled(const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    return cancel_flag != nullptr && cancel_flag->load();
+}
 
 std::string trim(std::string value) {
     const auto is_space = [](unsigned char character) {
@@ -67,6 +77,27 @@ std::string sanitize_text(std::string value) {
     }
 
     return trim(std::move(compacted));
+}
+
+std::string ascii_lower(std::string value) {
+    for (char& character : value) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return value;
+}
+
+bool is_http_locator(std::string_view locator) {
+    std::string lower(locator);
+    for (char& character : lower) {
+        const unsigned char unsigned_character = static_cast<unsigned char>(character);
+        if (unsigned_character < 0x80) {
+            character = static_cast<char>(std::tolower(unsigned_character));
+        }
+    }
+    return lower.rfind("http://", 0) == 0 || lower.rfind("https://", 0) == 0;
 }
 
 bool has_url_scheme(std::string_view value) {
@@ -238,6 +269,175 @@ std::string extract_quoted_attribute(std::string_view attributes, std::string_vi
     return sanitize_text(std::string(attributes.substr(value_begin, value_end - value_begin)));
 }
 
+std::string normalize_property_key(std::string value) {
+    value = ascii_lower(trim(std::move(value)));
+    std::replace(value.begin(), value.end(), '_', '-');
+    return value;
+}
+
+std::string_view trim_view(std::string_view value) {
+    const auto is_space = [](unsigned char character) {
+        return std::isspace(character) != 0;
+    };
+
+    while (!value.empty() && is_space(static_cast<unsigned char>(value.front()))) {
+        value.remove_prefix(1);
+    }
+    while (!value.empty() && is_space(static_cast<unsigned char>(value.back()))) {
+        value.remove_suffix(1);
+    }
+    return value;
+}
+
+void set_http_header_field(IptvPlaylistEntry& entry, std::string name, std::string value) {
+    name = sanitize_text(std::move(name));
+    value = sanitize_text(std::move(value));
+    if (name.empty() || value.empty()) {
+        return;
+    }
+
+    const std::string normalized_name = ascii_lower(name);
+    if (normalized_name == "user-agent") {
+        entry.http_user_agent = std::move(value);
+        return;
+    }
+    if (normalized_name == "referer" || normalized_name == "referrer") {
+        entry.http_referrer = std::move(value);
+        return;
+    }
+
+    const std::string formatted = name + ": " + value;
+    for (std::string& existing : entry.http_header_fields) {
+        const size_t separator = existing.find(':');
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        const std::string existing_name = ascii_lower(trim(existing.substr(0, separator)));
+        if (existing_name == normalized_name) {
+            existing = formatted;
+            return;
+        }
+    }
+
+    entry.http_header_fields.push_back(std::move(formatted));
+}
+
+void apply_stream_headers_blob(IptvPlaylistEntry& entry, std::string blob) {
+    blob = trim(std::move(blob));
+    if (blob.empty()) {
+        return;
+    }
+
+    std::vector<std::string> parts;
+    std::string current;
+    for (char character : blob) {
+        if (character == '&' || character == '|') {
+            if (!current.empty()) {
+                parts.push_back(std::move(current));
+                current.clear();
+            }
+            continue;
+        }
+
+        current.push_back(character);
+    }
+    if (!current.empty()) {
+        parts.push_back(std::move(current));
+    }
+    if (parts.empty()) {
+        parts.push_back(std::move(blob));
+    }
+
+    for (std::string& part : parts) {
+        part = trim(std::move(part));
+        if (part.empty()) {
+            continue;
+        }
+
+        size_t separator = part.find('=');
+        if (separator == std::string::npos) {
+            separator = part.find(':');
+        }
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        std::string name = trim(part.substr(0, separator));
+        std::string value = trim(part.substr(separator + 1));
+        if (name.empty() || value.empty()) {
+            continue;
+        }
+
+        set_http_header_field(entry, std::move(name), std::move(value));
+    }
+}
+
+void apply_iptv_property(IptvPlaylistEntry& entry, std::string key, std::string value) {
+    const std::string normalized_key = normalize_property_key(std::move(key));
+    value = trim(std::move(value));
+    if (normalized_key.empty() || value.empty()) {
+        return;
+    }
+
+    if (normalized_key == "http-user-agent" || normalized_key == "user-agent") {
+        entry.http_user_agent = sanitize_text(std::move(value));
+        return;
+    }
+
+    if (normalized_key == "http-referrer" ||
+        normalized_key == "http-referer" ||
+        normalized_key == "referrer" ||
+        normalized_key == "referer") {
+        entry.http_referrer = sanitize_text(std::move(value));
+        return;
+    }
+
+    if (normalized_key == "http-origin" || normalized_key == "origin") {
+        set_http_header_field(entry, "Origin", std::move(value));
+        return;
+    }
+
+    if (normalized_key == "http-header" ||
+        normalized_key == "http-header-fields" ||
+        normalized_key == "inputstream.adaptive.stream-headers" ||
+        normalized_key == "inputstream.adaptive.manifest-headers" ||
+        normalized_key == "inputstream.adaptive.common-headers") {
+        apply_stream_headers_blob(entry, std::move(value));
+        return;
+    }
+}
+
+void apply_prefixed_property_line(
+    IptvPlaylistEntry& entry,
+    std::string_view line,
+    std::string_view prefix) {
+    if (!line.starts_with(prefix)) {
+        return;
+    }
+
+    std::string_view payload = trim_view(line.substr(prefix.size()));
+    if (payload.empty()) {
+        return;
+    }
+
+    size_t separator = payload.find('=');
+    if (separator == std::string::npos) {
+        separator = payload.find(':');
+    }
+    if (separator == std::string::npos) {
+        return;
+    }
+
+    std::string key = std::string(trim_view(payload.substr(0, separator)));
+    std::string value = std::string(trim_view(payload.substr(separator + 1)));
+    if (key.empty() || value.empty()) {
+        return;
+    }
+
+    apply_iptv_property(entry, std::move(key), std::move(value));
+}
+
 uint64_t fnv1a64(std::string_view value) {
     uint64_t hash = 14695981039346656037ull;
     for (const unsigned char character : value) {
@@ -298,6 +498,120 @@ std::string make_iptv_entry_favorite_key(const IptvPlaylistEntry& entry) {
     return "iptv_" + to_hex(fnv1a64(identity));
 }
 
+struct IptvHttpOptions {
+    std::string user_agent;
+    std::string referrer;
+    std::vector<std::string> header_fields;
+};
+
+struct IptvPrefixProbeResult {
+    std::string data;
+    std::string error_message;
+    bool hit_read_limit = false;
+    bool looks_like_text = true;
+};
+
+std::string build_default_iptv_user_agent() {
+    // Match the proven UA used by playback open so any manifest prefetch in the
+    // prepare phase sees the same server behavior as libmpv itself.
+    return "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0";
+}
+
+std::string normalize_header_name(std::string value) {
+    value = ascii_lower(trim(std::move(value)));
+    std::replace(value.begin(), value.end(), '_', '-');
+    return value;
+}
+
+bool has_header_named(const std::vector<std::string>& fields, std::string_view name) {
+    const std::string expected = normalize_header_name(std::string(name));
+    for (const std::string& field : fields) {
+        const size_t separator = field.find(':');
+        if (separator == std::string::npos) {
+            continue;
+        }
+
+        if (normalize_header_name(field.substr(0, separator)) == expected) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool locator_looks_like_hls_playlist(std::string_view locator) {
+    std::string lower = ascii_lower(strip_query_and_fragment(locator));
+    return lower.size() >= 5 && lower.ends_with(".m3u8");
+}
+
+bool looks_like_mpeg_ts_payload(std::string_view bytes) {
+    if (bytes.size() < 188 * 3) {
+        return false;
+    }
+
+    const size_t max_offset = std::min<size_t>(188, bytes.size() - (188 * 2));
+    for (size_t offset = 0; offset < max_offset; ++offset) {
+        if (static_cast<unsigned char>(bytes[offset]) == 0x47 &&
+            static_cast<unsigned char>(bytes[offset + 188]) == 0x47 &&
+            static_cast<unsigned char>(bytes[offset + 376]) == 0x47) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool looks_like_text_payload(std::string_view bytes) {
+    if (bytes.empty()) {
+        return true;
+    }
+
+    size_t control_count = 0;
+    for (const unsigned char byte : bytes) {
+        if (byte == 0) {
+            return false;
+        }
+
+        if (byte < 0x20 && byte != '\r' && byte != '\n' && byte != '\t') {
+            ++control_count;
+        }
+    }
+
+    return control_count * 32 <= bytes.size();
+}
+
+IptvPreparedStreamClass guess_direct_stream_class(
+    std::string_view locator,
+    std::string_view prefix_bytes) {
+    const std::string lower_locator = ascii_lower(strip_query_and_fragment(locator));
+    if (lower_locator.find("mpegts") != std::string::npos ||
+        lower_locator.ends_with(".ts") ||
+        looks_like_mpeg_ts_payload(prefix_bytes)) {
+        return IptvPreparedStreamClass::DirectTs;
+    }
+
+    if (locator_looks_like_hls_playlist(locator)) {
+        return IptvPreparedStreamClass::MediaHlsLive;
+    }
+
+    return IptvPreparedStreamClass::DirectHttp;
+}
+
+std::string join_http_headers_for_ffmpeg(const std::vector<std::string>& fields) {
+    std::string result;
+    for (const std::string& field : fields) {
+        if (trim(field).empty()) {
+            continue;
+        }
+
+        result += trim(field);
+        if (result.size() < 2 || result.substr(result.size() - 2) != "\r\n") {
+            result += "\r\n";
+        }
+    }
+    return result;
+}
+
 void finalize_playlist_entry(IptvPlaylistEntry& entry) {
     entry.title = sanitize_text(std::move(entry.title));
     entry.group_title = sanitize_text(std::move(entry.group_title));
@@ -305,7 +619,26 @@ void finalize_playlist_entry(IptvPlaylistEntry& entry) {
     entry.tvg_id = sanitize_text(std::move(entry.tvg_id));
     entry.tvg_country = sanitize_text(std::move(entry.tvg_country));
     entry.tvg_chno = sanitize_text(std::move(entry.tvg_chno));
+    entry.http_user_agent = sanitize_text(std::move(entry.http_user_agent));
+    entry.http_referrer = sanitize_text(std::move(entry.http_referrer));
+    for (std::string& header : entry.http_header_fields) {
+        header = sanitize_text(std::move(header));
+    }
+    entry.http_header_fields.erase(
+        std::remove_if(
+            entry.http_header_fields.begin(),
+            entry.http_header_fields.end(),
+            [](const std::string& header) {
+                return header.empty();
+            }),
+        entry.http_header_fields.end());
     entry.favorite_key = make_iptv_entry_favorite_key(entry);
+
+    // These fields are currently not used after favorite-key generation and
+    // keeping them increases memory pressure noticeably on very large playlists.
+    entry.logo_url.clear();
+    entry.tvg_id.clear();
+    entry.tvg_name.clear();
 }
 
 IptvPlaylistEntry parse_extinf_line(std::string_view line) {
@@ -344,6 +677,243 @@ bool looks_like_hls_playlist(std::string_view text) {
            text.find("#EXT-X-VERSION") != std::string::npos;
 }
 
+bool is_static_hls_playlist(std::string_view text) {
+    const std::string lower = ascii_lower(std::string(text));
+    return lower.find("#ext-x-endlist") != std::string::npos ||
+           lower.find("#ext-x-playlist-type:vod") != std::string::npos;
+}
+
+int parse_hls_bandwidth(std::string_view line) {
+    constexpr std::string_view token = "BANDWIDTH=";
+    const size_t token_position = line.find(token);
+    if (token_position == std::string::npos) {
+        return -1;
+    }
+
+    size_t value_begin = token_position + token.size();
+    size_t value_end = value_begin;
+    while (value_end < line.size() && std::isdigit(static_cast<unsigned char>(line[value_end])) != 0) {
+        ++value_end;
+    }
+
+    if (value_end == value_begin) {
+        return -1;
+    }
+
+    try {
+        return std::stoi(std::string(line.substr(value_begin, value_end - value_begin)));
+    } catch (...) {
+        return -1;
+    }
+}
+
+std::string resolve_hls_master_variant_url(const std::string& playlist_url, std::string_view text) {
+    std::istringstream input{std::string(text)};
+    std::string line;
+    bool waiting_for_variant_url = false;
+    int pending_bandwidth = -1;
+    static constexpr int kPreferredBandwidthCap = 2500000;
+    int best_below_cap_bandwidth = -1;
+    int lowest_above_cap_bandwidth = -1;
+    std::string best_url;
+    std::string fallback_url;
+
+    while (std::getline(input, line)) {
+        if (!line.empty() && static_cast<unsigned char>(line.front()) == 0xEF) {
+            static constexpr std::array<unsigned char, 3> utf8_bom = {0xEF, 0xBB, 0xBF};
+            if (line.size() >= utf8_bom.size() &&
+                static_cast<unsigned char>(line[0]) == utf8_bom[0] &&
+                static_cast<unsigned char>(line[1]) == utf8_bom[1] &&
+                static_cast<unsigned char>(line[2]) == utf8_bom[2]) {
+                line.erase(0, utf8_bom.size());
+            }
+        }
+
+        line = trim(std::move(line));
+        if (line.empty()) {
+            continue;
+        }
+
+        if (line.starts_with("#EXT-X-STREAM-INF:")) {
+            waiting_for_variant_url = true;
+            pending_bandwidth = parse_hls_bandwidth(line);
+            continue;
+        }
+
+        if (line.front() == '#') {
+            continue;
+        }
+
+        if (!waiting_for_variant_url) {
+            continue;
+        }
+
+        waiting_for_variant_url = false;
+        const std::string candidate_url = resolve_playlist_url(playlist_url, line);
+        if (candidate_url.empty()) {
+            continue;
+        }
+
+        if (pending_bandwidth > 0 && pending_bandwidth <= kPreferredBandwidthCap) {
+            if (best_url.empty() || pending_bandwidth > best_below_cap_bandwidth) {
+                best_url = candidate_url;
+                best_below_cap_bandwidth = pending_bandwidth;
+            }
+            continue;
+        }
+
+        if (fallback_url.empty() ||
+            lowest_above_cap_bandwidth < 0 ||
+            (pending_bandwidth > 0 && pending_bandwidth < lowest_above_cap_bandwidth)) {
+            fallback_url = candidate_url;
+            lowest_above_cap_bandwidth = pending_bandwidth;
+        }
+
+        if (best_url.empty() && fallback_url.empty()) {
+            best_url = candidate_url;
+        }
+    }
+
+    return !best_url.empty() ? best_url : fallback_url;
+}
+
+IptvHttpOptions build_playback_http_options(const PlaybackTarget& target) {
+    IptvHttpOptions options;
+    options.user_agent =
+        trim(target.http_user_agent).empty() ? build_default_iptv_user_agent() : trim(target.http_user_agent);
+    options.referrer = trim(target.http_referrer);
+    options.header_fields = target.http_header_fields;
+    return options;
+}
+
+std::string join_http_header_fields_for_mpv(const std::vector<std::string>& fields) {
+    std::string result;
+    for (const std::string& field : fields) {
+        if (trim(field).empty()) {
+            continue;
+        }
+
+        if (!result.empty()) {
+            result += ",";
+        }
+        result += trim(field);
+    }
+    return result;
+}
+
+void set_open_option_pair(
+    std::vector<std::pair<std::string, std::string>>& options,
+    std::string key,
+    std::string value) {
+    key = trim(std::move(key));
+    value = trim(std::move(value));
+    if (key.empty() || value.empty()) {
+        return;
+    }
+
+    for (auto& option : options) {
+        if (option.first == key) {
+            option.second = std::move(value);
+            return;
+        }
+    }
+
+    options.emplace_back(std::move(key), std::move(value));
+}
+
+void append_lavf_key_value(std::string& destination, std::string_view key, std::string value) {
+    value = trim(std::move(value));
+    if (value.empty()) {
+        return;
+    }
+
+    if (value.find(',') != std::string::npos ||
+        value.find('\r') != std::string::npos ||
+        value.find('\n') != std::string::npos) {
+        return;
+    }
+
+    if (!destination.empty()) {
+        destination += ",";
+    }
+    destination += std::string(key);
+    destination += "=";
+    destination += value;
+}
+
+std::string stream_class_name(IptvPreparedStreamClass stream_class) {
+    switch (stream_class) {
+        case IptvPreparedStreamClass::DirectHttp:
+            return "direct_http";
+        case IptvPreparedStreamClass::MasterHls:
+            return "master_hls";
+        case IptvPreparedStreamClass::MediaHlsLive:
+            return "media_hls_live";
+        case IptvPreparedStreamClass::MediaHlsVod:
+            return "media_hls_vod";
+        case IptvPreparedStreamClass::DirectTs:
+            return "direct_ts";
+        case IptvPreparedStreamClass::Unsupported:
+            return "unsupported";
+        case IptvPreparedStreamClass::Unknown:
+        default:
+            return "unknown";
+    }
+}
+
+bool seems_like_html_or_proxy_text(std::string_view text) {
+    const std::string lower = ascii_lower(std::string(text));
+    return lower.find("<!doctype html") != std::string::npos ||
+           lower.find("<html") != std::string::npos ||
+           lower.find("<script") != std::string::npos ||
+           lower.find("window.location") != std::string::npos ||
+           lower.find("document.") != std::string::npos;
+}
+
+std::vector<std::pair<std::string, std::string>> build_open_options_for_class(
+    IptvPreparedStreamClass stream_class,
+    const IptvHttpOptions& http_options) {
+    std::vector<std::pair<std::string, std::string>> options;
+    const std::string user_agent =
+        trim(http_options.user_agent).empty() ? build_default_iptv_user_agent() : trim(http_options.user_agent);
+    const std::string referrer = trim(http_options.referrer);
+
+    std::string demuxer_lavf_options = "http_persistent=1,http_multiple=1,tls_verify=0";
+    append_lavf_key_value(demuxer_lavf_options, "user_agent", user_agent);
+    append_lavf_key_value(demuxer_lavf_options, "referer", referrer);
+
+    set_open_option_pair(options, "user-agent", user_agent);
+    set_open_option_pair(options, "tls-verify", "no");
+    set_open_option_pair(options, "network-timeout", "45");
+    set_open_option_pair(
+        options,
+        "stream-lavf-o",
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,"
+        "multiple_requests=1,tls_verify=0");
+
+    if (!referrer.empty()) {
+        set_open_option_pair(options, "referrer", referrer);
+    }
+
+    const std::string joined_headers = join_http_header_fields_for_mpv(http_options.header_fields);
+    if (!joined_headers.empty()) {
+        set_open_option_pair(options, "http-header-fields", joined_headers);
+    }
+
+    if (stream_class == IptvPreparedStreamClass::MasterHls ||
+        stream_class == IptvPreparedStreamClass::MediaHlsLive ||
+        stream_class == IptvPreparedStreamClass::MediaHlsVod) {
+        set_open_option_pair(options, "demuxer", "+lavf");
+        set_open_option_pair(options, "demuxer-lavf-format", "hls");
+    } else if (stream_class == IptvPreparedStreamClass::DirectTs) {
+        set_open_option_pair(options, "demuxer", "+lavf");
+        set_open_option_pair(options, "demuxer-lavf-format", "mpegts");
+    }
+
+    set_open_option_pair(options, "demuxer-lavf-o", demuxer_lavf_options);
+    return options;
+}
+
 std::vector<IptvPlaylistEntry> parse_iptv_playlist_text(
     const std::string& playlist_url,
     std::string_view text) {
@@ -378,6 +948,17 @@ std::vector<IptvPlaylistEntry> parse_iptv_playlist_text(
         if (line.starts_with("#EXTGRP:") && waiting_for_url && pending_entry.group_title.empty()) {
             pending_entry.group_title = sanitize_text(line.substr(8));
             continue;
+        }
+
+        if (waiting_for_url) {
+            if (line.starts_with("#EXTVLCOPT:")) {
+                apply_prefixed_property_line(pending_entry, line, "#EXTVLCOPT:");
+                continue;
+            }
+            if (line.starts_with("#KODIPROP:")) {
+                apply_prefixed_property_line(pending_entry, line, "#KODIPROP:");
+                continue;
+            }
         }
 
         if (line.front() == '#') {
@@ -416,24 +997,87 @@ std::string av_error_to_string(int error_code) {
     return std::string(buffer.data());
 }
 
-std::string fetch_text_via_ffmpeg(const std::string& url, std::string& error_message) {
+struct IptvInterruptContext {
+    const std::shared_ptr<std::atomic_bool>* cancel_flag = nullptr;
+};
+
+int interrupt_iptv_io(void* opaque) {
+    auto* context = static_cast<IptvInterruptContext*>(opaque);
+    if (context == nullptr || context->cancel_flag == nullptr) {
+        return 0;
+    }
+
+    return is_cancelled(*context->cancel_flag) ? 1 : 0;
+}
+
+void apply_ffmpeg_http_options(
+    AVDictionary** options,
+    const IptvHttpOptions& http_options,
+    std::string_view timeout_us) {
+    const std::string user_agent =
+        trim(http_options.user_agent).empty() ? build_default_iptv_user_agent() : trim(http_options.user_agent);
+    const std::string referrer = trim(http_options.referrer);
+
+    std::vector<std::string> header_fields = http_options.header_fields;
+    if (!has_header_named(header_fields, "connection")) {
+        header_fields.emplace_back("Connection: close");
+    }
+
+    av_dict_set(options, "user_agent", user_agent.c_str(), 0);
+    av_dict_set(options, "timeout", std::string(timeout_us).c_str(), 0);
+    av_dict_set(options, "rw_timeout", std::string(timeout_us).c_str(), 0);
+    av_dict_set(options, "reconnect", "1", 0);
+    av_dict_set(options, "reconnect_streamed", "1", 0);
+    av_dict_set(options, "reconnect_on_network_error", "1", 0);
+    av_dict_set(options, "reconnect_delay_max", "3", 0);
+    av_dict_set(options, "multiple_requests", "0", 0);
+    av_dict_set(options, "http_persistent", "0", 0);
+    av_dict_set(options, "seekable", "0", 0);
+    av_dict_set(options, "tls_verify", "0", 0);
+
+    if (!referrer.empty()) {
+        av_dict_set(options, "referer", referrer.c_str(), 0);
+    }
+
+    const std::string headers = join_http_headers_for_ffmpeg(header_fields);
+    if (!headers.empty()) {
+        av_dict_set(options, "headers", headers.c_str(), 0);
+    }
+}
+
+std::string fetch_bytes_via_ffmpeg_once(
+    const std::string& url,
+    const IptvHttpOptions& http_options,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    std::string& error_message,
+    std::string_view timeout_us = "30000000",
+    size_t max_bytes = 0,
+    bool* hit_read_limit = nullptr) {
     error_message.clear();
+    if (hit_read_limit != nullptr) {
+        *hit_read_limit = false;
+    }
     avformat_network_init();
 
     AVDictionary* options = nullptr;
     AVIOContext* io_context = nullptr;
-    const std::string timeout_us = "30000000";
-    const std::string user_agent =
-        switchbox::core::BuildInfo::app_name() + "/" + switchbox::core::BuildInfo::version_string();
+    apply_ffmpeg_http_options(&options, http_options, timeout_us);
 
-    av_dict_set(&options, "user_agent", user_agent.c_str(), 0);
-    av_dict_set(&options, "timeout", timeout_us.c_str(), 0);
-    av_dict_set(&options, "rw_timeout", timeout_us.c_str(), 0);
+    IptvInterruptContext interrupt_context {&cancel_flag};
+    AVIOInterruptCB interrupt_callback {
+        .callback = interrupt_iptv_io,
+        .opaque = &interrupt_context,
+    };
 
-    const int open_result = avio_open2(&io_context, url.c_str(), AVIO_FLAG_READ, nullptr, &options);
+    const int open_result =
+        avio_open2(&io_context, url.c_str(), AVIO_FLAG_READ, &interrupt_callback, &options);
     av_dict_free(&options);
     if (open_result < 0) {
-        error_message = "Open playlist failed: " + av_error_to_string(open_result);
+        if (is_cancelled(cancel_flag) || open_result == AVERROR_EXIT) {
+            error_message = "Cancelled";
+        } else {
+            error_message = "Open playlist failed: " + av_error_to_string(open_result);
+        }
         return {};
     }
 
@@ -443,30 +1087,178 @@ std::string fetch_text_via_ffmpeg(const std::string& url, std::string& error_mes
         text.reserve(static_cast<size_t>(size));
     }
 
-    std::array<unsigned char, 32 * 1024> buffer {};
+    // Keep the read buffer on the heap to avoid stressing the async worker
+    // thread stack on Switch when fetching large remote playlists.
+    auto buffer = std::make_unique<std::vector<unsigned char>>(8 * 1024);
     while (true) {
-        const int read_result = avio_read(io_context, buffer.data(), static_cast<int>(buffer.size()));
+        if (is_cancelled(cancel_flag)) {
+            error_message = "Cancelled";
+            avio_closep(&io_context);
+            return {};
+        }
+
+        const int read_result =
+            avio_read(io_context, buffer->data(), static_cast<int>(buffer->size()));
         if (read_result == AVERROR_EOF || read_result == 0) {
             break;
         }
 
         if (read_result < 0) {
-            error_message = "Read playlist failed: " + av_error_to_string(read_result);
+            if (is_cancelled(cancel_flag) || read_result == AVERROR_EXIT) {
+                error_message = "Cancelled";
+            } else {
+                error_message = "Read playlist failed: " + av_error_to_string(read_result);
+            }
             avio_closep(&io_context);
             return {};
         }
 
-        text.append(reinterpret_cast<const char*>(buffer.data()), static_cast<size_t>(read_result));
+        size_t to_append = static_cast<size_t>(read_result);
+        if (max_bytes > 0 && text.size() + to_append > max_bytes) {
+            to_append = max_bytes - text.size();
+            if (hit_read_limit != nullptr) {
+                *hit_read_limit = true;
+            }
+        }
+
+        if (to_append > 0) {
+            text.append(reinterpret_cast<const char*>(buffer->data()), to_append);
+        }
+
+        if (max_bytes > 0 && text.size() >= max_bytes) {
+            break;
+        }
     }
 
     avio_closep(&io_context);
     return text;
 }
+
+std::string fetch_text_via_ffmpeg_once(
+    const std::string& url,
+    const IptvHttpOptions& http_options,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    std::string& error_message,
+    std::string_view timeout_us = "30000000") {
+    bool ignored_hit_read_limit = false;
+    return fetch_bytes_via_ffmpeg_once(
+        url,
+        http_options,
+        cancel_flag,
+        error_message,
+        timeout_us,
+        0,
+        &ignored_hit_read_limit);
+}
+
+std::string fetch_text_via_ffmpeg(
+    const std::string& url,
+    const IptvHttpOptions& http_options,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    std::string& error_message) {
+    static constexpr int kMaxAttempts = 3;
+    std::string last_error;
+
+    for (int attempt = 1; attempt <= kMaxAttempts; ++attempt) {
+        if (is_cancelled(cancel_flag)) {
+            error_message = "Cancelled";
+            return {};
+        }
+
+        std::string text = fetch_text_via_ffmpeg_once(url, http_options, cancel_flag, last_error);
+        if (!last_error.empty()) {
+            if (is_cancelled(cancel_flag) || last_error == "Cancelled") {
+                error_message = "Cancelled";
+                return {};
+            }
+
+            if (attempt < kMaxAttempts) {
+                for (int step = 0; step < attempt * 3; ++step) {
+                    if (is_cancelled(cancel_flag)) {
+                        error_message = "Cancelled";
+                        return {};
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                continue;
+            }
+
+            error_message = last_error + " (attempt " + std::to_string(attempt) + "/" +
+                            std::to_string(kMaxAttempts) + ")";
+            return {};
+        }
+
+        error_message.clear();
+        return text;
+    }
+
+    error_message = last_error;
+    return {};
+}
+
+IptvPrefixProbeResult probe_prefix_via_ffmpeg(
+    const std::string& url,
+    const IptvHttpOptions& http_options,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    size_t max_bytes = 256 * 1024) {
+    static constexpr int kMaxAttempts = 3;
+
+    IptvPrefixProbeResult result;
+    std::string last_error;
+
+    for (int attempt = 1; attempt <= kMaxAttempts; ++attempt) {
+        if (is_cancelled(cancel_flag)) {
+            result.error_message = "Cancelled";
+            return result;
+        }
+
+        bool hit_read_limit = false;
+        std::string data = fetch_bytes_via_ffmpeg_once(
+            url,
+            http_options,
+            cancel_flag,
+            last_error,
+            "15000000",
+            max_bytes,
+            &hit_read_limit);
+        if (!last_error.empty()) {
+            if (is_cancelled(cancel_flag) || last_error == "Cancelled") {
+                result.error_message = "Cancelled";
+                return result;
+            }
+
+            if (attempt < kMaxAttempts) {
+                for (int step = 0; step < attempt * 3; ++step) {
+                    if (is_cancelled(cancel_flag)) {
+                        result.error_message = "Cancelled";
+                        return result;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                continue;
+            }
+
+            result.error_message = last_error + " (attempt " + std::to_string(attempt) + "/" +
+                                   std::to_string(kMaxAttempts) + ")";
+            return result;
+        }
+
+        result.data = std::move(data);
+        result.hit_read_limit = hit_read_limit;
+        result.looks_like_text = looks_like_text_payload(result.data);
+        return result;
+    }
+
+    result.error_message = last_error;
+    return result;
+}
 #endif
 
 }  // namespace
 
-IptvPlaylistResult load_iptv_playlist(const IptvSourceSettings& source) {
+IptvPlaylistResult load_iptv_playlist(
+    const IptvSourceSettings& source,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
     IptvPlaylistResult result;
 #if SWITCHBOX_HAS_IPTV_FFMPEG_IO
     result.backend_available = true;
@@ -477,7 +1269,12 @@ IptvPlaylistResult load_iptv_playlist(const IptvSourceSettings& source) {
     }
 
     std::string error_message;
-    const std::string playlist_text = fetch_text_via_ffmpeg(source.url, error_message);
+    const std::string playlist_text = fetch_text_via_ffmpeg(source.url, {}, cancel_flag, error_message);
+    if (error_message == "Cancelled") {
+        result.error_message.clear();
+        return result;
+    }
+
     if (!error_message.empty()) {
         result.error_message = std::move(error_message);
         return result;
@@ -512,6 +1309,220 @@ IptvPlaylistResult load_iptv_playlist(const IptvSourceSettings& source) {
     result.error_message = "IPTV playlist backend is not available in this build.";
     return result;
 #endif
+}
+
+IptvOpenPlan prepare_iptv_open_plan_for_playback(
+    const PlaybackTarget& target,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    IptvOpenPlan plan;
+    const std::string locator =
+        trim(target.primary_locator.empty() ? target.fallback_locator : target.primary_locator);
+    plan.final_locator = locator;
+
+    const IptvHttpOptions http_options = build_playback_http_options(target);
+    plan.effective_user_agent = http_options.user_agent;
+    plan.effective_referrer = http_options.referrer;
+    plan.effective_header_fields = http_options.header_fields;
+
+    const auto apply_class_tuning = [&](IptvPreparedStreamClass stream_class) {
+        plan.analyzeduration_override.clear();
+        plan.probescore_override.clear();
+
+        switch (stream_class) {
+            case IptvPreparedStreamClass::DirectHttp:
+                plan.analyzeduration_override = "1.2";
+                plan.probescore_override = "48";
+                break;
+            case IptvPreparedStreamClass::DirectTs:
+                plan.analyzeduration_override = "0.6";
+                plan.probescore_override = "28";
+                break;
+            case IptvPreparedStreamClass::MasterHls:
+            case IptvPreparedStreamClass::MediaHlsVod:
+                plan.analyzeduration_override = "0.6";
+                plan.probescore_override = "28";
+                break;
+            case IptvPreparedStreamClass::MediaHlsLive:
+            case IptvPreparedStreamClass::Unsupported:
+            case IptvPreparedStreamClass::Unknown:
+            default:
+                break;
+        }
+    };
+
+    const auto apply_class_defaults = [&](IptvPreparedStreamClass stream_class, std::string reason) {
+        plan.stream_class = stream_class;
+        plan.option_pairs = build_open_options_for_class(stream_class, http_options);
+        apply_class_tuning(stream_class);
+        plan.debug_summary =
+            "class=" + stream_class_name(stream_class) + (reason.empty() ? std::string() : " " + std::move(reason));
+    };
+
+    if (locator.empty() || !is_http_locator(locator)) {
+        apply_class_defaults(IptvPreparedStreamClass::Unknown, "non_http_locator");
+        return plan;
+    }
+
+#if SWITCHBOX_HAS_IPTV_FFMPEG_IO
+    const auto initial_probe = probe_prefix_via_ffmpeg(locator, http_options, cancel_flag);
+    if (initial_probe.error_message == "Cancelled") {
+        plan.success = false;
+        plan.user_visible_reason = "Cancelled";
+        plan.debug_summary = "cancelled";
+        return plan;
+    }
+
+    if (!initial_probe.error_message.empty()) {
+        const IptvPreparedStreamClass guessed_class = guess_direct_stream_class(locator, {});
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "[iptv-prepare] probe_failed locator=" + locator + " error=" + initial_probe.error_message);
+        apply_class_defaults(guessed_class, "probe_failed_direct_passthrough");
+        return plan;
+    }
+
+    if (!initial_probe.looks_like_text) {
+        const IptvPreparedStreamClass direct_class =
+            guess_direct_stream_class(locator, initial_probe.data);
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "[iptv-prepare] binary_probe locator=" + locator +
+            " bytes=" + std::to_string(initial_probe.data.size()) +
+            " hit_limit=" + std::string(initial_probe.hit_read_limit ? "true" : "false"));
+        apply_class_defaults(direct_class, "binary_probe_direct");
+        return plan;
+    }
+
+    if (!looks_like_hls_playlist(initial_probe.data)) {
+        if (seems_like_html_or_proxy_text(initial_probe.data)) {
+            plan.success = false;
+            plan.stream_class = IptvPreparedStreamClass::Unsupported;
+            plan.user_visible_reason = "Unsupported IPTV source: the locator resolved to an HTML/proxy page.";
+            plan.debug_summary = "class=unsupported html_or_proxy_like";
+            switchbox::core::switch_mpv_append_debug_log_note("[iptv-prepare] unsupported html_or_proxy_like");
+            return plan;
+        }
+
+        const IptvPreparedStreamClass direct_class =
+            guess_direct_stream_class(locator, initial_probe.data);
+        apply_class_defaults(direct_class, "text_probe_direct_passthrough");
+        switchbox::core::switch_mpv_append_debug_log_note("[iptv-prepare] passthrough locator: direct_url");
+        return plan;
+    }
+
+    std::string prepared_locator = locator;
+    std::string prepared_playlist_text = initial_probe.data;
+    IptvPreparedStreamClass stream_class = IptvPreparedStreamClass::MediaHlsLive;
+    bool prepared_playlist_hit_limit = initial_probe.hit_read_limit;
+    bool keep_master_locator_for_open = false;
+
+    if (initial_probe.data.find("#EXT-X-STREAM-INF") != std::string::npos) {
+        stream_class = IptvPreparedStreamClass::MasterHls;
+        const std::string variant_url = resolve_hls_master_variant_url(locator, initial_probe.data);
+        if (!variant_url.empty()) {
+            prepared_locator = variant_url;
+            switchbox::core::switch_mpv_append_debug_log_note(
+                "[iptv-prepare] master_resolved variant=" + variant_url);
+
+            const auto variant_probe = probe_prefix_via_ffmpeg(variant_url, http_options, cancel_flag);
+            if (variant_probe.error_message == "Cancelled") {
+                plan.success = false;
+                plan.user_visible_reason = "Cancelled";
+                plan.debug_summary = "cancelled";
+                return plan;
+            }
+
+            if (!variant_probe.error_message.empty()) {
+                switchbox::core::switch_mpv_append_debug_log_note(
+                    "[iptv-prepare] variant_prefetch_failed locator=" + variant_url +
+                    " error=" + variant_probe.error_message);
+            } else if (!variant_probe.looks_like_text) {
+                const IptvPreparedStreamClass direct_class =
+                    guess_direct_stream_class(variant_url, variant_probe.data);
+                plan.final_locator = prepared_locator;
+                apply_class_defaults(direct_class, "variant_binary_direct");
+                switchbox::core::switch_mpv_append_debug_log_note(
+                    "[iptv-prepare] variant_binary_passthrough locator=" + prepared_locator);
+                return plan;
+            } else if (looks_like_hls_playlist(variant_probe.data)) {
+                prepared_playlist_text = variant_probe.data;
+                prepared_playlist_hit_limit = variant_probe.hit_read_limit;
+                if (is_static_hls_playlist(variant_probe.data)) {
+                    keep_master_locator_for_open = true;
+                    prepared_locator = locator;
+                    stream_class = IptvPreparedStreamClass::MasterHls;
+                    switchbox::core::switch_mpv_append_debug_log_note(
+                        "[iptv-prepare] master_vod_passthrough locator=" + locator +
+                        " selected_variant=" + variant_url);
+                }
+            } else if (seems_like_html_or_proxy_text(variant_probe.data)) {
+                plan.success = false;
+                plan.stream_class = IptvPreparedStreamClass::Unsupported;
+                plan.user_visible_reason = "Unsupported IPTV source: the selected HLS variant resolved to an HTML/proxy page.";
+                plan.debug_summary = "class=unsupported variant_html_or_proxy_like";
+                switchbox::core::switch_mpv_append_debug_log_note("[iptv-prepare] unsupported variant_html_or_proxy_like");
+                return plan;
+            } else {
+                const IptvPreparedStreamClass direct_class =
+                    guess_direct_stream_class(variant_url, variant_probe.data);
+                plan.final_locator = prepared_locator;
+                apply_class_defaults(direct_class, "variant_direct_passthrough");
+                switchbox::core::switch_mpv_append_debug_log_note(
+                    "[iptv-prepare] variant_direct_passthrough locator=" + prepared_locator);
+                return plan;
+            }
+        }
+    }
+
+    if (is_static_hls_playlist(prepared_playlist_text)) {
+        stream_class = IptvPreparedStreamClass::MediaHlsVod;
+    } else if (stream_class != IptvPreparedStreamClass::MasterHls) {
+        stream_class = IptvPreparedStreamClass::MediaHlsLive;
+    }
+
+    plan.final_locator = keep_master_locator_for_open ? locator : prepared_locator;
+    std::string reason;
+    if (keep_master_locator_for_open) {
+        reason = "master_vod_passthrough";
+    } else if (prepared_locator != locator) {
+        reason = "variant_selected";
+    } else if (prepared_playlist_hit_limit) {
+        reason = "probe_limited_hls_passthrough";
+    } else {
+        reason = "direct_hls_passthrough";
+    }
+    apply_class_defaults(stream_class, std::move(reason));
+
+    if (!keep_master_locator_for_open &&
+        prepared_locator != locator &&
+        stream_class == IptvPreparedStreamClass::MasterHls) {
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "[iptv-prepare] variant_passthrough locator=" + prepared_locator);
+    }
+
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "[iptv-prepare] passthrough locator: direct_url");
+#else
+    (void)target;
+    (void)cancel_flag;
+    apply_class_defaults(IptvPreparedStreamClass::DirectHttp, "ffmpeg_backend_unavailable");
+#endif
+    return plan;
+}
+
+std::string prepare_iptv_stream_locator_for_playback(
+    const PlaybackTarget& target,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    return prepare_iptv_open_plan_for_playback(target, cancel_flag).final_locator;
+}
+
+std::string resolve_iptv_stream_url_for_playback(
+    const std::string& stream_url,
+    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    (void)cancel_flag;
+    // Preserve the original IPTV locator and let mpv/ffmpeg walk the HLS
+    // master playlist itself. Some VOD sources stall on Switch if we fetch the
+    // master playlist in a separate session and then hand a rewritten child
+    // variant URL to the player.
+    return trim(stream_url);
 }
 
 }  // namespace switchbox::core
