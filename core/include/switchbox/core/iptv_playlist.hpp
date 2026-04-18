@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -34,6 +36,40 @@ struct IptvPlaylistResult {
     std::vector<IptvPlaylistEntry> entries;
 };
 
+enum class IptvPlaylistLoadStage {
+    Starting,
+    OpeningConnection,
+    DownloadingPlaylist,
+    ParsingPlaylist,
+    Finalizing,
+};
+
+struct IptvPlaylistLoadProgress {
+    float progress = 0.0f;
+    IptvPlaylistLoadStage stage = IptvPlaylistLoadStage::Starting;
+    std::uint64_t bytes_read = 0;
+    std::uint64_t total_bytes = 0;
+};
+
+using IptvPlaylistProgressCallback = std::function<void(const IptvPlaylistLoadProgress&)>;
+
+enum class IptvOpenPlanStage {
+    Starting,
+    NormalizingLocator,
+    ProbingSource,
+    InspectingResponse,
+    ResolvingPlaylist,
+    ProbingVariant,
+    FinalizingPlan,
+};
+
+struct IptvOpenPlanProgress {
+    float progress = 0.0f;
+    IptvOpenPlanStage stage = IptvOpenPlanStage::Starting;
+};
+
+using IptvOpenPlanProgressCallback = std::function<void(const IptvOpenPlanProgress&)>;
+
 enum class IptvPreparedStreamClass {
     Unknown,
     DirectHttp,
@@ -61,11 +97,13 @@ struct IptvOpenPlan {
 
 IptvPlaylistResult load_iptv_playlist(
     const IptvSourceSettings& source,
-    const std::shared_ptr<std::atomic_bool>& cancel_flag = {});
+    const std::shared_ptr<std::atomic_bool>& cancel_flag = {},
+    IptvPlaylistProgressCallback progress_callback = {});
 
 IptvOpenPlan prepare_iptv_open_plan_for_playback(
     const PlaybackTarget& target,
-    const std::shared_ptr<std::atomic_bool>& cancel_flag = {});
+    const std::shared_ptr<std::atomic_bool>& cancel_flag = {},
+    IptvOpenPlanProgressCallback progress_callback = {});
 
 std::string prepare_iptv_stream_locator_for_playback(
     const PlaybackTarget& target,

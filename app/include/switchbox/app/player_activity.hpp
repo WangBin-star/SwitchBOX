@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 
 #include "switchbox/app/player_video_surface.hpp"
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/iptv_playlist.hpp"
 #include "switchbox/core/smb_browser.hpp"
 #include "switchbox/core/playback_target.hpp"
 
@@ -87,11 +89,23 @@ private:
     void confirm_delete_current_file();
     std::string find_next_focus_after_delete() const;
     switchbox::core::SmbSourceSettings make_smb_source_from_target() const;
+    std::vector<size_t> current_iptv_overlay_entry_indices() const;
+    std::string current_iptv_overlay_group_title() const;
 
     struct TrackSelectionState {
         int id = -1;
         std::string label;
         bool selected = false;
+    };
+
+    struct OverlayEntryState {
+        std::string title;
+        std::string stable_key;
+        bool is_directory = false;
+        bool is_current = false;
+        std::string smb_relative_path;
+        size_t iptv_group_index = std::numeric_limits<size_t>::max();
+        size_t iptv_entry_index = std::numeric_limits<size_t>::max();
     };
 
     struct PendingStartupTask {
@@ -100,13 +114,17 @@ private:
         std::mutex mutex;
         switchbox::core::PlaybackTarget prepared_target;
         std::string startup_error;
+        switchbox::core::IptvOpenPlanProgress progress;
     };
 
     switchbox::core::SmbSourceSettings smb_source;
     bool has_smb_source = false;
+    std::shared_ptr<const switchbox::core::IptvPlaybackOverlayContext> iptv_overlay_context;
+    size_t iptv_overlay_group_index = 0;
+    bool iptv_overlay_group_picker = false;
     std::string current_relative_path;
     std::string overlay_relative_path;
-    std::vector<switchbox::core::SmbBrowserEntry> overlay_entries;
+    std::vector<OverlayEntryState> overlay_entries;
     int overlay_selected_index = -1;
     bool overlay_visible = false;
     std::string overlay_message;
@@ -146,6 +164,8 @@ private:
     bool startup_loading_active = false;
     bool startup_loading_overlay_visible = false;
     std::string startup_loading_message;
+    std::string startup_loading_detail;
+    float startup_loading_progress = 0.0f;
     std::chrono::steady_clock::time_point startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     bool playback_session_stopped = false;
     bool touch_horizontal_pan_active = false;

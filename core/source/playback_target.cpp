@@ -271,7 +271,9 @@ PlaybackTarget make_smb_playback_target(
 
 PlaybackTarget make_iptv_playback_target(
     const IptvSourceSettings& source,
-    const IptvPlaylistEntry& entry) {
+    const IptvPlaylistEntry& entry,
+    std::shared_ptr<const IptvPlaybackOverlayContext> overlay_context,
+    size_t overlay_group_index) {
     PlaybackTarget target;
     target.source_kind = PlaybackSourceKind::Iptv;
     target.title = !entry.title.empty() ? entry.title : trim(source.title);
@@ -283,6 +285,9 @@ PlaybackTarget make_iptv_playback_target(
     target.http_user_agent = trim(entry.http_user_agent);
     target.http_referrer = trim(entry.http_referrer);
     target.http_header_fields = entry.http_header_fields;
+    target.iptv_overlay_context = std::move(overlay_context);
+    target.iptv_overlay_group_index = overlay_group_index;
+    target.iptv_overlay_entry_key = entry.favorite_key;
     target.locator_pre_resolved = false;
     target.locator_is_direct = !target.primary_locator.empty();
     return target;

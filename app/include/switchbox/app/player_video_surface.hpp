@@ -31,6 +31,8 @@ struct PlayerOverlayViewModel {
     bool loading_overlay_visible = false;
     std::string loading_overlay_title;
     std::string loading_overlay_message;
+    std::string loading_overlay_detail;
+    float loading_overlay_progress = 0.0f;
     int overlay_marquee_delay_ms = 500;
     bool touch_enable = true;
     bool touch_player_gestures = false;

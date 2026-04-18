@@ -83,17 +83,24 @@ std::string format_transfer_speed_text(int64_t bytes_per_second) {
     return buffer;
 }
 
-std::string format_transfer_direction_text(int64_t rx_bytes_per_second, int64_t tx_bytes_per_second) {
-    return "RX " + format_transfer_speed_text(rx_bytes_per_second) +
-           "   TX " + format_transfer_speed_text(tx_bytes_per_second);
-}
-
 std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
 }
 
 std::string tr(const std::string& key) {
     return brls::getStr("switchbox/" + key);
+}
+
+std::string decorate_loading_stage_text(const std::string& text) {
+    if (text.empty()) {
+        return text;
+    }
+
+    if (text.rfind("... ", 0) == 0) {
+        return text;
+    }
+
+    return "... " + text;
 }
 
 double monotonic_seconds() {
@@ -954,13 +961,12 @@ void PlayerVideoSurface::draw(
     if (this->overlay_model.loading_overlay_visible && !this->overlay_model.loading_overlay_message.empty()) {
         nvgFontFaceId(vg, brls::Application::getDefaultFont());
 
-        const float panel_width = std::min(width * 0.62f, 620.0f);
-        const float panel_height = 152.0f;
+        const float panel_width = std::min(width * 0.68f, 700.0f);
+        const float panel_height = 186.0f;
         const float panel_x = x + (width - panel_width) * 0.5f;
         const float panel_y = y + (height - panel_height) * 0.5f;
-        const std::string transfer_text = format_transfer_direction_text(
-            switchbox::core::switch_mpv_get_transfer_speed_bytes_per_second(),
-            0);
+        const float progress_ratio = std::clamp(this->overlay_model.loading_overlay_progress, 0.0f, 1.0f);
+        const std::string loading_message = decorate_loading_stage_text(this->overlay_model.loading_overlay_message);
 
         nvgBeginPath(vg);
         nvgRoundedRect(vg, panel_x, panel_y, panel_width, panel_height, 20.0f);
@@ -983,31 +989,50 @@ void PlayerVideoSurface::draw(
             this->overlay_model.loading_overlay_title.c_str(),
             nullptr);
 
-        nvgFontSize(vg, 22.0f);
+        nvgFontSize(vg, 23.0f);
         nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
         nvgFillColor(vg, nvgRGBA(220, 225, 230, 225));
         nvgTextBox(
             vg,
             panel_x + 28.0f,
-            panel_y + 58.0f,
+            panel_y + 56.0f,
             panel_width - 56.0f,
-            this->overlay_model.loading_overlay_message.c_str(),
+            loading_message.c_str(),
             nullptr);
+
+        if (!this->overlay_model.loading_overlay_detail.empty()) {
+            nvgFontSize(vg, 17.0f);
+            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+            nvgFillColor(vg, nvgRGBA(190, 198, 208, 210));
+            nvgTextBox(
+                vg,
+                panel_x + 34.0f,
+                panel_y + 92.0f,
+                panel_width - 68.0f,
+                this->overlay_model.loading_overlay_detail.c_str(),
+                nullptr);
+        }
+
+        const float progress_x = panel_x + 34.0f;
+        const float progress_y = panel_y + panel_height - 38.0f;
+        const float progress_width = panel_width - 68.0f;
+        const float progress_height = 12.0f;
 
         nvgBeginPath(vg);
-        nvgRect(vg, panel_x + 24.0f, panel_y + panel_height - 46.0f, panel_width - 48.0f, 1.0f);
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 34));
+        nvgRoundedRect(vg, progress_x, progress_y, progress_width, progress_height, 6.0f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 42));
         nvgFill(vg);
 
-        nvgFontSize(vg, 18.0f);
-        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgFillColor(vg, nvgRGBA(200, 255, 210, 215));
-        nvgText(
-            vg,
-            panel_x + panel_width * 0.5f,
-            panel_y + panel_height - 24.0f,
-            transfer_text.c_str(),
-            nullptr);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, progress_x, progress_y, progress_width * progress_ratio, progress_height, 6.0f);
+        nvgFillColor(vg, nvgRGBA(110, 214, 255, 220));
+        nvgFill(vg);
+
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, progress_x, progress_y, progress_width, progress_height, 6.0f);
+        nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 26));
+        nvgStrokeWidth(vg, 1.0f);
+        nvgStroke(vg);
     }
 
     if (session_active || has_media || rendered_video || this->overlay_model.loading_overlay_visible) {

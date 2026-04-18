@@ -63,6 +63,16 @@
                 "number_value": "CH {0}"
             }
         },
+        "iptv_loading": {
+            "title": "Loading IPTV Playlist",
+            "stages": {
+                "starting": "Preparing request...",
+                "opening_connection": "Connecting to remote playlist...",
+                "downloading_playlist": "Downloading playlist...",
+                "parsing_playlist": "Parsing channel data...",
+                "finalizing": "Finalizing channel list..."
+            }
+        },
         "home": {
             "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
             "cards": {
@@ -176,8 +186,27 @@
             "loading": {
                 "title": "Opening Channel",
                 "resolving_stream": "Resolving channel address...",
+                "normalizing_locator": "Normalizing channel locator...",
+                "probing_source": "Probing source response...",
+                "inspecting_response": "Identifying stream type...",
+                "resolving_playlist": "Analyzing playlist structure...",
+                "probing_variant": "Probing selected variant...",
+                "finalizing_plan": "Finalizing playback plan...",
                 "opening_stream": "Connecting to stream...",
+                "waiting_stream_metadata": "Waiting for stream metadata...",
                 "waiting_first_frame": "Waiting for first frame..."
+            },
+            "loading_details": {
+                "resolving_stream": "Preparing a playable connection path for this channel.",
+                "normalizing_locator": "Applying special-link rules and normalizing the locator before handing it to the player.",
+                "probing_source": "Reading the first chunk from the source to determine whether it is media, a playlist, or a proxy page.",
+                "inspecting_response": "Distinguishing between direct media, HLS, FLV, TS, and other response types so the correct playback tuning can be applied.",
+                "resolving_playlist": "Checking whether this is an HLS master playlist and selecting a more suitable child stream for Switch playback when possible.",
+                "probing_variant": "Inspecting the selected variant or child stream to confirm the final media locator handed to the player.",
+                "finalizing_plan": "Applying headers, demuxing hints, and buffering strategy to finish the Switch playback setup.",
+                "opening_stream": "The locator has been handed to the player and the media connection is now being established.",
+                "waiting_stream_metadata": "The player is connected and is waiting for audio/video track information and basic media metadata.",
+                "waiting_first_frame": "Media information is ready. Waiting for the decoder to output the first visible frame."
             },
             "errors": {
                 "unsupported_web_stream": "This IPTV entry currently points to a {0} web page rather than a directly playable media stream."

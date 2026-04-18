@@ -428,8 +428,7 @@ public:
             " row=" + std::to_string(position) +
             " entry_title=" + sanitize_iptv_log_text(entry.title) +
             " entry_url=" + sanitize_iptv_log_text(entry.stream_url));
-        brls::Application::pushActivity(new PlayerActivity(
-            switchbox::core::make_iptv_playback_target(this->activity->source, entry)));
+        brls::Application::pushActivity(new PlayerActivity(this->activity->build_playback_target_for_entry(entry_index)));
     }
 
 private:
@@ -522,6 +521,28 @@ IptvBrowserActivity::IptvBrowserActivity(switchbox::core::IptvSourceSettings sou
     append_iptv_debug_log("[iptv] source url=" + this->source.url);
 }
 
+IptvBrowserActivity::IptvBrowserActivity(
+    switchbox::core::IptvSourceSettings source,
+    switchbox::core::IptvPlaylistResult preloaded_result)
+    : brls::Activity(create_loading_content(source).view)
+    , source(std::move(source))
+    , load_started(true)
+    , has_preloaded_playlist_result(true)
+    , preloaded_playlist_result(std::move(preloaded_result)) {
+    auto& state = iptv_debug_log_state();
+    if (!state.initialized) {
+        reset_iptv_debug_log();
+    }
+    state.session_start = std::chrono::steady_clock::now();
+    state.session_token = make_iptv_debug_session_token();
+    append_iptv_debug_log("[iptv] activity_session_begin token=" + std::to_string(state.session_token));
+    append_iptv_debug_log("[iptv] activity created");
+    append_iptv_debug_log("[iptv] source key=" + this->source.key);
+    append_iptv_debug_log("[iptv] source title=" + visible_iptv_title(this->source));
+    append_iptv_debug_log("[iptv] source url=" + this->source.url);
+    append_iptv_debug_log("[iptv] preloaded playlist result attached");
+}
+
 IptvBrowserActivity::~IptvBrowserActivity() {
     this->load_cancelled->store(true);
 }
@@ -529,6 +550,13 @@ IptvBrowserActivity::~IptvBrowserActivity() {
 void IptvBrowserActivity::onContentAvailable() {
     brls::Activity::onContentAvailable();
     install_common_actions();
+    if (this->has_preloaded_playlist_result) {
+        append_iptv_debug_log("[iptv] applying preloaded playlist result");
+        apply_playlist_result(std::move(this->preloaded_playlist_result));
+        this->has_preloaded_playlist_result = false;
+        return;
+    }
+
     start_loading_if_needed();
 }
 
@@ -778,6 +806,25 @@ void IptvBrowserActivity::build_group_model() {
             " entries=" +
             std::to_string(this->groups[this->selected_group_index].entry_indices.size()));
     }
+}
+
+std::shared_ptr<const switchbox::core::IptvPlaybackOverlayContext> IptvBrowserActivity::build_playback_overlay_context()
+    const {
+    auto context = std::make_shared<switchbox::core::IptvPlaybackOverlayContext>();
+    context->source = this->source;
+    context->entries = this->playlist_result.entries;
+    context->groups.reserve(this->groups.size());
+
+    for (size_t group_index = 0; group_index < this->groups.size(); ++group_index) {
+        const auto& group = this->groups[group_index];
+        context->groups.push_back({
+            .title = group.title,
+            .entry_indices = group.favorites ? std::vector<size_t>{} : group.entry_indices,
+            .favorites = group.favorites,
+        });
+    }
+
+    return context;
 }
 
 void IptvBrowserActivity::build_grouped_ui() {
@@ -1055,11 +1102,15 @@ void IptvBrowserActivity::focus_sidebar() {
 }
 
 std::vector<size_t> IptvBrowserActivity::current_group_entry_indices() const {
-    if (this->groups.empty() || this->selected_group_index >= this->groups.size()) {
+    return group_entry_indices_for(this->selected_group_index);
+}
+
+std::vector<size_t> IptvBrowserActivity::group_entry_indices_for(size_t group_index) const {
+    if (this->groups.empty() || group_index >= this->groups.size()) {
         return {};
     }
 
-    const auto& group = this->groups[this->selected_group_index];
+    const auto& group = this->groups[group_index];
     if (!group.favorites) {
         return group.entry_indices;
     }
@@ -1079,6 +1130,15 @@ std::vector<size_t> IptvBrowserActivity::current_group_entry_indices() const {
     }
 
     return indices;
+}
+
+switchbox::core::PlaybackTarget IptvBrowserActivity::build_playback_target_for_entry(size_t entry_index) const {
+    const auto& entry = this->playlist_result.entries[entry_index];
+    return switchbox::core::make_iptv_playback_target(
+        this->source,
+        entry,
+        build_playback_overlay_context(),
+        this->selected_group_index);
 }
 
 bool IptvBrowserActivity::is_favorite_entry(const switchbox::core::IptvPlaylistEntry& entry) const {

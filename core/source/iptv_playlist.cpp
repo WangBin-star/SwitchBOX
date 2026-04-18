@@ -37,6 +37,24 @@ bool is_cancelled(const std::shared_ptr<std::atomic_bool>& cancel_flag) {
     return cancel_flag != nullptr && cancel_flag->load();
 }
 
+void report_iptv_playlist_progress(
+    const IptvPlaylistProgressCallback& progress_callback,
+    float progress,
+    IptvPlaylistLoadStage stage,
+    std::uint64_t bytes_read = 0,
+    std::uint64_t total_bytes = 0) {
+    if (!progress_callback) {
+        return;
+    }
+
+    progress_callback(IptvPlaylistLoadProgress {
+        .progress = std::clamp(progress, 0.0f, 1.0f),
+        .stage = stage,
+        .bytes_read = bytes_read,
+        .total_bytes = total_bytes,
+    });
+}
+
 std::string trim(std::string value) {
     const auto is_space = [](unsigned char character) {
         return std::isspace(character) != 0;
@@ -1151,6 +1169,7 @@ std::string fetch_bytes_via_ffmpeg_once(
     const IptvHttpOptions& http_options,
     const std::shared_ptr<std::atomic_bool>& cancel_flag,
     std::string& error_message,
+    const IptvPlaylistProgressCallback& progress_callback = {},
     std::string_view timeout_us = "30000000",
     size_t max_bytes = 0,
     bool* hit_read_limit = nullptr,
@@ -1199,9 +1218,18 @@ std::string fetch_bytes_via_ffmpeg_once(
 
     std::string text;
     const int64_t size = avio_size(io_context);
+    const std::uint64_t total_bytes = size > 0 ? static_cast<std::uint64_t>(size) : 0;
+    std::uint64_t bytes_read = 0;
     if (size > 0 && size <= 8 * 1024 * 1024) {
         text.reserve(static_cast<size_t>(size));
     }
+
+    report_iptv_playlist_progress(
+        progress_callback,
+        total_bytes > 0 ? 0.12f : 0.15f,
+        IptvPlaylistLoadStage::DownloadingPlaylist,
+        0,
+        total_bytes);
 
     // Keep the read buffer on the heap to avoid stressing the async worker
     // thread stack on Switch when fetching large remote playlists.
@@ -1239,6 +1267,27 @@ std::string fetch_bytes_via_ffmpeg_once(
 
         if (to_append > 0) {
             text.append(reinterpret_cast<const char*>(buffer->data()), to_append);
+            bytes_read += static_cast<std::uint64_t>(to_append);
+            float download_progress = 0.15f;
+            if (total_bytes > 0) {
+                const double ratio = std::clamp(
+                    static_cast<double>(bytes_read) / static_cast<double>(total_bytes),
+                    0.0,
+                    1.0);
+                download_progress = 0.12f + static_cast<float>(ratio) * 0.58f;
+            } else if (bytes_read > 0) {
+                const double ratio = std::clamp(
+                    static_cast<double>(bytes_read) / (512.0 * 1024.0),
+                    0.0,
+                    1.0);
+                download_progress = 0.15f + static_cast<float>(ratio) * 0.45f;
+            }
+            report_iptv_playlist_progress(
+                progress_callback,
+                download_progress,
+                IptvPlaylistLoadStage::DownloadingPlaylist,
+                bytes_read,
+                total_bytes);
         }
 
         if (max_bytes > 0 && text.size() >= max_bytes) {
@@ -1255,6 +1304,7 @@ std::string fetch_text_via_ffmpeg_once(
     const IptvHttpOptions& http_options,
     const std::shared_ptr<std::atomic_bool>& cancel_flag,
     std::string& error_message,
+    const IptvPlaylistProgressCallback& progress_callback = {},
     std::string_view timeout_us = "30000000") {
     bool ignored_hit_read_limit = false;
     return fetch_bytes_via_ffmpeg_once(
@@ -1262,6 +1312,7 @@ std::string fetch_text_via_ffmpeg_once(
         http_options,
         cancel_flag,
         error_message,
+        progress_callback,
         timeout_us,
         0,
         &ignored_hit_read_limit);
@@ -1271,7 +1322,8 @@ std::string fetch_text_via_ffmpeg(
     const std::string& url,
     const IptvHttpOptions& http_options,
     const std::shared_ptr<std::atomic_bool>& cancel_flag,
-    std::string& error_message) {
+    std::string& error_message,
+    const IptvPlaylistProgressCallback& progress_callback = {}) {
     static constexpr int kMaxAttempts = 3;
     std::string last_error;
 
@@ -1281,7 +1333,12 @@ std::string fetch_text_via_ffmpeg(
             return {};
         }
 
-        std::string text = fetch_text_via_ffmpeg_once(url, http_options, cancel_flag, last_error);
+        std::string text = fetch_text_via_ffmpeg_once(
+            url,
+            http_options,
+            cancel_flag,
+            last_error,
+            progress_callback);
         if (!last_error.empty()) {
             if (is_cancelled(cancel_flag) || last_error == "Cancelled") {
                 error_message = "Cancelled";
@@ -1336,6 +1393,7 @@ IptvPrefixProbeResult probe_prefix_via_ffmpeg(
             http_options,
             cancel_flag,
             last_error,
+            {},
             "15000000",
             max_bytes,
             &hit_read_limit,
@@ -1380,10 +1438,12 @@ IptvPrefixProbeResult probe_prefix_via_ffmpeg(
 
 IptvPlaylistResult load_iptv_playlist(
     const IptvSourceSettings& source,
-    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    IptvPlaylistProgressCallback progress_callback) {
     IptvPlaylistResult result;
 #if SWITCHBOX_HAS_IPTV_FFMPEG_IO
     result.backend_available = true;
+    report_iptv_playlist_progress(progress_callback, 0.02f, IptvPlaylistLoadStage::Starting);
 
     if (trim(source.url).empty()) {
         result.error_message = "Playlist URL is not configured.";
@@ -1391,7 +1451,9 @@ IptvPlaylistResult load_iptv_playlist(
     }
 
     std::string error_message;
-    const std::string playlist_text = fetch_text_via_ffmpeg(source.url, {}, cancel_flag, error_message);
+    report_iptv_playlist_progress(progress_callback, 0.08f, IptvPlaylistLoadStage::OpeningConnection);
+    const std::string playlist_text =
+        fetch_text_via_ffmpeg(source.url, {}, cancel_flag, error_message, progress_callback);
     if (error_message == "Cancelled") {
         result.error_message.clear();
         return result;
@@ -1407,6 +1469,7 @@ IptvPlaylistResult load_iptv_playlist(
         return result;
     }
 
+    report_iptv_playlist_progress(progress_callback, 0.80f, IptvPlaylistLoadStage::ParsingPlaylist);
     if (looks_like_hls_playlist(playlist_text)) {
         IptvPlaylistEntry entry;
         entry.title = source.title.empty() ? fallback_title_from_url(source.url) : source.title;
@@ -1414,6 +1477,7 @@ IptvPlaylistResult load_iptv_playlist(
         finalize_playlist_entry(entry);
         result.entries.push_back(std::move(entry));
         result.success = true;
+        report_iptv_playlist_progress(progress_callback, 1.0f, IptvPlaylistLoadStage::Finalizing);
         return result;
     }
 
@@ -1423,10 +1487,13 @@ IptvPlaylistResult load_iptv_playlist(
         return result;
     }
 
+    report_iptv_playlist_progress(progress_callback, 0.96f, IptvPlaylistLoadStage::Finalizing);
     result.success = true;
+    report_iptv_playlist_progress(progress_callback, 1.0f, IptvPlaylistLoadStage::Finalizing);
     return result;
 #else
     (void)source;
+    (void)progress_callback;
     result.backend_available = false;
     result.error_message = "IPTV playlist backend is not available in this build.";
     return result;
@@ -1435,10 +1502,24 @@ IptvPlaylistResult load_iptv_playlist(
 
 IptvOpenPlan prepare_iptv_open_plan_for_playback(
     const PlaybackTarget& target,
-    const std::shared_ptr<std::atomic_bool>& cancel_flag) {
+    const std::shared_ptr<std::atomic_bool>& cancel_flag,
+    IptvOpenPlanProgressCallback progress_callback) {
     IptvOpenPlan plan;
+    const auto report_progress = [&](IptvOpenPlanStage stage, float progress) {
+        if (!progress_callback) {
+            return;
+        }
+
+        progress_callback({
+            .progress = std::clamp(progress, 0.0f, 1.0f),
+            .stage = stage,
+        });
+    };
+
+    report_progress(IptvOpenPlanStage::Starting, 0.02f);
     std::string locator =
         trim(target.primary_locator.empty() ? target.fallback_locator : target.primary_locator);
+    report_progress(IptvOpenPlanStage::NormalizingLocator, 0.08f);
     if (looks_like_probe_sensitive_direct_locator(locator)) {
         const std::string rewritten_locator = rewrite_probe_sensitive_locator_for_playback(locator);
         if (rewritten_locator != locator) {
@@ -1493,11 +1574,13 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
     };
 
     if (locator.empty() || !is_http_locator(locator)) {
+        report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
         apply_class_defaults(IptvPreparedStreamClass::Unknown, "non_http_locator");
         return plan;
     }
 
     if (looks_like_probe_sensitive_direct_locator(locator)) {
+        report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
         const IptvPreparedStreamClass direct_class = IptvPreparedStreamClass::DirectFlv;
         switchbox::core::switch_mpv_append_debug_log_note(
             "[iptv-prepare] probe_skipped locator=" + locator + " reason=sensitive_direct_locator");
@@ -1506,6 +1589,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
     }
 
 #if SWITCHBOX_HAS_IPTV_FFMPEG_IO
+    report_progress(IptvOpenPlanStage::ProbingSource, 0.18f);
     const auto initial_probe = probe_prefix_via_ffmpeg(locator, http_options, cancel_flag);
     if (initial_probe.error_message == "Cancelled") {
         plan.success = false;
@@ -1515,6 +1599,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
     }
 
     if (!initial_probe.error_message.empty()) {
+        report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
         const IptvPreparedStreamClass guessed_class = guess_direct_stream_class(locator, {});
         switchbox::core::switch_mpv_append_debug_log_note(
             "[iptv-prepare] probe_failed locator=" + locator + " error=" + initial_probe.error_message);
@@ -1522,6 +1607,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
         return plan;
     }
 
+    report_progress(IptvOpenPlanStage::InspectingResponse, 0.36f);
     if (!initial_probe.looks_like_text) {
         const IptvPreparedStreamClass direct_class =
             guess_direct_stream_class(locator, initial_probe.data);
@@ -1529,12 +1615,14 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
             "[iptv-prepare] binary_probe locator=" + locator +
             " bytes=" + std::to_string(initial_probe.data.size()) +
             " hit_limit=" + std::string(initial_probe.hit_read_limit ? "true" : "false"));
+        report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
         apply_class_defaults(direct_class, "binary_probe_direct");
         return plan;
     }
 
     if (!looks_like_hls_playlist(initial_probe.data)) {
         if (seems_like_html_or_proxy_text(initial_probe.data)) {
+            report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
             plan.success = false;
             plan.stream_class = IptvPreparedStreamClass::Unsupported;
             plan.user_visible_reason = "Unsupported IPTV source: the locator resolved to an HTML/proxy page.";
@@ -1545,11 +1633,13 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
 
         const IptvPreparedStreamClass direct_class =
             guess_direct_stream_class(locator, initial_probe.data);
+        report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
         apply_class_defaults(direct_class, "text_probe_direct_passthrough");
         switchbox::core::switch_mpv_append_debug_log_note("[iptv-prepare] passthrough locator: direct_url");
         return plan;
     }
 
+    report_progress(IptvOpenPlanStage::ResolvingPlaylist, 0.50f);
     std::string effective_playlist_url =
         trim(initial_probe.resolved_url).empty() ? locator : trim(initial_probe.resolved_url);
     if (effective_playlist_url != locator) {
@@ -1571,6 +1661,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
             switchbox::core::switch_mpv_append_debug_log_note(
                 "[iptv-prepare] master_resolved variant=" + variant_url);
 
+            report_progress(IptvOpenPlanStage::ProbingVariant, 0.64f);
             const auto variant_probe = probe_prefix_via_ffmpeg(variant_url, http_options, cancel_flag);
             if (variant_probe.error_message == "Cancelled") {
                 plan.success = false;
@@ -1587,6 +1678,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
                 const IptvPreparedStreamClass direct_class =
                     guess_direct_stream_class(variant_url, variant_probe.data);
                 plan.final_locator = prepared_locator;
+                report_progress(IptvOpenPlanStage::FinalizingPlan, 0.78f);
                 apply_class_defaults(direct_class, "variant_binary_direct");
                 switchbox::core::switch_mpv_append_debug_log_note(
                     "[iptv-prepare] variant_binary_passthrough locator=" + prepared_locator);
@@ -1602,6 +1694,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
                         " from_master=" + locator);
                 }
             } else if (seems_like_html_or_proxy_text(variant_probe.data)) {
+                report_progress(IptvOpenPlanStage::FinalizingPlan, 0.78f);
                 plan.success = false;
                 plan.stream_class = IptvPreparedStreamClass::Unsupported;
                 plan.user_visible_reason = "Unsupported IPTV source: the selected HLS variant resolved to an HTML/proxy page.";
@@ -1612,6 +1705,7 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
                 const IptvPreparedStreamClass direct_class =
                     guess_direct_stream_class(variant_url, variant_probe.data);
                 plan.final_locator = prepared_locator;
+                report_progress(IptvOpenPlanStage::FinalizingPlan, 0.78f);
                 apply_class_defaults(direct_class, "variant_direct_passthrough");
                 switchbox::core::switch_mpv_append_debug_log_note(
                     "[iptv-prepare] variant_direct_passthrough locator=" + prepared_locator);
@@ -1645,11 +1739,14 @@ IptvOpenPlan prepare_iptv_open_plan_for_playback(
             "[iptv-prepare] variant_passthrough locator=" + prepared_locator);
     }
 
+    report_progress(IptvOpenPlanStage::FinalizingPlan, 0.78f);
     switchbox::core::switch_mpv_append_debug_log_note(
         "[iptv-prepare] passthrough locator: direct_url");
 #else
     (void)target;
     (void)cancel_flag;
+    (void)progress_callback;
+    report_progress(IptvOpenPlanStage::FinalizingPlan, 0.72f);
     apply_class_defaults(IptvPreparedStreamClass::DirectHttp, "ffmpeg_backend_unavailable");
 #endif
     return plan;

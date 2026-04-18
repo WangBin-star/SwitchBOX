@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,46 @@ std::string tr(const std::string& key) {
 
 std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
+}
+
+std::string startup_loading_message_for_prepare_stage(switchbox::core::IptvOpenPlanStage stage) {
+    switch (stage) {
+        case switchbox::core::IptvOpenPlanStage::NormalizingLocator:
+            return tr("player_page/loading/normalizing_locator");
+        case switchbox::core::IptvOpenPlanStage::ProbingSource:
+            return tr("player_page/loading/probing_source");
+        case switchbox::core::IptvOpenPlanStage::InspectingResponse:
+            return tr("player_page/loading/inspecting_response");
+        case switchbox::core::IptvOpenPlanStage::ResolvingPlaylist:
+            return tr("player_page/loading/resolving_playlist");
+        case switchbox::core::IptvOpenPlanStage::ProbingVariant:
+            return tr("player_page/loading/probing_variant");
+        case switchbox::core::IptvOpenPlanStage::FinalizingPlan:
+            return tr("player_page/loading/finalizing_plan");
+        case switchbox::core::IptvOpenPlanStage::Starting:
+        default:
+            return tr("player_page/loading/resolving_stream");
+    }
+}
+
+std::string startup_loading_detail_for_prepare_stage(switchbox::core::IptvOpenPlanStage stage) {
+    switch (stage) {
+        case switchbox::core::IptvOpenPlanStage::NormalizingLocator:
+            return tr("player_page/loading_details/normalizing_locator");
+        case switchbox::core::IptvOpenPlanStage::ProbingSource:
+            return tr("player_page/loading_details/probing_source");
+        case switchbox::core::IptvOpenPlanStage::InspectingResponse:
+            return tr("player_page/loading_details/inspecting_response");
+        case switchbox::core::IptvOpenPlanStage::ResolvingPlaylist:
+            return tr("player_page/loading_details/resolving_playlist");
+        case switchbox::core::IptvOpenPlanStage::ProbingVariant:
+            return tr("player_page/loading_details/probing_variant");
+        case switchbox::core::IptvOpenPlanStage::FinalizingPlan:
+            return tr("player_page/loading_details/finalizing_plan");
+        case switchbox::core::IptvOpenPlanStage::Starting:
+        default:
+            return tr("player_page/loading_details/resolving_stream");
+    }
 }
 
 std::string ascii_lower(std::string value) {
@@ -394,6 +435,8 @@ void PlayerActivity::begin_async_startup_for_target(const switchbox::core::Playb
     this->pending_startup_task = task;
     this->startup_loading_active = true;
     this->startup_loading_message = tr("player_page/loading/resolving_stream");
+    this->startup_loading_detail = tr("player_page/loading_details/resolving_stream");
+    this->startup_loading_progress = 0.10f;
     this->startup_loading_started_at = std::chrono::steady_clock::now();
     update_startup_loading_overlay_state();
     switchbox::core::switch_mpv_append_debug_log_note("iptv_async_prepare begin");
@@ -414,7 +457,11 @@ void PlayerActivity::begin_async_startup_for_target(const switchbox::core::Playb
             !prepared_target.primary_locator.empty()) {
             const auto open_plan = switchbox::core::prepare_iptv_open_plan_for_playback(
                 prepared_target,
-                task->cancel_flag);
+                task->cancel_flag,
+                [task](const switchbox::core::IptvOpenPlanProgress& progress) {
+                    std::scoped_lock lock(task->mutex);
+                    task->progress = progress;
+                });
             if (!open_plan.success) {
                 std::scoped_lock lock(task->mutex);
                 task->startup_error =
@@ -444,6 +491,9 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
     this->touch_horizontal_pan_active = false;
     this->touch_vertical_pan_active = false;
     this->target = next_target;
+    this->iptv_overlay_context = this->target.iptv_overlay_context;
+    this->iptv_overlay_group_index = this->target.iptv_overlay_group_index;
+    this->iptv_overlay_group_picker = false;
 
     if (ensure_smb_locator_on_target(this->target)) {
         this->has_smb_source = true;
@@ -455,6 +505,15 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
         this->smb_source = {};
         this->current_relative_path.clear();
         this->overlay_relative_path.clear();
+    }
+
+    if (this->has_smb_source) {
+        this->iptv_overlay_context.reset();
+        this->iptv_overlay_group_index = 0;
+        this->iptv_overlay_group_picker = false;
+    }
+
+    if (!this->has_smb_source && this->iptv_overlay_context == nullptr) {
         this->overlay_entries.clear();
         this->overlay_selected_index = -1;
         this->overlay_message.clear();
@@ -491,6 +550,8 @@ void PlayerActivity::poll_pending_startup_task() {
         this->startup_loading_active = false;
         this->startup_loading_overlay_visible = false;
         this->startup_loading_message.clear();
+        this->startup_loading_detail.clear();
+        this->startup_loading_progress = 0.0f;
         this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
         sync_overlay_to_surface();
         queue_startup_dialog(startup_error, true, true);
@@ -501,10 +562,15 @@ void PlayerActivity::poll_pending_startup_task() {
 
     startup_error.clear();
     this->startup_loading_message = tr("player_page/loading/opening_stream");
+    this->startup_loading_detail = tr("player_page/loading_details/opening_stream");
+    this->startup_loading_progress = 0.84f;
+    sync_overlay_to_surface();
     if (!switchbox::core::switch_mpv_open(prepared_target, startup_error) && !startup_error.empty()) {
         this->startup_loading_active = false;
         this->startup_loading_overlay_visible = false;
         this->startup_loading_message.clear();
+        this->startup_loading_detail.clear();
+        this->startup_loading_progress = 0.0f;
         this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
         sync_overlay_to_surface();
         queue_startup_dialog(startup_error, true, true);
@@ -519,19 +585,30 @@ void PlayerActivity::update_startup_loading_overlay_state() {
     const bool previous_active = this->startup_loading_active;
     const bool previous_visible = this->startup_loading_overlay_visible;
     const std::string previous_message = this->startup_loading_message;
+    const std::string previous_detail = this->startup_loading_detail;
+    const float previous_progress = this->startup_loading_progress;
     const auto previous_started_at = this->startup_loading_started_at;
     const auto now = std::chrono::steady_clock::now();
 
     if (this->playback_error_dialog_open || this->startup_dialog_pending) {
         this->startup_loading_active = false;
         this->startup_loading_message.clear();
+        this->startup_loading_detail.clear();
+        this->startup_loading_progress = 0.0f;
         this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     } else if (this->pending_startup_task != nullptr) {
         this->startup_loading_active = true;
         if (this->startup_loading_started_at == std::chrono::steady_clock::time_point::min()) {
             this->startup_loading_started_at = now;
         }
-        this->startup_loading_message = tr("player_page/loading/resolving_stream");
+        switchbox::core::IptvOpenPlanProgress prepare_progress;
+        {
+            std::scoped_lock lock(this->pending_startup_task->mutex);
+            prepare_progress = this->pending_startup_task->progress;
+        }
+        this->startup_loading_message = startup_loading_message_for_prepare_stage(prepare_progress.stage);
+        this->startup_loading_detail = startup_loading_detail_for_prepare_stage(prepare_progress.stage);
+        this->startup_loading_progress = std::max(0.10f, std::clamp(prepare_progress.progress, 0.0f, 0.78f));
     } else if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Iptv &&
                switchbox::core::switch_mpv_session_active() &&
                !switchbox::core::switch_mpv_has_rendered_video_frame()) {
@@ -539,12 +616,21 @@ void PlayerActivity::update_startup_loading_overlay_state() {
         if (this->startup_loading_started_at == std::chrono::steady_clock::time_point::min()) {
             this->startup_loading_started_at = now;
         }
-        this->startup_loading_message = switchbox::core::switch_mpv_has_media()
-                                            ? tr("player_page/loading/waiting_first_frame")
-                                            : tr("player_page/loading/opening_stream");
+        if (switchbox::core::switch_mpv_has_media()) {
+            this->startup_loading_message = tr("player_page/loading/waiting_first_frame");
+            this->startup_loading_detail = tr("player_page/loading_details/waiting_first_frame");
+            const float elapsed_seconds = std::chrono::duration<float>(now - this->startup_loading_started_at).count();
+            this->startup_loading_progress = std::min(0.98f, 0.93f + std::max(0.0f, elapsed_seconds) * 0.01f);
+        } else {
+            this->startup_loading_message = tr("player_page/loading/waiting_stream_metadata");
+            this->startup_loading_detail = tr("player_page/loading_details/waiting_stream_metadata");
+            this->startup_loading_progress = 0.88f;
+        }
     } else {
         this->startup_loading_active = false;
         this->startup_loading_message.clear();
+        this->startup_loading_detail.clear();
+        this->startup_loading_progress = 0.0f;
         this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     }
 
@@ -563,6 +649,8 @@ void PlayerActivity::update_startup_loading_overlay_state() {
     if (previous_active != this->startup_loading_active ||
         previous_visible != this->startup_loading_overlay_visible ||
         previous_message != this->startup_loading_message ||
+        previous_detail != this->startup_loading_detail ||
+        std::fabs(previous_progress - this->startup_loading_progress) > 0.0001f ||
         previous_started_at != this->startup_loading_started_at) {
         sync_overlay_to_surface();
     }
@@ -626,6 +714,8 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
     this->startup_loading_active = false;
     this->startup_loading_overlay_visible = false;
     this->startup_loading_message.clear();
+    this->startup_loading_detail.clear();
+    this->startup_loading_progress = 0.0f;
     this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     apply_started_target_state(next_target);
 }
@@ -654,6 +744,8 @@ void PlayerActivity::present_startup_dialog_if_needed() {
     this->startup_loading_active = false;
     this->startup_loading_overlay_visible = false;
     this->startup_loading_message.clear();
+    this->startup_loading_detail.clear();
+    this->startup_loading_progress = 0.0f;
     this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     this->controls_visible = false;
     this->overlay_visible = false;
@@ -1020,36 +1112,91 @@ bool PlayerActivity::open_subtitle_track_selector() {
 }
 
 void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
-    this->overlay_message.clear();
-    this->overlay_entries.clear();
-
-    if (!this->has_smb_source) {
-        sync_overlay_to_surface();
-        return;
-    }
-
-    std::string selected_relative_path;
+    std::string selected_key;
     if (keep_selection &&
         this->overlay_selected_index >= 0 &&
         this->overlay_selected_index < static_cast<int>(this->overlay_entries.size())) {
-        selected_relative_path =
-            this->overlay_entries[static_cast<size_t>(this->overlay_selected_index)].relative_path;
+        selected_key = this->overlay_entries[static_cast<size_t>(this->overlay_selected_index)].stable_key;
     }
 
-    const auto& config = switchbox::core::AppConfigStore::current();
-    const auto result =
-        switchbox::core::browse_smb_directory(
-            this->smb_source,
-            config.general,
-            this->overlay_relative_path);
-    if (!result.success) {
-        this->overlay_message = result.error_message;
-        this->overlay_selected_index = -1;
+    this->overlay_message.clear();
+    this->overlay_entries.clear();
+
+    if (!this->has_smb_source && this->iptv_overlay_context == nullptr) {
         sync_overlay_to_surface();
         return;
     }
 
-    this->overlay_entries = result.entries;
+    if (this->has_smb_source) {
+        const auto& config = switchbox::core::AppConfigStore::current();
+        const auto result =
+            switchbox::core::browse_smb_directory(
+                this->smb_source,
+                config.general,
+                this->overlay_relative_path);
+        if (!result.success) {
+            this->overlay_message = result.error_message;
+            this->overlay_selected_index = -1;
+            sync_overlay_to_surface();
+            return;
+        }
+
+        this->overlay_entries.reserve(result.entries.size());
+        for (const auto& entry : result.entries) {
+            this->overlay_entries.push_back({
+                .title = entry.name,
+                .stable_key = entry.relative_path,
+                .is_directory = entry.is_directory,
+                .is_current = entry.relative_path == this->current_relative_path,
+                .smb_relative_path = entry.relative_path,
+            });
+        }
+    } else if (this->iptv_overlay_context != nullptr) {
+        const auto group_count = this->iptv_overlay_context->groups.size();
+        if (group_count == 0) {
+            this->overlay_selected_index = -1;
+            sync_overlay_to_surface();
+            return;
+        }
+
+        this->iptv_overlay_group_index = std::min(this->iptv_overlay_group_index, group_count - 1);
+        if (this->iptv_overlay_group_picker) {
+            this->overlay_entries.reserve(group_count);
+            for (size_t group_index = 0; group_index < group_count; ++group_index) {
+                const auto& group = this->iptv_overlay_context->groups[group_index];
+                this->overlay_entries.push_back({
+                    .title = group.title,
+                    .stable_key = "group:" + std::to_string(group_index),
+                    .is_directory = true,
+                    .is_current = group_index == this->iptv_overlay_group_index,
+                    .smb_relative_path = {},
+                    .iptv_group_index = group_index,
+                    .iptv_entry_index = std::numeric_limits<size_t>::max(),
+                });
+            }
+        } else {
+            const auto entry_indices = current_iptv_overlay_entry_indices();
+            this->overlay_entries.reserve(entry_indices.size());
+            for (const size_t entry_index : entry_indices) {
+                if (entry_index >= this->iptv_overlay_context->entries.size()) {
+                    continue;
+                }
+
+                const auto& entry = this->iptv_overlay_context->entries[entry_index];
+                this->overlay_entries.push_back({
+                    .title = entry.title.empty() ? tr("player_page/fallback_title") : entry.title,
+                    .stable_key = entry.favorite_key.empty() ? entry.stream_url : entry.favorite_key,
+                    .is_directory = false,
+                    .is_current =
+                        !this->target.iptv_overlay_entry_key.empty() && entry.favorite_key == this->target.iptv_overlay_entry_key,
+                    .smb_relative_path = {},
+                    .iptv_group_index = std::numeric_limits<size_t>::max(),
+                    .iptv_entry_index = entry_index,
+                });
+            }
+        }
+    }
+
     if (this->overlay_entries.empty()) {
         this->overlay_selected_index = -1;
         sync_overlay_to_surface();
@@ -1057,18 +1204,18 @@ void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
     }
 
     int matched_index = -1;
-    if (!selected_relative_path.empty()) {
+    if (!selected_key.empty()) {
         for (int index = 0; index < static_cast<int>(this->overlay_entries.size()); ++index) {
-            if (this->overlay_entries[static_cast<size_t>(index)].relative_path == selected_relative_path) {
+            if (this->overlay_entries[static_cast<size_t>(index)].stable_key == selected_key) {
                 matched_index = index;
                 break;
             }
         }
     }
 
-    if (matched_index < 0 && !this->current_relative_path.empty()) {
+    if (matched_index < 0) {
         for (int index = 0; index < static_cast<int>(this->overlay_entries.size()); ++index) {
-            if (this->overlay_entries[static_cast<size_t>(index)].relative_path == this->current_relative_path) {
+            if (this->overlay_entries[static_cast<size_t>(index)].is_current) {
                 matched_index = index;
                 break;
             }
@@ -1089,8 +1236,20 @@ void PlayerActivity::sync_overlay_to_surface() {
     PlayerOverlayViewModel model;
     const auto& general = switchbox::core::AppConfigStore::current().general;
     model.visible = this->overlay_visible;
-    model.path = this->has_smb_source ? switchbox::core::smb_display_path(this->smb_source, this->overlay_relative_path)
-                                      : this->target.source_label;
+    if (this->has_smb_source) {
+        model.path = switchbox::core::smb_display_path(this->smb_source, this->overlay_relative_path);
+    } else if (this->iptv_overlay_context != nullptr) {
+        model.path = this->target.source_label;
+        if (!this->iptv_overlay_group_picker) {
+            const std::string group_title = current_iptv_overlay_group_title();
+            if (!group_title.empty()) {
+                model.path += " / ";
+                model.path += group_title;
+            }
+        }
+    } else {
+        model.path = this->target.source_label;
+    }
     model.message = this->overlay_message;
     model.selected_index = this->overlay_selected_index;
     model.controls_visible = this->controls_visible;
@@ -1104,6 +1263,8 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.loading_overlay_visible = this->startup_loading_overlay_visible;
     model.loading_overlay_title = tr("player_page/loading/title");
     model.loading_overlay_message = this->startup_loading_message;
+    model.loading_overlay_detail = this->startup_loading_detail;
+    model.loading_overlay_progress = std::clamp(this->startup_loading_progress, 0.0f, 1.0f);
     model.overlay_marquee_delay_ms = general.overlay_marquee_delay_ms;
     model.touch_enable = general.touch_enable;
     model.touch_player_gestures = general.touch_player_gestures;
@@ -1112,9 +1273,9 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.entries.reserve(this->overlay_entries.size());
     for (const auto& entry : this->overlay_entries) {
         model.entries.push_back({
-            .title = entry.name,
+            .title = entry.title,
             .is_directory = entry.is_directory,
-            .is_current = entry.relative_path == this->current_relative_path,
+            .is_current = entry.is_current,
         });
     }
 
@@ -1146,14 +1307,43 @@ void PlayerActivity::enter_overlay_selection() {
     }
 
     const auto entry = this->overlay_entries[static_cast<size_t>(this->overlay_selected_index)];
-    if (entry.is_directory) {
-        this->overlay_relative_path = entry.relative_path;
+    if (this->has_smb_source && entry.is_directory) {
+        this->overlay_relative_path = entry.smb_relative_path;
         refresh_overlay_entries(false);
         return;
     }
 
+    if (this->has_smb_source) {
+        start_playback_with_target(
+            switchbox::core::make_smb_playback_target(this->smb_source, entry.smb_relative_path));
+        return;
+    }
+
+    if (this->iptv_overlay_context == nullptr) {
+        return;
+    }
+
+    if (this->iptv_overlay_group_picker) {
+        if (entry.iptv_group_index >= this->iptv_overlay_context->groups.size()) {
+            return;
+        }
+
+        this->iptv_overlay_group_index = entry.iptv_group_index;
+        this->iptv_overlay_group_picker = false;
+        refresh_overlay_entries(false);
+        return;
+    }
+
+    if (entry.iptv_entry_index >= this->iptv_overlay_context->entries.size()) {
+        return;
+    }
+
     start_playback_with_target(
-        switchbox::core::make_smb_playback_target(this->smb_source, entry.relative_path));
+        switchbox::core::make_iptv_playback_target(
+            this->iptv_overlay_context->source,
+            this->iptv_overlay_context->entries[entry.iptv_entry_index],
+            this->iptv_overlay_context,
+            this->iptv_overlay_group_index));
 }
 
 void PlayerActivity::overlay_go_parent() {
@@ -1161,14 +1351,31 @@ void PlayerActivity::overlay_go_parent() {
         return;
     }
 
-    if (this->overlay_relative_path.empty()) {
-        this->overlay_visible = false;
-        sync_overlay_to_surface();
+    if (this->has_smb_source) {
+        if (this->overlay_relative_path.empty()) {
+            this->overlay_visible = false;
+            sync_overlay_to_surface();
+            return;
+        }
+
+        this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->overlay_relative_path);
+        refresh_overlay_entries(false);
         return;
     }
 
-    this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->overlay_relative_path);
-    refresh_overlay_entries(false);
+    if (this->iptv_overlay_context != nullptr) {
+        if (!this->iptv_overlay_group_picker) {
+            this->iptv_overlay_group_picker = true;
+            refresh_overlay_entries(true);
+        } else {
+            this->overlay_visible = false;
+            sync_overlay_to_surface();
+        }
+        return;
+    }
+
+    this->overlay_visible = false;
+    sync_overlay_to_surface();
 }
 
 void PlayerActivity::toggle_overlay() {
@@ -1176,6 +1383,7 @@ void PlayerActivity::toggle_overlay() {
     if (this->overlay_visible) {
         this->volume_osd_visible = false;
         this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
+        this->iptv_overlay_group_picker = false;
     }
     if (this->overlay_visible) {
         refresh_overlay_entries(true);
@@ -1605,6 +1813,8 @@ void PlayerActivity::present_runtime_error_if_needed() {
     this->startup_loading_active = false;
     this->startup_loading_overlay_visible = false;
     this->startup_loading_message.clear();
+    this->startup_loading_detail.clear();
+    this->startup_loading_progress = 0.0f;
     this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     this->controls_visible = false;
     this->overlay_visible = false;
@@ -1637,6 +1847,8 @@ void PlayerActivity::stop_playback_session_before_leave() {
     this->startup_loading_active = false;
     this->startup_loading_overlay_visible = false;
     this->startup_loading_message.clear();
+    this->startup_loading_detail.clear();
+    this->startup_loading_progress = 0.0f;
     this->startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     this->controls_visible = false;
     this->overlay_visible = false;
@@ -1645,6 +1857,43 @@ void PlayerActivity::stop_playback_session_before_leave() {
     sync_overlay_to_surface();
     switchbox::core::switch_mpv_stop();
     switchbox::core::switch_mpv_append_debug_log_note("stop_before_leave end");
+}
+
+std::vector<size_t> PlayerActivity::current_iptv_overlay_entry_indices() const {
+    if (this->iptv_overlay_context == nullptr || this->iptv_overlay_context->groups.empty()) {
+        return {};
+    }
+
+    const size_t group_index = std::min(this->iptv_overlay_group_index, this->iptv_overlay_context->groups.size() - 1);
+    const auto& group = this->iptv_overlay_context->groups[group_index];
+    if (!group.favorites) {
+        return group.entry_indices;
+    }
+
+    std::unordered_set<std::string> favorite_keys(
+        this->iptv_overlay_context->source.favorite_keys.begin(),
+        this->iptv_overlay_context->source.favorite_keys.end());
+    std::unordered_set<std::string> emitted_keys;
+    std::vector<size_t> indices;
+    indices.reserve(this->iptv_overlay_context->entries.size());
+
+    for (size_t index = 0; index < this->iptv_overlay_context->entries.size(); ++index) {
+        const auto& favorite_key = this->iptv_overlay_context->entries[index].favorite_key;
+        if (favorite_keys.contains(favorite_key) && emitted_keys.emplace(favorite_key).second) {
+            indices.push_back(index);
+        }
+    }
+
+    return indices;
+}
+
+std::string PlayerActivity::current_iptv_overlay_group_title() const {
+    if (this->iptv_overlay_context == nullptr || this->iptv_overlay_context->groups.empty()) {
+        return {};
+    }
+
+    const size_t group_index = std::min(this->iptv_overlay_group_index, this->iptv_overlay_context->groups.size() - 1);
+    return this->iptv_overlay_context->groups[group_index].title;
 }
 
 void PlayerActivity::adjust_volume(int delta) {
