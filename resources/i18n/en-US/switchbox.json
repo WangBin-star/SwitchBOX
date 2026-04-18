@@ -303,6 +303,7 @@
                 "fields": {
                     "key": "Entry ID",
                     "enabled": "Enabled",
+                    "use_history": "Use history",
                     "title": "Title",
                     "url": "Address"
                 },
@@ -326,6 +327,7 @@
                 "fields": {
                     "key": "Entry ID",
                     "enabled": "Enabled",
+                    "use_history": "Use history",
                     "title": "Title",
                     "host": "Device address",
                     "share": "Shared folder name",

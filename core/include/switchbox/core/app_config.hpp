@@ -43,6 +43,7 @@ struct IptvSourceSettings {
     std::string title;
     std::string url;
     bool enabled = true;
+    bool use_history = true;
     std::vector<std::string> favorite_keys;
 };
 
@@ -54,6 +55,7 @@ struct SmbSourceSettings {
     std::string username;
     std::string password;
     bool enabled = true;
+    bool use_history = true;
 };
 
 struct AppConfig {

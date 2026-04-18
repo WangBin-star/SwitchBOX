@@ -872,6 +872,9 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
             source.enabled = parse_bool(
                 get_value(document, sectionName, "enabled"),
                 source.enabled);
+            source.use_history = parse_bool(
+                get_value(document, sectionName, "use_history"),
+                source.use_history);
             source.favorite_keys = split_comma_separated_list(
                 get_value(document, sectionName, "favorite_keys"));
             config.iptv_sources.push_back(std::move(source));
@@ -889,6 +892,9 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
             source.enabled = parse_bool(
                 get_value(document, sectionName, "enabled"),
                 source.enabled);
+            source.use_history = parse_bool(
+                get_value(document, sectionName, "use_history"),
+                source.use_history);
             config.smb_sources.push_back(std::move(source));
         }
     }
@@ -901,6 +907,9 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         legacySource.enabled = parse_bool(
             get_value(document, "iptv", "primary_source_enabled"),
             legacySource.enabled);
+        legacySource.use_history = parse_bool(
+            get_value(document, "iptv", "use_history"),
+            legacySource.use_history);
         if (!legacySource.url.empty() || !legacySource.title.empty()) {
             config.iptv_sources.push_back(std::move(legacySource));
         }
@@ -914,6 +923,9 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         legacySource.share = get_value(document, "smb", "share");
         legacySource.username = get_value(document, "smb", "username");
         legacySource.password = get_value(document, "smb", "password");
+        legacySource.use_history = parse_bool(
+            get_value(document, "smb", "use_history"),
+            legacySource.use_history);
         if (!legacySource.host.empty() || !legacySource.share.empty()) {
             config.smb_sources.push_back(std::move(legacySource));
         }
@@ -1003,6 +1015,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; title=主 IPTV / Main IPTV" << '\n';
     output << "; url=http://example.com/playlist.m3u" << '\n';
     output << "; enabled=true" << '\n';
+    output << "; use_history=true" << '\n';
     output << "; favorite_keys=channel1,channel2" << '\n';
     output << '\n';
 
@@ -1015,6 +1028,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << "title=" << source.title << '\n';
         output << "url=" << source.url << '\n';
         output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << "use_history=" << (source.use_history ? "true" : "false") << '\n';
         output << "favorite_keys=" << join_comma_separated_list(source.favorite_keys) << '\n';
         output << '\n';
     }
@@ -1029,6 +1043,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; username=user" << '\n';
     output << "; password=pass" << '\n';
     output << "; enabled=true" << '\n';
+    output << "; use_history=true" << '\n';
     output << '\n';
 
     for (const auto& source : config.smb_sources) {
@@ -1043,6 +1058,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << "username=" << source.username << '\n';
         output << "password=" << source.password << '\n';
         output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << "use_history=" << (source.use_history ? "true" : "false") << '\n';
         output << '\n';
     }
 

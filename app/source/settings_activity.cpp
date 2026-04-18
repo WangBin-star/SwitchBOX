@@ -167,6 +167,7 @@ bool iptv_source_equal(
            lhs.title == rhs.title &&
            lhs.url == rhs.url &&
            lhs.enabled == rhs.enabled &&
+           lhs.use_history == rhs.use_history &&
            lhs.favorite_keys == rhs.favorite_keys;
 }
 
@@ -179,7 +180,8 @@ bool smb_source_equal(
            lhs.share == rhs.share &&
            lhs.username == rhs.username &&
            lhs.password == rhs.password &&
-           lhs.enabled == rhs.enabled;
+           lhs.enabled == rhs.enabled &&
+           lhs.use_history == rhs.use_history;
 }
 
 bool iptv_sources_equal(
@@ -591,6 +593,13 @@ brls::View* create_iptv_editor_content(
             editor_state->enabled = enabled;
         }));
 
+    content->addView(create_bool_cell(
+        tr("settings_page/iptv/fields/use_history"),
+        editor_state->use_history,
+        [editor_state](bool use_history) {
+            editor_state->use_history = use_history;
+        }));
+
     content->addView(create_input_cell(
         tr("settings_page/iptv/fields/url"),
         editor_state->url,
@@ -640,6 +649,13 @@ brls::View* create_smb_editor_content(
         editor_state->enabled,
         [editor_state](bool enabled) {
             editor_state->enabled = enabled;
+        }));
+
+    content->addView(create_bool_cell(
+        tr("settings_page/smb/fields/use_history"),
+        editor_state->use_history,
+        [editor_state](bool use_history) {
+            editor_state->use_history = use_history;
         }));
 
     content->addView(create_input_cell(
