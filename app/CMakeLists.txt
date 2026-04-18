@@ -95,8 +95,10 @@ else ()
 endif ()
 
 add_custom_target(switchbox_switch_runtime_assets
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/langs"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${CMAKE_CURRENT_BINARY_DIR}/langs"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${CMAKE_CURRENT_BINARY_DIR}/langs"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${CMAKE_CURRENT_BINARY_DIR}/.SwitchBOX-Langs"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/.SwitchBOX-Langs"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/.SwitchBOX-Langs" "${CMAKE_CURRENT_BINARY_DIR}/.SwitchBOX-Langs"
 )
 
 set(SWITCHBOX_RELEASE_ROOT "${SWITCHBOX_RELEASES_DIR}/${SWITCHBOX_RELEASE_VERSION}/switch")
@@ -104,9 +106,11 @@ set(SWITCHBOX_RELEASE_ROOT "${SWITCHBOX_RELEASES_DIR}/${SWITCHBOX_RELEASE_VERSIO
 add_custom_target(switchbox_switch_package
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_RELEASE_ROOT}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${SWITCHBOX_RELEASE_ROOT}"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_RELEASE_ROOT}/langs"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_RELEASE_ROOT}/.SwitchBOX-Langs"
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE_DIR:switchbox_switch>/switchbox_switch.nro" "${SWITCHBOX_RELEASE_ROOT}/SwitchBOX.nro"
     COMMAND "${CMAKE_COMMAND}" -E copy "${CMAKE_SOURCE_DIR}/packaging/switch/switchbox.ini" "${SWITCHBOX_RELEASE_ROOT}/switchbox.ini"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/langs" "${SWITCHBOX_RELEASE_ROOT}/langs"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/.SwitchBOX-Langs" "${SWITCHBOX_RELEASE_ROOT}/.SwitchBOX-Langs"
     COMMENT "Packaging Switch release to ${SWITCHBOX_RELEASE_ROOT}"
 )
 

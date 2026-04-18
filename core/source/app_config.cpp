@@ -137,7 +137,7 @@ AppPaths make_paths(const std::filesystem::path& baseDirectory) {
     return {
         .base_directory = baseDirectory,
         .config_file = baseDirectory / "switchbox.ini",
-        .languages_directory = baseDirectory / "langs",
+        .languages_directory = baseDirectory / ".SwitchBOX-Langs",
         .config_search_candidates = {},
     };
 }
@@ -926,7 +926,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
 
     std::ostringstream output;
     output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; langs/ 会相对当前 ini 所在目录查找 / langs/ is searched relative to this ini file" << '\n';
+    output << "; .SwitchBOX-Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
     output << "; -----------软件参数--------------" << '\n';
     output << "[general]" << '\n';
@@ -1060,7 +1060,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
 #if 0
 
     output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; langs/ 会相对当前 ini 所在目录查找 / langs/ is searched relative to this ini file" << '\n';
+    output << "; .SwitchBOX-Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
 
     output << "[general]" << '\n';

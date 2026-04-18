@@ -139,7 +139,7 @@ int Application::run(const StartupContext& context) const {
         }
     } else {
         brls::Logger::info(
-            "Config ready: file={}, langs={}",
+            "Config ready: file={}, lang_dir={}",
             paths.config_file.string(),
             paths.languages_directory.string());
         brls::Logger::info(

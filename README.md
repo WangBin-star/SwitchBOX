@@ -102,15 +102,16 @@ UI 框架：
 
 ## 当前项目状态
 
-截至 `2026-04-17`，项目已调整为 **纯 Switch 项目**，桌面端构建、桌面端代码分支和相关脚本均已移除。
+截至 `2026-04-18`，项目已调整为 **纯 Switch 项目**，桌面端构建、桌面端代码分支和相关脚本均已移除。
 
 当前已完成：
 
 - Switch 端可稳定构建、打包并生成 `.nro`
 - 设置页可编辑基础设置、`IPTV` 条目、`SMB` 条目
-- 语言资源支持外置 `langs/`
+- 语言资源支持外置 `.SwitchBOX-Langs/`
 - 首页已接入横向卡片布局
 - `IPTV` 浏览页可加载播放列表、按分组浏览、收藏频道、写回收藏状态并返回主页
+- `IPTV` 首页加载链路已稳定：首页负责列表加载浮层，播放器加载上下文延后到真正进入播放页时创建
 - `IPTV` 实播链路已基本打通，当前代表性 `HLS master/variant`、重定向 `HLS live/VOD`、敏感直链 `FLV` 测试源已可播放
 - 当前已验证可播的代表样例包括：`人在囧途`、`JJ斗地主`、`漫画解说`、`电影功夫片`，分别覆盖 `HLS master/variant`、重定向 `HLS live`、重定向 `HLS VOD` 与敏感直链 `FLV`
 - `SMB` 浏览页可列目录、进目录、返回上级、删除条目、返回主页
@@ -223,7 +224,7 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 - `build/releases/<version>/switch/SwitchBOX.nro`
 - `build/releases/<version>/switch/switchbox.ini`
-- `build/releases/<version>/switch/langs/`
+- `build/releases/<version>/switch/.SwitchBOX-Langs/`
 
 当前约定是：
 
@@ -236,7 +237,7 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 - `.nro`
 - `switchbox.ini`
-- `langs/`
+- `.SwitchBOX-Langs/`
 
 当前 `switchbox.ini` 查找顺序：
 
@@ -250,7 +251,8 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 其他当前约定：
 
-- `langs/` 相对当前实际使用的 `switchbox.ini` 所在目录查找。
+- `.SwitchBOX-Langs/` 相对当前实际使用的 `switchbox.ini` 所在目录查找。
+- 不再兼容旧的 `langs/` 目录名；安装包仅保留 `.SwitchBOX-Langs/`。
 - 如果 `[general]` 缺少基础参数，程序会按缺项补齐默认值与双语注释，不覆盖已有值。
 - 当前配置分组约定：
   - 基础设置使用 `[general]`
@@ -265,7 +267,7 @@ SwitchBOX/
 ├─ core/           配置、语言、播放目标、SMB/播放器核心能力
 ├─ platform/       Switch 平台适配
 ├─ resources/      内置资源（含字幕字体）
-├─ langs/          外置语言资源
+├─ .SwitchBOX-Langs/ 外置语言资源
 ├─ library/        第三方库
 ├─ cmake/          工具链与构建配置
 ├─ tools/          辅助脚本
