@@ -1,104 +1,152 @@
 # SwitchBOX
 
-## 本项目的目的
+## 本项目的目的 / Project Goal
 
-让 `Nintendo Switch` 可以像电视盒子一样使用，支持两类核心能力：
+让 `Nintendo Switch` 可以像电视盒子一样使用，支持两类核心能力。  
+SwitchBOX aims to make `Nintendo Switch` work like a set-top box, with two core capabilities.
 
-- 播放 `SMB` 共享视频
-- 播放 `IPTV` 电视节目
+- 播放 `SMB` 共享视频。  
+  Play videos from `SMB` shares.
+- 播放 `IPTV` 电视节目。  
+  Play `IPTV` channels and programs.
 
-注意：
+注意 / Notes：
 
-- 请在 **大气层虚拟系统** 环境中使用，因为当前开发与验证都只围绕该使用场景展开
+- 请在 **大气层虚拟系统** 环境中使用，因为当前开发与验证都只围绕该使用场景展开。  
+  Please use it in an **Atmosphere emuMMC / virtual system** environment, because current development and validation are focused on that usage scenario only.
+  
+- 如遇问题，可在 issue 反馈，也可以加 QQ群：`1022585620` 找群主。  
+  If you run into problems, you can open an issue or join the QQ group: `1022585620` and contact the group owner.
 
-## 参考项目 & 感谢
+## 参考项目 & 感谢 / References & Thanks
 
-IPTV 方向参考：
+IPTV 方向参考 / IPTV reference:
 
 - `TsVitch`
 - https://github.com/giovannimirulla/TsVitch
 
-SMB / 本地媒体 / 流式播放实现路径参考：
+SMB / 本地媒体 / 流式播放实现路径参考 / SMB, local media, and streaming playback reference:
 
 - `nxmp`
 - https://github.com/proconsule/nxmp
 
-UI 框架：
+UI 框架 / UI framework:
 
 - `Borealis`
 - https://github.com/natinusala/borealis
 
-## 软件操作说明（当前版本）
+## 软件操作说明（当前版本） / Operation Guide (Current Version)
 
-本章节用于说明当前可直接使用的操作，重点是播放器交互。
+本章节用于说明当前可直接使用的操作，重点是播放器交互。  
+This section describes the currently available controls, with focus on player interaction.
 
-### 主页
+### 主页 / Home
 
-- 左右切换卡片，`A` 进入当前卡片。
-- `+` 进入设置页。
-- `B` 退出软件，会弹出确认框。
+- 左右切换卡片，`A` 进入当前卡片。  
+  Move left or right between cards, and press `A` to enter the current card.
+- `+` 进入设置页。  
+  Press `+` to open the settings page.
+- `B` 退出软件，会弹出确认框。  
+  Press `B` to exit the app, with a confirmation dialog.
 
-### 设置页
+### 设置页 / Settings
 
-- 左侧切换分类，右侧编辑当前分类内容。
-- `A`：进入字段、打开下拉框、打开当前条目编辑。
-- `+`：保存并立即应用当前修改，然后直接返回主页。
-- `B`：退出设置；如果存在未保存修改，会弹出“取消 / 确定”确认框，默认焦点在取消。
-- 在 `IPTV / SMB` 条目列表中：
-  - `Y`：快速启用 / 禁用当前条目。
-  - `X`：删除当前条目，会弹出确认框。
+- 左侧切换分类，右侧编辑当前分类内容。  
+  Switch categories on the left and edit the current category on the right.
+- `A`：进入字段、打开下拉框、打开当前条目编辑。  
+  `A`: enter a field, open a dropdown, or open the current entry editor.
+- `+`：保存并立即应用当前修改，然后直接返回主页。  
+  `+`: save and apply current changes immediately, then return to Home.
+- `B`：退出设置；如果存在未保存修改，会弹出“取消 / 确定”确认框，默认焦点在取消。  
+  `B`: leave Settings; if there are unsaved changes, a `Cancel / Confirm` dialog appears with default focus on Cancel.
+- 在 `IPTV / SMB` 条目列表中，`Y`：快速启用 / 禁用当前条目。  
+  In `IPTV / SMB` entry lists, `Y`: quickly enable or disable the current entry.
+- 在 `IPTV / SMB` 条目列表中，`X`：删除当前条目，会弹出确认框。  
+  In `IPTV / SMB` entry lists, `X`: delete the current entry, with a confirmation dialog.
 
-### SMB 浏览页
+### SMB 浏览页 / SMB Browser
 
-- `A`：进入文件夹或播放当前文件。
-- `B`：返回上一级，或退出当前 SMB 浏览页。
-- `X`：删除当前焦点条目，会弹出确认框。
-- `Y`：直接返回主页。
+- `A`：进入文件夹或播放当前文件。  
+  `A`: enter a folder or play the current file.
+- `B`：返回上一级，或退出当前 SMB 浏览页。  
+  `B`: return to the parent directory, or leave the current SMB browser page.
+- `X`：删除当前焦点条目，会弹出确认框。  
+  `X`: delete the currently focused item, with a confirmation dialog.
+- `Y`：直接返回主页。  
+  `Y`: return directly to Home.
 
-### IPTV 浏览页
+### IPTV 浏览页 / IPTV Browser
 
-- 左侧为分组列表，右侧为当前分组下的频道列表。
-- 默认焦点在“收藏”分组。
-- 左右在分组区与频道区之间切换，上下在当前区域内移动焦点。
-- `A`：选中分组，或播放当前频道。
-- `X`：收藏 / 取消收藏当前频道。
-- `B`：返回主页；如果列表已经加载完成，会弹出确认框。
-- `Y`：与 `B` 相同，也用于返回主页确认。
+- 左侧为分组列表，右侧为当前分组下的频道列表。  
+  The left side shows the group list, and the right side shows channels in the current group.
+- 默认焦点在“收藏”分组。  
+  Default focus starts on the `Favorites` group.
+- 左右在分组区与频道区之间切换，上下在当前区域内移动焦点。  
+  Left and right switch between the group pane and the channel pane; up and down move focus within the current pane.
+- `A`：选中分组，或播放当前频道。  
+  `A`: select a group, or play the current channel.
+- `X`：收藏 / 取消收藏当前频道。  
+  `X`: favorite or unfavorite the current channel.
+- `B`：返回主页；如果列表已经加载完成，会弹出确认框。  
+  `B`: return to Home; if the playlist has already loaded, a confirmation dialog will appear.
+- `Y`：与 `B` 相同，也用于返回主页确认。  
+  `Y`: same as `B`, also used for the return-to-Home confirmation flow.
 
-### 播放器（SMB / IPTV 共用播放页）
+### 播放器（SMB / IPTV 共用播放页） / Player (Shared by SMB and IPTV)
 
-基础操作：
+基础操作 / Basic Controls：
 
-- `A`：播放 / 暂停。
-- `B`：退出播放器，回到来源页面。
-- `X`：仅对 `SMB` 文件有效；确认后退出播放器、删除文件并回到列表。
-- `↑ / ↓`：调节音量，会显示音量浮窗。
+- `A`：播放 / 暂停。  
+  `A`: play / pause.
+- `B`：退出播放器，回到来源页面。  
+  `B`: exit the player and return to the source page.
+- `X`：仅对 `SMB` 文件有效；确认后退出播放器、删除文件并回到列表。  
+  `X`: only valid for `SMB` files; after confirmation, exit the player, delete the file, and return to the list.
+- `↑ / ↓`：调节音量，会显示音量浮窗。  
+  `↑ / ↓`: adjust volume and show the volume OSD.
 
-跳转与倍速：
+跳转与倍速 / Seeking and Speed：
 
-- `L`：短退。
-- `R`：短进。
-- `ZL`：长退。
-- `ZR`：长进。
-- `Y`：按住倍速播放，松开恢复。
-- `R + 左/右`：连续短退 / 连续短进。
-- `ZR + 左/右`：连续长退 / 连续长进。
+- `L`：短退。  
+  `L`: short backward seek.
+- `R`：短进。  
+  `R`: short forward seek.
+- `ZL`：长退。  
+  `ZL`: long backward seek.
+- `ZR`：长进。  
+  `ZR`: long forward seek.
+- `Y`：按住倍速播放，松开恢复。  
+  `Y`: hold for speed-up playback, release to return to normal speed.
+- `R + 左/右`：连续短退 / 连续短进。  
+  `R + Left/Right`: continuous short backward / forward seek.
+- `ZR + 左/右`：连续长退 / 连续长进。  
+  `ZR + Left/Right`: continuous long backward / forward seek.
 
-浮窗与面板：
+浮窗与面板 / Overlays and Panels：
 
-- `十字键左 / 左摇杆左 / 右摇杆左`：打开左侧文件列表浮窗，再按一次关闭。
-- `+`：打开底部进度控制面板，再按 `+` 或 `B` 关闭。
-- 底部面板当前支持：旋转、长退、短退、播放/暂停、短进、长进、音轨、字幕。
+- `十字键左 / 左摇杆左 / 右摇杆左`：打开左侧文件列表浮窗，再按一次关闭。  
+  `D-Pad Left / Left Stick Left / Right Stick Left`: open the left file-list overlay; press again to close it.
+- `+`：打开底部进度控制面板，再按 `+` 或 `B` 关闭。  
+  `+`: open the bottom progress control panel; press `+` again or `B` to close it.
+- 底部面板当前支持：旋转、长退、短退、播放/暂停、短进、长进、音轨、字幕。  
+  The bottom panel currently supports: rotate, long backward seek, short backward seek, play/pause, short forward seek, long forward seek, audio track, and subtitle.
 
-触控操作：
+触控操作 / Touch Controls：
 
-- 前提：设置中开启 `启用触控`。
-- 播放器手势另外受 `播放器滑动控制` 开关控制。
-- 双击屏幕：暂停当前播放。
-- 横向滑动：按整段视频比例跳转，并自动打开底部进度控制面板。
-- 纵向滑动：调节音量。
-- 点击底部进度条：直接定位播放进度。
-- 暂停时点击屏幕中央暂停图标：恢复播放。
+- 前提：设置中开启 `启用触控`。  
+  Prerequisite: `Touch Controls` must be enabled in Settings.
+- 播放器手势另外受 `播放器滑动控制` 开关控制。  
+  Player gestures are additionally controlled by the `Player Gesture Control` switch.
+- 双击屏幕：暂停当前播放。  
+  Double-tap the screen: pause current playback.
+- 横向滑动：按整段视频比例跳转，并自动打开底部进度控制面板。  
+  Horizontal swipe: seek by the full-duration ratio and automatically open the bottom progress panel.
+- 纵向滑动：调节音量。  
+  Vertical swipe: adjust volume.
+- 点击底部进度条：直接定位播放进度。  
+  Tap the bottom progress bar: jump directly to the target position.
+- 暂停时点击屏幕中央暂停图标：恢复播放。  
+  When paused, tap the center pause icon on screen to resume playback.
 
 ## 当前项目状态
 
