@@ -222,33 +222,41 @@ bool app_config_equal(const switchbox::core::AppConfig& lhs, const switchbox::co
            smb_sources_equal(lhs.smb_sources, rhs.smb_sources);
 }
 
-std::string language_display_name(const std::string& locale) {
+std::string raw_system_locale() {
+    if (auto* platform = brls::Application::getPlatform()) {
+        return platform->getLocale();
+    }
+
+    return brls::LOCALE_DEFAULT;
+}
+
+std::string language_autonym(const std::string& locale) {
     if (locale == "en-US") {
-        return tr("settings_page/language/names/en-US");
+        return "English (US)";
     }
 
     if (locale == "zh-Hans") {
-        return tr("settings_page/language/names/zh-Hans");
+        return "简体中文";
     }
 
     if (locale == "zh-Hant") {
-        return tr("settings_page/language/names/zh-Hant");
+        return "繁體中文";
     }
 
     if (locale == "ja") {
-        return tr("settings_page/language/names/ja");
+        return "日本語";
     }
 
     if (locale == "ko") {
-        return tr("settings_page/language/names/ko");
+        return "한국어";
     }
 
     if (locale == "fr") {
-        return tr("settings_page/language/names/fr");
+        return "Français";
     }
 
     if (locale == "ru") {
-        return tr("settings_page/language/names/ru");
+        return "Русский";
     }
 
     return locale;
@@ -260,13 +268,13 @@ std::vector<LanguageOption> build_language_options(const switchbox::core::Langua
         .value = "auto",
         .label = tr(
             "settings_page/language/options/auto",
-            language_display_name(brls::Application::getLocale())),
+            language_autonym(language_state.active_language)),
     });
 
     for (const auto& locale : language_state.available_languages) {
         options.push_back({
             .value = locale,
-            .label = language_display_name(locale),
+            .label = language_autonym(locale),
         });
     }
 
@@ -291,10 +299,22 @@ int find_language_selection(
 }
 
 std::string selected_language_display_name(const std::shared_ptr<SettingsDraftState>& state) {
-    const std::string effective_language =
-        state->draft_config.general.language == "auto" ? brls::Application::getLocale()
-                                                       : state->draft_config.general.language;
-    return language_display_name(effective_language);
+    const auto& paths = switchbox::core::AppConfigStore::paths();
+    const auto language_state =
+        switchbox::core::resolve_language_state(paths, state->draft_config, raw_system_locale());
+    const auto options = build_language_options(language_state);
+    const std::string selected_value = language_state.using_auto ? "auto" : language_state.configured_language;
+    const auto selected = std::find_if(
+        options.begin(),
+        options.end(),
+        [&selected_value](const LanguageOption& option) {
+            return option.value == selected_value;
+        });
+    if (selected != options.end()) {
+        return selected->label;
+    }
+
+    return language_autonym(language_state.active_language);
 }
 
 std::string visible_entry_title(const std::string& title) {
@@ -801,7 +821,8 @@ bool exit_settings_with_confirm_if_needed(const std::shared_ptr<SettingsDraftSta
 
 void open_language_dropdown(const std::shared_ptr<SettingsDraftState>& state) {
     const auto& paths = switchbox::core::AppConfigStore::paths();
-    const auto language_state = switchbox::core::resolve_language_state(paths, state->draft_config);
+    const auto language_state =
+        switchbox::core::resolve_language_state(paths, state->draft_config, raw_system_locale());
     const std::vector<LanguageOption> options = build_language_options(language_state);
     std::vector<std::string> option_labels;
     option_labels.reserve(options.size());
@@ -809,7 +830,9 @@ void open_language_dropdown(const std::shared_ptr<SettingsDraftState>& state) {
         option_labels.push_back(option.label);
     }
 
-    const int selected_index = find_language_selection(options, state->draft_config.general.language);
+    const int selected_index = find_language_selection(
+        options,
+        language_state.using_auto ? "auto" : language_state.configured_language);
     auto* dropdown = new brls::Dropdown(
         tr("settings_page/language/title"),
         option_labels,

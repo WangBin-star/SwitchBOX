@@ -72,6 +72,7 @@ private:
     void apply_controls_hold_action_if_needed();
     void apply_continuous_seek_if_needed();
     void apply_hold_speed_if_needed();
+    void update_auto_sleep_state();
     void update_volume_osd_timeout();
     void present_runtime_error_if_needed();
     void stop_playback_session_before_leave();
@@ -173,6 +174,7 @@ private:
     float startup_loading_progress = 0.0f;
     std::chrono::steady_clock::time_point startup_loading_started_at = std::chrono::steady_clock::time_point::min();
     bool playback_session_stopped = false;
+    bool auto_sleep_disabled = false;
     bool touch_horizontal_pan_active = false;
     double touch_seek_anchor_seconds = 0.0;
     bool touch_vertical_pan_active = false;

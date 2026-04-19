@@ -20,8 +20,16 @@ namespace {
 
 StartupContext g_runtime_context{};
 
+std::string raw_system_locale() {
+    if (auto* platform = brls::Application::getPlatform()) {
+        return platform->getLocale();
+    }
+
+    return brls::LOCALE_DEFAULT;
+}
+
 void apply_language_state(const switchbox::core::LanguageState& language_state) {
-    if (language_state.using_auto) {
+    if (language_state.active_language.empty()) {
         brls::Application::clearLocaleOverride();
     } else {
         brls::Application::setLocaleOverride(language_state.active_language);
@@ -90,7 +98,8 @@ void Application::reload_root_ui(bool reopen_settings) {
 void Application::apply_language_and_reload_ui(bool reopen_settings) {
     const auto& paths = switchbox::core::AppConfigStore::paths();
     const auto& config = switchbox::core::AppConfigStore::current();
-    const auto language_state = switchbox::core::resolve_language_state(paths, config);
+    const auto language_state =
+        switchbox::core::resolve_language_state(paths, config, raw_system_locale());
 
     apply_language_state(language_state);
     Application::reload_root_ui(reopen_settings);
@@ -127,6 +136,8 @@ int Application::run(const StartupContext& context) const {
 #endif
 
     if (configReady) {
+        const auto& config = switchbox::core::AppConfigStore::current();
+        languageState = switchbox::core::resolve_language_state(paths, config, raw_system_locale());
         apply_language_state(languageState);
     }
 

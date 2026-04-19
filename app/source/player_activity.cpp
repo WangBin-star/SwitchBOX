@@ -22,6 +22,7 @@
 
 #if defined(__SWITCH__)
 #include <borealis/platforms/switch/switch_video.hpp>
+#include <switch/services/applet.h>
 #endif
 
 #include "switchbox/app/header_status_hint.hpp"
@@ -1495,6 +1496,7 @@ void PlayerActivity::tick_runtime_controls() {
     poll_pending_startup_task();
     update_startup_loading_overlay_state();
     present_startup_dialog_if_needed();
+    update_auto_sleep_state();
     if (this->playback_error_dialog_open) {
         return;
     }
@@ -1507,6 +1509,22 @@ void PlayerActivity::tick_runtime_controls() {
     apply_continuous_seek_if_needed();
     update_volume_osd_timeout();
     present_runtime_error_if_needed();
+}
+
+void PlayerActivity::update_auto_sleep_state() {
+#if defined(__SWITCH__)
+    const bool should_disable_auto_sleep =
+        switchbox::core::switch_mpv_session_active() &&
+        switchbox::core::switch_mpv_has_media() &&
+        !switchbox::core::switch_mpv_is_paused();
+    if (should_disable_auto_sleep == this->auto_sleep_disabled) {
+        return;
+    }
+
+    if (R_SUCCEEDED(appletSetAutoSleepDisabled(should_disable_auto_sleep))) {
+        this->auto_sleep_disabled = should_disable_auto_sleep;
+    }
+#endif
 }
 
 void PlayerActivity::apply_directional_input_fallback_if_needed() {
@@ -1924,6 +1942,12 @@ void PlayerActivity::stop_playback_session_before_leave() {
     this->volume_osd_visible = false;
     this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     sync_overlay_to_surface();
+#if defined(__SWITCH__)
+    if (this->auto_sleep_disabled) {
+        appletSetAutoSleepDisabled(false);
+        this->auto_sleep_disabled = false;
+    }
+#endif
     switchbox::core::switch_mpv_stop();
     switchbox::core::switch_mpv_append_debug_log_note("stop_before_leave end");
 }

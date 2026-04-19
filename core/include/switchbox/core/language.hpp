@@ -15,6 +15,9 @@ struct LanguageState {
 };
 
 std::vector<std::string> collect_available_languages(const AppPaths& paths);
-LanguageState resolve_language_state(const AppPaths& paths, const AppConfig& config);
+LanguageState resolve_language_state(
+    const AppPaths& paths,
+    const AppConfig& config,
+    std::string system_language = {});
 
 }  // namespace switchbox::core

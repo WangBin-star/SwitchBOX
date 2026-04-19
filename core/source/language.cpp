@@ -156,6 +156,17 @@ std::string resolve_explicit_language(
     return std::string(kDefaultLanguage);
 }
 
+std::string resolve_auto_language(
+    const std::string& system_language,
+    const std::vector<std::string>& available_languages) {
+    const std::string normalized = normalize_language_tag(system_language);
+    if (normalized.empty() || normalized == kAutoLanguage) {
+        return std::string(kDefaultLanguage);
+    }
+
+    return resolve_explicit_language(normalized, available_languages);
+}
+
 }  // namespace
 
 std::vector<std::string> collect_available_languages(const AppPaths& paths) {
@@ -186,16 +197,19 @@ std::vector<std::string> collect_available_languages(const AppPaths& paths) {
     return {languages.begin(), languages.end()};
 }
 
-LanguageState resolve_language_state(const AppPaths& paths, const AppConfig& config) {
+LanguageState resolve_language_state(
+    const AppPaths& paths,
+    const AppConfig& config,
+    std::string system_language) {
     LanguageState state;
     state.configured_language = normalize_language_tag(config.general.language);
     state.using_auto = state.configured_language.empty() || state.configured_language == kAutoLanguage;
     state.available_languages = collect_available_languages(paths);
     state.active_language = state.using_auto
-        ? std::string(kAutoLanguage)
+        ? resolve_auto_language(system_language, state.available_languages)
         : resolve_explicit_language(state.configured_language, state.available_languages);
 
-    if (!state.using_auto && state.active_language.empty()) {
+    if (state.active_language.empty()) {
         state.active_language = std::string(kDefaultLanguage);
     }
 
