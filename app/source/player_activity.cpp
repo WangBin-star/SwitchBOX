@@ -1693,30 +1693,50 @@ void PlayerActivity::apply_controls_hold_action_if_needed() {
 }
 
 void PlayerActivity::apply_continuous_seek_if_needed() {
-    if (this->overlay_visible) {
-        this->last_continuous_seek_mode = 0;
-        return;
-    }
-
     const auto& controller = brls::Application::getControllerState();
     const bool r_pressed = controller.buttons[brls::BUTTON_RB];
+    const bool l_pressed = controller.buttons[brls::BUTTON_LB];
     const bool zr_pressed = controller.buttons[brls::BUTTON_RT];
+    const bool zl_pressed = controller.buttons[brls::BUTTON_LT];
     const bool left_pressed = direction_left_pressed(controller);
     const bool right_pressed = direction_right_pressed(controller);
 
     int mode = 0;
-    if (zr_pressed && left_pressed) {
+    bool mode_is_combo = false;
+    if (!this->overlay_visible && zr_pressed && left_pressed) {
         mode = -2;
-    } else if (zr_pressed && right_pressed) {
+        mode_is_combo = true;
+    } else if (!this->overlay_visible && zr_pressed && right_pressed) {
         mode = 2;
-    } else if (r_pressed && left_pressed) {
+        mode_is_combo = true;
+    } else if (!this->overlay_visible && r_pressed && left_pressed) {
         mode = -1;
-    } else if (r_pressed && right_pressed) {
+        mode_is_combo = true;
+    } else if (!this->overlay_visible && r_pressed && right_pressed) {
         mode = 1;
+        mode_is_combo = true;
+    } else {
+        const int shoulder_count =
+            static_cast<int>(l_pressed) +
+            static_cast<int>(r_pressed) +
+            static_cast<int>(zl_pressed) +
+            static_cast<int>(zr_pressed);
+        if (shoulder_count == 1) {
+            if (l_pressed) {
+                mode = -4;
+            } else if (r_pressed) {
+                mode = 4;
+            } else if (zl_pressed) {
+                mode = -5;
+            } else if (zr_pressed) {
+                mode = 5;
+            }
+        }
     }
 
     if (mode == 0) {
         this->last_continuous_seek_mode = 0;
+        this->last_continuous_seek_time = std::chrono::steady_clock::time_point::min();
         return;
     }
 
@@ -1724,7 +1744,12 @@ void PlayerActivity::apply_continuous_seek_if_needed() {
     const auto now = std::chrono::steady_clock::now();
     if (mode != this->last_continuous_seek_mode) {
         this->last_continuous_seek_mode = mode;
-        this->last_continuous_seek_time = std::chrono::steady_clock::time_point::min();
+        this->last_continuous_seek_time = mode_is_combo
+                                              ? std::chrono::steady_clock::time_point::min()
+                                              : now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+        if (!mode_is_combo) {
+            return;
+        }
     }
 
     if (this->last_continuous_seek_time != std::chrono::steady_clock::time_point::min()) {
@@ -1744,6 +1769,18 @@ void PlayerActivity::apply_continuous_seek_if_needed() {
             seek_relative(-long_seek);
             break;
         case 2:
+            seek_relative(long_seek);
+            break;
+        case -4:
+            seek_relative(-short_seek);
+            break;
+        case 4:
+            seek_relative(short_seek);
+            break;
+        case -5:
+            seek_relative(-long_seek);
+            break;
+        case 5:
             seek_relative(long_seek);
             break;
         case -1:

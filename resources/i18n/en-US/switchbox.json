@@ -253,7 +253,7 @@
                 },
                 "continuous_seek_interval_ms": {
                     "title": "Continuous seek interval",
-                    "hint": "Repeat interval in milliseconds for combo seek actions such as R+Left/Right and ZR+Left/Right."
+                    "hint": "Repeat interval in milliseconds for all continuous seek actions, such as holding L/R/ZL/ZR or using R+Left/Right and ZR+Left/Right."
                 },
                 "use_preferred_audio_language": {
                     "title": "Use preferred audio language"
