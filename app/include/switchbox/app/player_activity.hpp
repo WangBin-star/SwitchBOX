@@ -153,6 +153,11 @@ private:
     int last_controls_horizontal_repeat_direction = 0;
     std::chrono::steady_clock::time_point last_vertical_repeat_time = std::chrono::steady_clock::time_point::min();
     int last_vertical_repeat_direction = 0;
+    int button_long_press_threshold_ms = 260;
+    bool sticky_speed_enabled = false;
+    bool y_button_down = false;
+    bool y_hold_speed_active = false;
+    std::chrono::steady_clock::time_point y_button_pressed_at = std::chrono::steady_clock::time_point::min();
     bool volume_osd_visible = false;
     std::chrono::steady_clock::time_point volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     bool playback_error_dialog_open = false;

@@ -58,7 +58,7 @@ brls::View* create_missing_config_content(const std::vector<std::filesystem::pat
     summary->setMargins(0, 0, 14, 0);
     container->addView(summary);
 
-    container->addView(create_info_cell("建议检查", "请确认 .nro、switchbox.ini、.SwitchBOX-Langs/ 已一起复制"));
+    container->addView(create_info_cell("建议检查", "请确认 .nro、switchbox.ini、.SwitchBOX-Data/Langs/ 已一起复制"));
 
     auto* searchTitle = create_label("已尝试查找的 ini 路径", 24.0f, theme["brls/text"], true);
     searchTitle->setMargins(14, 0, 4, 0);

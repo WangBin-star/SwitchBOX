@@ -6,6 +6,7 @@
         "actions": {
             "confirm": "Confirm",
             "settings": "Settings",
+            "speed_mode": "Speed",
             "save": "Save",
             "discard": "Discard",
             "enable": "Enable",
@@ -248,8 +249,8 @@
                     "hint": "Seek step in seconds for long jump operations."
                 },
                 "y_hold_speed_multiplier": {
-                    "title": "Hold-Y speed multiplier",
-                    "hint": "Playback speed multiplier used when holding Y."
+                    "title": "Y speed multiplier",
+                    "hint": "Playback speed used for Y speed mode. Tap Y toggles it, and holding Y temporarily adds the same speed again."
                 },
                 "continuous_seek_interval_ms": {
                     "title": "Continuous seek interval",

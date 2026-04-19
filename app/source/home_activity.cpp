@@ -15,6 +15,7 @@
 
 #include <borealis/core/i18n.hpp>
 #include <borealis/core/thread.hpp>
+#include <borealis/core/touch/tap_gesture.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/dialog.hpp>
 #include <borealis/views/h_scrolling_frame.hpp>
@@ -193,6 +194,7 @@ public:
             }
             return true;
         });
+        addGestureRecognizer(new brls::TapGestureRecognizer(this));
 
         apply_style(false);
     }

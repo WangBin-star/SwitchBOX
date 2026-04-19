@@ -36,8 +36,6 @@ namespace {
 
 constexpr int kPlayerVerticalRepeatIntervalMs = 90;
 constexpr int kPlayerControlsHorizontalRepeatIntervalMs = 90;
-constexpr int kPlayerDirectionInitialRepeatDelayMs = 260;
-
 std::string tr(const std::string& key) {
     return brls::getStr("switchbox/" + key);
 }
@@ -219,6 +217,7 @@ brls::View* create_switch_player_content(const switchbox::core::PlaybackTarget&)
 PlayerActivity::PlayerActivity(switchbox::core::PlaybackTarget target)
     : brls::Activity(create_switch_player_content(target))
     , target(std::move(target)) {
+    this->button_long_press_threshold_ms = switchbox::core::ini_only_button_long_press_threshold_ms();
 }
 
 void PlayerActivity::willAppear(bool resetState) {
@@ -252,7 +251,7 @@ void PlayerActivity::willAppear(bool resetState) {
         false,
         brls::SOUND_CLICK);
     registerAction(
-        tr("actions/settings"),
+        tr("actions/speed_mode"),
         brls::BUTTON_Y,
         [this](brls::View*) { return handle_y_press(); },
         true,
@@ -522,6 +521,7 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
 
     this->applied_speed = 1.0;
     switchbox::core::switch_mpv_set_speed(1.0);
+    apply_hold_speed_if_needed();
     switchbox::core::switch_mpv_set_volume(this->session_volume);
     refresh_overlay_entries(true);
 }
@@ -884,6 +884,11 @@ bool PlayerActivity::handle_x_action() {
 }
 
 bool PlayerActivity::handle_y_press() {
+    if (!this->y_button_down) {
+        this->y_button_down = true;
+        this->y_hold_speed_active = false;
+        this->y_button_pressed_at = std::chrono::steady_clock::now();
+    }
     return true;
 }
 
@@ -1570,7 +1575,7 @@ void PlayerActivity::apply_vertical_repeat_if_needed() {
     const auto now = std::chrono::steady_clock::now();
     if (direction != this->last_vertical_repeat_direction) {
         this->last_vertical_repeat_direction = direction;
-        this->last_vertical_repeat_time = now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+        this->last_vertical_repeat_time = now + std::chrono::milliseconds(this->button_long_press_threshold_ms);
         return;
     }
 
@@ -1630,7 +1635,7 @@ void PlayerActivity::apply_controls_horizontal_repeat_if_needed() {
     if (direction != this->last_controls_horizontal_repeat_direction) {
         this->last_controls_horizontal_repeat_direction = direction;
         this->last_controls_horizontal_repeat_time =
-            now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+            now + std::chrono::milliseconds(this->button_long_press_threshold_ms);
         return;
     }
 
@@ -1746,7 +1751,7 @@ void PlayerActivity::apply_continuous_seek_if_needed() {
         this->last_continuous_seek_mode = mode;
         this->last_continuous_seek_time = mode_is_combo
                                               ? std::chrono::steady_clock::time_point::min()
-                                              : now + std::chrono::milliseconds(kPlayerDirectionInitialRepeatDelayMs);
+                                              : now + std::chrono::milliseconds(this->button_long_press_threshold_ms);
         if (!mode_is_combo) {
             return;
         }
@@ -1796,10 +1801,37 @@ void PlayerActivity::apply_continuous_seek_if_needed() {
 
 void PlayerActivity::apply_hold_speed_if_needed() {
     const auto& controller = brls::Application::getControllerState();
-    const double target_speed =
-        controller.buttons[brls::BUTTON_Y]
-            ? static_cast<double>(switchbox::core::AppConfigStore::current().general.y_hold_speed_multiplier)
-            : 1.0;
+    const bool y_down = controller.buttons[brls::BUTTON_Y];
+    const auto now = std::chrono::steady_clock::now();
+
+    if (y_down && !this->y_button_down) {
+        this->y_button_down = true;
+        this->y_hold_speed_active = false;
+        this->y_button_pressed_at = now;
+    } else if (!y_down && this->y_button_down) {
+        const bool was_hold = this->y_hold_speed_active;
+        this->y_button_down = false;
+        this->y_hold_speed_active = false;
+        this->y_button_pressed_at = std::chrono::steady_clock::time_point::min();
+        if (!was_hold) {
+            this->sticky_speed_enabled = !this->sticky_speed_enabled;
+        }
+    } else if (y_down &&
+               !this->y_hold_speed_active &&
+               this->y_button_pressed_at != std::chrono::steady_clock::time_point::min() &&
+               now >= this->y_button_pressed_at + std::chrono::milliseconds(this->button_long_press_threshold_ms)) {
+        this->y_hold_speed_active = true;
+    }
+
+    const double configured_speed =
+        std::max(0.1, static_cast<double>(switchbox::core::AppConfigStore::current().general.y_hold_speed_multiplier));
+    double target_speed = 1.0;
+    if (this->sticky_speed_enabled) {
+        target_speed = configured_speed;
+    }
+    if (this->y_hold_speed_active) {
+        target_speed = this->sticky_speed_enabled ? (target_speed + configured_speed) : configured_speed;
+    }
     if (std::fabs(target_speed - this->applied_speed) < 0.001) {
         return;
     }

@@ -44,6 +44,8 @@ This section describes the currently available controls, with focus on player in
 
 - 左右切换卡片，`A` 进入当前卡片。  
   Move left or right between cards, and press `A` to enter the current card.
+- 开启触控后，也可以直接点击主页卡片进入。  
+  When touch is enabled, you can also tap a Home card directly to enter it.
 - `+` 进入设置页。  
   Press `+` to open the settings page.
 - `B` 退出软件，会弹出确认框。  
@@ -115,8 +117,8 @@ This section describes the currently available controls, with focus on player in
   `ZL`: long backward seek.
 - `ZR`：长进。  
   `ZR`: long forward seek.
-- `Y`：按住倍速播放，松开恢复。  
-  `Y`: hold for speed-up playback, release to return to normal speed.
+- `Y`：点按开/关倍速；长按为临时倍速；若已点按开启，再长按会再叠加一次同值倍速。  
+  `Y`: tap to toggle speed mode on or off; hold for temporary speed-up; if sticky speed is already on, holding `Y` adds one more same-speed step.
 - `R + 左/右`：连续短退 / 连续短进。  
   `R + Left/Right`: continuous short backward / forward seek.
 - `ZR + 左/右`：连续长退 / 连续长进。  
@@ -156,8 +158,9 @@ This section describes the currently available controls, with focus on player in
 
 - Switch 端可稳定构建、打包并生成 `.nro`
 - 设置页可编辑基础设置、`IPTV` 条目、`SMB` 条目
-- 语言资源支持外置 `.SwitchBOX-Langs/`
+- 语言资源支持外置 `.SwitchBOX-Data/Langs/`
 - 首页已接入横向卡片布局
+- 首页卡片已支持受全局触控开关控制的点击进入
 - `IPTV` 浏览页可加载播放列表、按分组浏览、收藏频道、写回收藏状态并返回主页
 - `IPTV` 首页加载链路已稳定：首页负责列表加载浮层，播放器加载上下文延后到真正进入播放页时创建
 - `IPTV` 实播链路已基本打通，当前代表性 `HLS master/variant`、重定向 `HLS live/VOD`、敏感直链 `FLV` 测试源已可播放
@@ -272,7 +275,7 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 - `build/releases/<version>/switch/SwitchBOX.nro`
 - `build/releases/<version>/switch/switchbox.ini`
-- `build/releases/<version>/switch/.SwitchBOX-Langs/`
+- `build/releases/<version>/switch/.SwitchBOX-Data/Langs/`
 
 当前约定是：
 
@@ -285,7 +288,7 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 - `.nro`
 - `switchbox.ini`
-- `.SwitchBOX-Langs/`
+- `.SwitchBOX-Data/Langs/`
 
 当前 `switchbox.ini` 查找顺序：
 
@@ -299,8 +302,8 @@ C:\devkitPro\msys2\usr\bin\cmake.exe --build build/switch --target switchbox_swi
 
 其他当前约定：
 
-- `.SwitchBOX-Langs/` 相对当前实际使用的 `switchbox.ini` 所在目录查找。
-- 不再兼容旧的 `langs/` 目录名；安装包仅保留 `.SwitchBOX-Langs/`。
+- `.SwitchBOX-Data/Langs/` 相对当前实际使用的 `switchbox.ini` 所在目录查找。
+- 不再兼容旧的 `langs/` 目录名；安装包仅保留 `.SwitchBOX-Data/Langs/`。
 - 如果 `[general]` 缺少基础参数，程序会按缺项补齐默认值与双语注释，不覆盖已有值。
 - 当前配置分组约定：
   - 基础设置使用 `[general]`
@@ -315,7 +318,8 @@ SwitchBOX/
 ├─ core/           配置、语言、播放目标、SMB/播放器核心能力
 ├─ platform/       Switch 平台适配
 ├─ resources/      内置资源（含字幕字体）
-├─ .SwitchBOX-Langs/ 外置语言资源
+├─ .SwitchBOX-Data/
+│  └─ Langs/ 外置语言资源
 ├─ library/        第三方库
 ├─ cmake/          工具链与构建配置
 ├─ tools/          辅助脚本

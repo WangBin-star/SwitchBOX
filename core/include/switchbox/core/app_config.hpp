@@ -76,4 +76,6 @@ public:
     static bool loaded_from_disk();
 };
 
+int ini_only_button_long_press_threshold_ms();
+
 }  // namespace switchbox::core

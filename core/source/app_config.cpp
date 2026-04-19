@@ -137,7 +137,7 @@ AppPaths make_paths(const std::filesystem::path& baseDirectory) {
     return {
         .base_directory = baseDirectory,
         .config_file = baseDirectory / "switchbox.ini",
-        .languages_directory = baseDirectory / ".SwitchBOX-Langs",
+        .languages_directory = baseDirectory / ".SwitchBOX-Data" / "Langs",
         .config_search_candidates = {},
     };
 }
@@ -300,6 +300,16 @@ std::string normalize_line_endings_to_crlf(std::string_view text) {
     }
 
     return normalized;
+}
+
+constexpr int kIniOnlyButtonLongPressThresholdDefaultMs = 260;
+
+int read_button_long_press_threshold_ms_from_file(const std::filesystem::path& path) {
+    const IniDocument document = parse_ini(path);
+    const int value = parse_int(
+        get_value(document, "general", "button_long_press_threshold_ms"),
+        kIniOnlyButtonLongPressThresholdDefaultMs);
+    return std::max(10, value);
 }
 
 const std::array<std::string_view, 21>& required_general_keys() {
@@ -481,7 +491,7 @@ std::vector<std::string> general_key_comment_lines(std::string_view key) {
         return {"; 长按快进/快退秒数 / Long seek step in seconds"};
     }
     if (key == "y_hold_speed_multiplier") {
-        return {"; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell"};
+        return {"; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more"};
     }
     if (key == "continuous_seek_interval_ms") {
         return {"; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds"};
@@ -938,7 +948,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
 
     std::ostringstream output;
     output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; .SwitchBOX-Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Langs/ is searched relative to this ini file" << '\n';
+    output << "; .SwitchBOX-Data/Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
     output << "; -----------软件参数--------------" << '\n';
     output << "[general]" << '\n';
@@ -961,7 +971,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
     output << "long_seek=" << config.general.long_seek << '\n';
     output << '\n';
-    output << "; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell" << '\n';
+    output << "; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
     output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
     output << '\n';
     output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
@@ -980,6 +990,9 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
     output << '\n';
     output << "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only" << '\n';
+    output << "; 软件内点按/长按判定阈值（毫秒） / Global software tap-vs-hold threshold in milliseconds" << '\n';
+    output << "button_long_press_threshold_ms=" << read_button_long_press_threshold_ms_from_file(paths.config_file) << '\n';
+    output << '\n';
     output << "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
     output << "demux_cache_sec=" << config.general.demux_cache_sec << '\n';
     output << '\n';
@@ -1076,7 +1089,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
 #if 0
 
     output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; .SwitchBOX-Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Langs/ is searched relative to this ini file" << '\n';
+    output << "; .SwitchBOX-Data/Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
 
     output << "[general]" << '\n';
@@ -1092,7 +1105,7 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     output << "short_seek=" << config.general.short_seek << '\n';
     output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
     output << "long_seek=" << config.general.long_seek << '\n';
-    output << "; 长按 Y 时使用的倍速 / Playback speed used while holding Y in the future player shell" << '\n';
+    output << "; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
     output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
     output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
     output << "continuous_seek_interval_ms=" << config.general.continuous_seek_interval_ms << '\n';
@@ -1276,6 +1289,10 @@ const AppPaths& AppConfigStore::paths() {
 bool AppConfigStore::loaded_from_disk() {
     initialize();
     return state().loadedFromDisk;
+}
+
+int ini_only_button_long_press_threshold_ms() {
+    return read_button_long_press_threshold_ms_from_file(AppConfigStore::paths().config_file);
 }
 
 }  // namespace switchbox::core

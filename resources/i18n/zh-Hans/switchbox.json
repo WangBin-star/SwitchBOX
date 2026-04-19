@@ -6,6 +6,7 @@
         "actions": {
             "confirm": "\u786e\u8ba4",
             "settings": "\u8bbe\u7f6e",
+            "speed_mode": "\u500d\u901f",
             "save": "\u4fdd\u5b58",
             "discard": "\u653e\u5f03",
             "enable": "\u542f\u7528",
@@ -248,8 +249,8 @@
                     "hint": "\u957f\u8ddd\u8df3\u8f6c\u65f6\u4f7f\u7528\u7684\u79d2\u6570\u3002"
                 },
                 "y_hold_speed_multiplier": {
-                    "title": "\u957f\u6309Y\u500d\u901f\u500d\u7387",
-                    "hint": "\u957f\u6309 Y \u65f6\u4f7f\u7528\u7684\u64ad\u653e\u500d\u7387\u3002"
+                    "title": "Y\u500d\u901f\u500d\u7387",
+                    "hint": "Y \u500d\u901f\u6a21\u5f0f\u4f7f\u7528\u7684\u64ad\u653e\u500d\u7387\u3002\u70b9\u6309 Y \u5f00\u5173\uff0c\u957f\u6309 Y \u4f1a\u518d\u53e0\u52a0\u4e00\u6b21\u540c\u503c\u500d\u901f\u3002"
                 },
                 "continuous_seek_interval_ms": {
                     "title": "\u8fde\u8df3\u95f4\u9694",
