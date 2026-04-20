@@ -16,6 +16,8 @@ SwitchBOX turns `Nintendo Switch` into a set-top-box-style media app, focused on
   Use it in an `Atmosphere emuMMC / virtual system` environment; current development and validation are centered on that setup.
 - 如遇问题，可在 issue 反馈，也可以加 QQ 群：`1022585620` 找群主。  
   If you run into issues, open an issue or join the QQ group: `1022585620`.
+- 仓库已移除未使用的占位页与 Borealis 演示资源，当前仅保留 Switch 版本运行所需内容。  
+  Unused placeholder pages and Borealis demo assets have been removed. The repo now keeps only what the current Switch build needs.
 
 ![QQ群二维码](resources/img/qq_group_qr.jpg)
 
@@ -167,7 +169,7 @@ This section describes the main controls available in the current version, with 
 如果这个项目对你有帮助，并且你愿意支持后续开发，可以考虑打赏，感谢。  
 If this project helps you and you want to support future development, donations are appreciated.
 
-PayPal: `star_ujn@qq.com`
+**PayPal:**  `star_ujn@qq.com`
 
 ![捐赠二维码](resources/img/donation_qr.png)
 

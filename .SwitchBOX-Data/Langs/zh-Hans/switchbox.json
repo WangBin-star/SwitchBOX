@@ -157,29 +157,6 @@
             "clear_confirm": "\u786e\u5b9a\u6e05\u7a7a\u6240\u6709\u64ad\u653e\u5386\u53f2\u5417\uff1f",
             "clear_failed": "\u6e05\u7a7a\u64ad\u653e\u5386\u53f2\u5931\u8d25\u3002"
         },
-        "placeholder": {
-            "eyebrow": "\u4ea4\u4ed8\u9762\u677f",
-            "summary": "\u8fd9\u4e2a\u9875\u9762\u5df2\u7ecf\u5360\u636e\u4e86\u771f\u5b9e\u4ea7\u54c1\u4f4d\u7f6e\u3002\u4e0b\u4e00\u6b65\u662f\u7528\u6700\u5c0f\u53ef\u5de5\u4f5c\u6d41\u7a0b\u66ff\u6362\u5916\u58f3\u9875\u9762\uff0c\u8bc1\u660e\u8be5\u6a21\u5757\u6210\u7acb\u3002",
-            "current_state": {
-                "title": "\u5f53\u524d\u72b6\u6001",
-                "detail": "\u58f3\u9875\u9762\u5df2\u4e0a\u7ebf\uff0c\u53ef\u76f4\u63a5\u8fdb\u5165\u529f\u80fd\u5b9e\u73b0"
-            },
-            "first_deliverable": {
-                "title": "\u7b2c\u4e00\u9879\u4ea4\u4ed8"
-            },
-            "exit_condition": {
-                "title": "\u5b8c\u6210\u6761\u4ef6"
-            },
-            "path": {
-                "title": "\u4ea4\u4ed8\u8def\u5f84",
-                "summary": "\u8fd9\u4e9b\u68c0\u67e5\u70b9\u5b9a\u4e49\u4e86\u4ece\u58f3\u9875\u9762\u8d70\u5230\u53ef\u7528\u6a21\u5757\u7684\u6700\u5c0f\u8def\u5f84\u3002",
-                "step_label": "\u6b65\u9aa4 {0}"
-            },
-            "fallbacks": {
-                "first_task": "\u5b9a\u4e49\u7b2c\u4e00\u9879\u4efb\u52a1",
-                "ship_slice": "\u4ea4\u4ed8\u7b2c\u4e00\u5757\u53ef\u7528\u529f\u80fd"
-            }
-        },
         "player_page": {
             "title": "\u64ad\u653e\u5668",
             "eyebrow": "\u64ad\u653e\u63a5\u5165",

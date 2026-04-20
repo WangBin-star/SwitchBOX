@@ -157,29 +157,6 @@
             "clear_confirm": "Clear all playback history?",
             "clear_failed": "Failed to clear playback history."
         },
-        "placeholder": {
-            "eyebrow": "DELIVERY PANEL",
-            "summary": "This page already occupies a real product slot. The next step is replacing the shell with the smallest working flow that proves the module.",
-            "current_state": {
-                "title": "Current state",
-                "detail": "Shell page is live and ready for implementation"
-            },
-            "first_deliverable": {
-                "title": "First deliverable"
-            },
-            "exit_condition": {
-                "title": "Exit condition"
-            },
-            "path": {
-                "title": "Delivery path",
-                "summary": "These checkpoints define the smallest useful path from shell page to working module.",
-                "step_label": "Step {0}"
-            },
-            "fallbacks": {
-                "first_task": "Define first task",
-                "ship_slice": "Ship first working slice"
-            }
-        },
         "player_page": {
             "title": "Player",
             "eyebrow": "PLAYBACK HANDOFF",
