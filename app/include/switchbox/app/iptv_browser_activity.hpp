@@ -15,6 +15,7 @@ namespace switchbox::app {
 
 class IptvBrowserDataSource;
 
+bool iptv_debug_log_enabled();
 void begin_iptv_debug_log_session();
 
 class IptvBrowserActivity : public brls::Activity {

@@ -37,6 +37,7 @@
         },
         "home": {
             "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
+            "source_info": "Software source: https://github.com/WangBin-star/SwitchBOX",
             "cards": {
                 "common": {
                     "not_set": "Not set",
@@ -46,8 +47,8 @@
                 "history": {
                     "eyebrow": "RECENT",
                     "title": "Playback History",
-                    "subtitle": "This slot will later combine recent IPTV and SMB playback in one place",
-                    "detail": "Requirement recorded, not implemented yet"
+                    "subtitle": "Review recent IPTV and SMB playback in one unified list",
+                    "detail": "Open recent playback directly"
                 },
                 "iptv": {
                     "eyebrow": "IPTV",
@@ -62,7 +63,7 @@
         "sections": {
             "history": {
                 "title": "Playback History",
-                "subtitle": "A future view for recent IPTV and SMB playback in one unified list",
+                "subtitle": "Review recent IPTV and SMB playback in one unified list",
                 "checkpoints": {
                     "1": "Define one shared playback-history structure for IPTV and SMB",
                     "2": "Show the recent-play list with source markers",
@@ -105,6 +106,13 @@
                     "3": "Prepare logging, storage and environment validation"
                 }
             }
+        },
+        "history_page": {
+            "summary": "Review recent IPTV and SMB playback in one unified list",
+            "empty_title": "No playback history yet",
+            "empty_detail": "Start playing an IPTV channel or SMB file and it will appear here",
+            "untitled": "Untitled item",
+            "open_failed": "Unable to open this history item."
         },
         "placeholder": {
             "eyebrow": "DELIVERY PANEL",
@@ -203,6 +211,12 @@
                 "enabled": "Enabled",
                 "disabled": "Disabled"
             },
+            "donate": {
+                "title": "Donation & Support",
+                "summary": "If this project helps you and you want to support development, you can use the donation methods below.",
+                "paypal_title": "PayPal",
+                "image_hint": "QR code"
+            },
             "integration": {
                 "integrated": "[Integrated]",
                 "not_integrated": "[Planned]"
@@ -237,6 +251,9 @@
                         "size_desc": "Size (Largest first)"
                     }
                 },
+                "exit_to_home_screen": {
+                    "title": "Exit to home screen"
+                },
                 "hardware_decode": {
                     "title": "Hardware decode"
                 },
@@ -270,6 +287,20 @@
                     "title": "Preferred subtitle language code",
                     "hint": "Example: eng, jpn, chi"
                 }
+            },
+            "update": {
+                "title": "Updates",
+                "summary": "This page shows the project source, the current version, and the latest release version on GitHub. Every time you enter Settings, SwitchBOX checks again in the background.",
+                "github_title": "Project source code",
+                "current_version_title": "Current version",
+                "latest_version_title": "Latest release",
+                "latest_version_loading": "Checking...",
+                "latest_version_unavailable": "Unavailable",
+                "latest_version_failed": "Check failed: {0}",
+                "community_title": "Latest builds and feedback",
+                "community_text_github": "Visit the project source code URL to get the latest release, or open an issue to report problems.",
+                "community_text_group": "You can also join the QQ group: {0} to get the latest release or report problems.",
+                "image_hint": "QQ group QR code"
             },
             "apply": {
                 "title": "Apply changes",

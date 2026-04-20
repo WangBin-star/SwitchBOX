@@ -9,6 +9,7 @@ namespace switchbox::core {
 struct AppPaths {
     std::filesystem::path base_directory;
     std::filesystem::path config_file;
+    std::filesystem::path playback_history_file;
     std::filesystem::path languages_directory;
     std::vector<std::filesystem::path> config_search_candidates;
 };
@@ -18,6 +19,7 @@ struct GeneralSettings {
     std::string playable_extensions =
         "8svx,aac,ac3,aif,asf,avi,dv,flv,m2ts,m2v,m4a,mkv,mov,mp3,mp4,mpeg,mpg,mts,ogg,rmvb,swf,ts,vob,wav,wma,wmv,flac,m3u,m3u8,webm,jpg,gif,png,iso";
     std::string sort_order = "name_asc";
+    bool exit_to_home_screen = true;
     bool hardware_decode = true;
     int short_seek = 10;
     int long_seek = 60;

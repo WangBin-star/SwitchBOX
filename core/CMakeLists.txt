@@ -3,16 +3,20 @@ add_library(switchbox_core STATIC
     source/build_info.cpp
     source/iptv_playlist.cpp
     source/language.cpp
+    source/playback_history.cpp
     source/playback_launcher.cpp
     source/playback_target.cpp
     source/smb2_mount_fs.cpp
     source/switch_mpv_player.cpp
     source/smb_browser.cpp
+    source/update_check.cpp
 )
 
 target_include_directories(switchbox_core
     PUBLIC
         include
+    PRIVATE
+        "${CMAKE_SOURCE_DIR}/library/borealis/library/include/borealis/extern"
 )
 
 target_compile_definitions(switchbox_core

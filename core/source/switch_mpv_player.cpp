@@ -39,6 +39,8 @@ namespace switchbox::core {
 
 namespace {
 
+constexpr bool kPlaybackDebugLogEnabled = false;
+
 struct PlaybackDebugLogState {
     std::mutex mutex;
     bool initialized = false;
@@ -73,6 +75,10 @@ std::string sanitize_debug_log_message(std::string value) {
 }
 
 void append_debug_log_locked(PlaybackDebugLogState& state, const std::string& message) {
+    if (!kPlaybackDebugLogEnabled) {
+        return;
+    }
+
     std::ofstream output(playback_debug_log_path(), std::ios::binary | std::ios::app);
     if (!output.is_open()) {
         return;
@@ -92,6 +98,10 @@ void append_debug_log_locked(PlaybackDebugLogState& state, const std::string& me
 }
 
 void reset_debug_log_session_locked(PlaybackDebugLogState& state) {
+    if (!kPlaybackDebugLogEnabled) {
+        return;
+    }
+
     std::error_code error;
     const auto log_path = playback_debug_log_path();
     std::filesystem::create_directories(log_path.parent_path(), error);
@@ -118,12 +128,20 @@ void reset_debug_log_session_locked(PlaybackDebugLogState& state) {
 }
 
 void begin_debug_log_session_impl() {
+    if (!kPlaybackDebugLogEnabled) {
+        return;
+    }
+
     auto& state = playback_debug_log_state();
     std::scoped_lock lock(state.mutex);
     reset_debug_log_session_locked(state);
 }
 
 void append_debug_log(const std::string& message) {
+    if (!kPlaybackDebugLogEnabled) {
+        return;
+    }
+
     auto& state = playback_debug_log_state();
 
     std::scoped_lock lock(state.mutex);
@@ -1578,6 +1596,11 @@ public:
         return value;
     }
 
+    uint64_t get_playback_restart_at_ms() {
+        process_pending_events();
+        return this->playback_restart_at_ms.load();
+    }
+
     bool read_track_list(std::vector<ParsedTrackInfo>& tracks) {
         tracks.clear();
         if (this->handle == nullptr) {
@@ -2926,6 +2949,10 @@ int64_t switch_mpv_get_transfer_speed_bytes_per_second() {
     return SwitchMpvPlayer::instance().get_transfer_speed_bytes_per_second();
 }
 
+std::uint64_t switch_mpv_get_playback_restart_at_ms() {
+    return SwitchMpvPlayer::instance().get_playback_restart_at_ms();
+}
+
 std::vector<MpvTrackOption> switch_mpv_list_audio_tracks() {
     return SwitchMpvPlayer::instance().list_audio_tracks();
 }
@@ -3069,6 +3096,10 @@ int switch_mpv_get_volume() {
 }
 
 int64_t switch_mpv_get_transfer_speed_bytes_per_second() {
+    return 0;
+}
+
+std::uint64_t switch_mpv_get_playback_restart_at_ms() {
     return 0;
 }
 

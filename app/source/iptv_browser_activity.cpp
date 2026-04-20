@@ -32,6 +32,8 @@ namespace switchbox::app {
 
 namespace {
 
+constexpr bool kIptvDebugLogEnabled = false;
+
 struct IptvDebugLogState {
     bool initialized = false;
     uint64_t sequence = 0;
@@ -81,6 +83,10 @@ uint64_t make_iptv_debug_session_token() {
 }
 
 void reset_iptv_debug_log() {
+    if (!kIptvDebugLogEnabled) {
+        return;
+    }
+
     std::error_code error;
     const auto log_path = iptv_debug_log_path();
     std::filesystem::create_directories(
@@ -110,6 +116,10 @@ void reset_iptv_debug_log() {
 }
 
 void append_iptv_debug_log(const std::string& message) {
+    if (!kIptvDebugLogEnabled) {
+        return;
+    }
+
     auto& state = iptv_debug_log_state();
     if (!state.initialized) {
         reset_iptv_debug_log();
@@ -314,7 +324,15 @@ IptvContentBuild create_loading_content(const switchbox::core::IptvSourceSetting
 
 }  // namespace
 
+bool iptv_debug_log_enabled() {
+    return kIptvDebugLogEnabled;
+}
+
 void begin_iptv_debug_log_session() {
+    if (!kIptvDebugLogEnabled) {
+        return;
+    }
+
     reset_iptv_debug_log();
     append_iptv_debug_log("[iptv] startup");
 }

@@ -1,4 +1,4 @@
-#include "switchbox/core/app_config.hpp"
+﻿#include "switchbox/core/app_config.hpp"
 
 #include <algorithm>
 #include <array>
@@ -137,6 +137,7 @@ AppPaths make_paths(const std::filesystem::path& baseDirectory) {
     return {
         .base_directory = baseDirectory,
         .config_file = baseDirectory / "switchbox.ini",
+        .playback_history_file = baseDirectory / ".SwitchBOX-Data" / "playback_history.json",
         .languages_directory = baseDirectory / ".SwitchBOX-Data" / "Langs",
         .config_search_candidates = {},
     };
@@ -312,11 +313,12 @@ int read_button_long_press_threshold_ms_from_file(const std::filesystem::path& p
     return std::max(10, value);
 }
 
-const std::array<std::string_view, 21>& required_general_keys() {
-    static constexpr std::array<std::string_view, 21> keys = {
+const std::array<std::string_view, 22>& required_general_keys() {
+    static constexpr std::array<std::string_view, 22> keys = {
         "language",
         "playable_extensions",
         "sort_order",
+        "exit_to_home_screen",
         "hardware_decode",
         "short_seek",
         "long_seek",
@@ -409,6 +411,9 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
     if (key == "sort_order") {
         return general.sort_order;
     }
+    if (key == "exit_to_home_screen") {
+        return general.exit_to_home_screen ? "true" : "false";
+    }
     if (key == "hardware_decode") {
         return general.hardware_decode ? "true" : "false";
     }
@@ -469,72 +474,75 @@ std::string general_key_value_from_config(const GeneralSettings& general, std::s
 }
 
 std::vector<std::string> general_key_comment_lines(std::string_view key) {
+    if (key == "exit_to_home_screen") {
+        return {"; Exit to home screen on app quit / Whether app exit returns to the home screen"};
+    }
     if (key == "language") {
-        return {"; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page"};
+        return {"; 璁剧疆椤靛彲鐩存帴淇敼鐨勫熀纭€璁剧疆 / Basic settings exposed in the Settings page"};
     }
     if (key == "playable_extensions") {
-        return {"; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional."};
+        return {"; 鍙挱鏀炬墿灞曞悕锛屼娇鐢ㄩ€楀彿鍒嗛殧锛屽墠瀵肩偣鍙渷鐣?/ Comma-separated extensions, leading dots are optional."};
     }
     if (key == "sort_order") {
-        return {"; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc"};
+        return {"; 鎺掑簭鏂瑰紡锛屽彲閫夊€硷細name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc"};
     }
     if (key == "hardware_decode") {
         return {
-            "; ----下面是播放器设置---- / Player settings",
-            "; 是否启用硬件解码 / Whether hardware decoding is enabled",
+            "; ----涓嬮潰鏄挱鏀惧櫒璁剧疆---- / Player settings",
+            "; 鏄惁鍚敤纭欢瑙ｇ爜 / Whether hardware decoding is enabled",
         };
     }
     if (key == "short_seek") {
-        return {"; 短按快进/快退秒数 / Short seek step in seconds"};
+        return {"; 鐭寜蹇繘/蹇€€绉掓暟 / Short seek step in seconds"};
     }
     if (key == "long_seek") {
-        return {"; 长按快进/快退秒数 / Long seek step in seconds"};
+        return {"; 闀挎寜蹇繘/蹇€€绉掓暟 / Long seek step in seconds"};
     }
     if (key == "y_hold_speed_multiplier") {
-        return {"; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more"};
+        return {"; Y 鍊嶉€熸ā寮忎娇鐢ㄧ殑鍊嶉€燂紱鐐规寜 Y 寮€鍏筹紝闀挎寜 Y 浼氬啀鍙犲姞涓€娆″悓鍊煎€嶉€?/ Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more"};
     }
     if (key == "continuous_seek_interval_ms") {
-        return {"; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds"};
+        return {"; 杩炵画璺宠浆闂撮殧锛堟绉掞級 / Continuous seek interval in milliseconds"};
     }
     if (key == "use_preferred_audio_language") {
-        return {"; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled"};
+        return {"; 鏄惁鍚敤闊宠建璇█浼樺厛閫夋嫨 / Whether preferred audio language is enabled"};
     }
     if (key == "preferred_audio_language") {
-        return {"; 音轨语言代码；zh=中文优先（广泛匹配并优先普通话），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
+        return {"; 闊宠建璇█浠ｇ爜锛泎h=涓枃浼樺厛锛堝箍娉涘尮閰嶅苟浼樺厛鏅€氳瘽锛夛紝en=鑻辨枃浼樺厛锛屼篃鍙嚜瀹氫箟杈撳叆濡?eng銆乯pn銆乧hi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
     }
     if (key == "use_preferred_subtitle_language") {
-        return {"; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled"};
+        return {"; 鏄惁鍚敤瀛楀箷璇█浼樺厛閫夋嫨 / Whether preferred subtitle language is enabled"};
     }
     if (key == "preferred_subtitle_language") {
-        return {"; 字幕语言代码；zh=中文优先（广泛匹配并优先简体中文），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
+        return {"; 瀛楀箷璇█浠ｇ爜锛泎h=涓枃浼樺厛锛堝箍娉涘尮閰嶅苟浼樺厛绠€浣撲腑鏂囷級锛宔n=鑻辨枃浼樺厛锛屼篃鍙嚜瀹氫箟杈撳叆濡?eng銆乯pn銆乧hi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi"};
     }
     if (key == "demux_cache_sec") {
         return {
-            "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only",
-            "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp",
+            "; -----浠ヤ笅涓哄綋鍓嶄粎鍙湪 ini 涓慨鏀圭殑楂樼骇璁剧疆---- / Advanced settings that are currently intended for ini editing only",
+            "; 缃戠粶鎾斁缂撳瓨绉掓暟锛岄粯璁ゅ€煎弬鑰?nxmp / Network playback cache in seconds, default inspired by nxmp",
         };
     }
     if (key == "resume_start_percent") {
-        return {"; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent"};
+        return {"; 鎾斁杩涘害杈惧埌璇ョ櫨鍒嗘瘮鍚庡紑濮嬭褰曟柇鐐?/ Start writing resume records after this playback progress percent"};
     }
     if (key == "resume_stop_percent") {
-        return {"; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent"};
+        return {"; 鍓╀綑杩涘害浣庝簬璇ョ櫨鍒嗘瘮鏃朵笉鍐嶈褰曟柇鐐?/ Stop writing resume records when remaining progress is below this percent"};
     }
     if (key == "touch_enable") {
-        return {"; 是否启用触摸操作 / Whether touch controls are enabled"};
+        return {"; 鏄惁鍚敤瑙︽懜鎿嶄綔 / Whether touch controls are enabled"};
     }
     if (key == "touch_player_gestures") {
         return {
-            "; 是否启用播放器触控手势（双击暂停、左右滑动跳转、上下滑动音量、点击进度条定位） / Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek)"};
+            "; 鏄惁鍚敤鎾斁鍣ㄨЕ鎺ф墜鍔匡紙鍙屽嚮鏆傚仠銆佸乏鍙虫粦鍔ㄨ烦杞€佷笂涓嬫粦鍔ㄩ煶閲忋€佺偣鍑昏繘搴︽潯瀹氫綅锛?/ Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek)"};
     }
     if (key == "player_volume") {
-        return {"; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit"};
+        return {"; 鎾斁鍣ㄩ粯璁ら煶閲忥紙0-100锛夛紝杩涘叆鎾斁鍣ㄦ椂璇诲彇锛岄€€鍑烘椂鍐欏洖 / Player volume (0-100), loaded on player open and written back on exit"};
     }
     if (key == "player_volume_osd_duration_ms") {
-        return {"; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled"};
+        return {"; 鍙充晶闊抽噺娴獥鏄剧ず鏃堕暱锛堟绉掞級锛?=涓嶆樉绀?/ Right-side volume OSD duration in milliseconds, 0 = disabled"};
     }
     if (key == "overlay_marquee_delay_ms") {
-        return {"; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate"};
+        return {"; 宸︿晶娴獥鐒︾偣鍋滅暀鍚庡紑濮嬫粴鍔ㄧ殑寤惰繜锛堟绉掞級锛?=绔嬪嵆婊氬姩 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate"};
     }
 
     return {};
@@ -609,7 +617,7 @@ bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const A
         }
         if (key == std::string_view("player_loading_overlay_delay_ms")) {
             missing_lines.push_back(
-                "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
+                "; IPTV 鎾斁绛夊緟鎻愮ず鍑虹幇鍓嶇殑寤惰繜锛堟绉掞級锛?=绔嬪嵆鏄剧ず / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
         }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
@@ -620,7 +628,7 @@ bool backfill_missing_general_keys_in_file_legacy(const AppPaths& paths, const A
 
     std::vector<std::string> insert_lines;
     insert_lines.reserve(missing_lines.size() + 2);
-    insert_lines.push_back("; Auto-backfilled missing [general] keys / 自动补齐缺失的 [general] 设置项");
+    insert_lines.push_back("; Auto-backfilled missing [general] keys / Auto inserted missing [general] settings");
     for (const auto& line : missing_lines) {
         insert_lines.push_back(line);
     }
@@ -744,7 +752,7 @@ bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfi
         }
         if (key == std::string_view("player_loading_overlay_delay_ms")) {
             missing_lines.push_back(
-                "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
+                "; IPTV 鎾斁绛夊緟鎻愮ず鍑虹幇鍓嶇殑寤惰繜锛堟绉掞級锛?=绔嬪嵆鏄剧ず / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate");
         }
         missing_lines.push_back(std::string(key) + "=" + general_key_value_from_config(config.general, key));
     }
@@ -755,7 +763,7 @@ bool backfill_missing_general_keys_in_file(const AppPaths& paths, const AppConfi
 
     std::vector<std::string> insert_lines;
     insert_lines.reserve(missing_lines.size() + 1);
-    insert_lines.push_back("; Auto-backfilled missing [general] keys / 自动补齐缺失的 [general] 设置项");
+    insert_lines.push_back("; Auto-backfilled missing [general] keys / Auto inserted missing [general] settings");
     for (const auto& line : missing_lines) {
         insert_lines.push_back(line);
     }
@@ -790,6 +798,9 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
         get_value(document, "general", "playable_extensions", config.general.playable_extensions);
     config.general.sort_order =
         get_value(document, "general", "sort_order", config.general.sort_order);
+    config.general.exit_to_home_screen = parse_bool(
+        get_value(document, "general", "exit_to_home_screen"),
+        config.general.exit_to_home_screen);
     config.general.hardware_decode = parse_bool(
         get_value(document, "general", "hardware_decode"),
         config.general.hardware_decode);
@@ -947,85 +958,88 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     std::filesystem::create_directories(paths.base_directory, error);
 
     std::ostringstream output;
-    output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; .SwitchBOX-Data/Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
+    output << "; SwitchBOX 杩愯閰嶇疆 / SwitchBOX runtime configuration" << '\n';
+    output << "; .SwitchBOX-Data/Langs/ 浼氱浉瀵瑰綋鍓?ini 鎵€鍦ㄧ洰褰曟煡鎵?/ .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
-    output << "; -----------软件参数--------------" << '\n';
+    output << "; -----------杞欢鍙傛暟--------------" << '\n';
     output << "[general]" << '\n';
-    output << "; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page" << '\n';
+    output << "; 璁剧疆椤靛彲鐩存帴淇敼鐨勫熀纭€璁剧疆 / Basic settings exposed in the Settings page" << '\n';
     output << "language=" << config.general.language << '\n';
     output << '\n';
-    output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
+    output << "; 鍙挱鏀炬墿灞曞悕锛屼娇鐢ㄩ€楀彿鍒嗛殧锛屽墠瀵肩偣鍙渷鐣?/ Comma-separated extensions, leading dots are optional." << '\n';
     output << "playable_extensions=" << config.general.playable_extensions << '\n';
     output << '\n';
-    output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
+    output << "; 鎺掑簭鏂瑰紡锛屽彲閫夊€硷細name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
     output << "sort_order=" << config.general.sort_order << '\n';
     output << '\n';
-    output << "; ----下面是播放器设置---- / Player settings" << '\n';
-    output << "; 是否启用硬件解码 / Whether hardware decoding is enabled" << '\n';
+    output << "; Exit to home screen on app quit / Whether app exit returns to the home screen" << '\n';
+    output << "exit_to_home_screen=" << (config.general.exit_to_home_screen ? "true" : "false") << '\n';
+    output << '\n';
+    output << "; ----涓嬮潰鏄挱鏀惧櫒璁剧疆---- / Player settings" << '\n';
+    output << "; 鏄惁鍚敤纭欢瑙ｇ爜 / Whether hardware decoding is enabled" << '\n';
     output << "hardware_decode=" << (config.general.hardware_decode ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 短按快进/快退秒数 / Short seek step in seconds" << '\n';
+    output << "; 鐭寜蹇繘/蹇€€绉掓暟 / Short seek step in seconds" << '\n';
     output << "short_seek=" << config.general.short_seek << '\n';
     output << '\n';
-    output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
+    output << "; 闀挎寜蹇繘/蹇€€绉掓暟 / Long seek step in seconds" << '\n';
     output << "long_seek=" << config.general.long_seek << '\n';
     output << '\n';
-    output << "; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
+    output << "; Y 鍊嶉€熸ā寮忎娇鐢ㄧ殑鍊嶉€燂紱鐐规寜 Y 寮€鍏筹紝闀挎寜 Y 浼氬啀鍙犲姞涓€娆″悓鍊煎€嶉€?/ Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
     output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
     output << '\n';
-    output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
+    output << "; 杩炵画璺宠浆闂撮殧锛堟绉掞級 / Continuous seek interval in milliseconds" << '\n';
     output << "continuous_seek_interval_ms=" << config.general.continuous_seek_interval_ms << '\n';
     output << '\n';
-    output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
+    output << "; 鏄惁鍚敤闊宠建璇█浼樺厛閫夋嫨 / Whether preferred audio language is enabled" << '\n';
     output << "use_preferred_audio_language=" << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 音轨语言代码；zh=中文优先（广泛匹配并优先普通话），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
+    output << "; 闊宠建璇█浠ｇ爜锛泎h=涓枃浼樺厛锛堝箍娉涘尮閰嶅苟浼樺厛鏅€氳瘽锛夛紝en=鑻辨枃浼樺厛锛屼篃鍙嚜瀹氫箟杈撳叆濡?eng銆乯pn銆乧hi / Preferred audio language code; zh=prefer Chinese broadly with Mandarin priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
     output << "preferred_audio_language=" << config.general.preferred_audio_language << '\n';
     output << '\n';
-    output << "; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled" << '\n';
+    output << "; 鏄惁鍚敤瀛楀箷璇█浼樺厛閫夋嫨 / Whether preferred subtitle language is enabled" << '\n';
     output << "use_preferred_subtitle_language=" << (config.general.use_preferred_subtitle_language ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 字幕语言代码；zh=中文优先（广泛匹配并优先简体中文），en=英文优先，也可自定义输入如 eng、jpn、chi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
+    output << "; 瀛楀箷璇█浠ｇ爜锛泎h=涓枃浼樺厛锛堝箍娉涘尮閰嶅苟浼樺厛绠€浣撲腑鏂囷級锛宔n=鑻辨枃浼樺厛锛屼篃鍙嚜瀹氫箟杈撳叆濡?eng銆乯pn銆乧hi / Preferred subtitle language code; zh=prefer Chinese broadly with Simplified Chinese priority, en=prefer English, or enter custom text such as eng, jpn, chi" << '\n';
     output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
     output << '\n';
-    output << "; -----以下为当前仅可在 ini 中修改的高级设置---- / Advanced settings that are currently intended for ini editing only" << '\n';
-    output << "; 软件内点按/长按判定阈值（毫秒） / Global software tap-vs-hold threshold in milliseconds" << '\n';
+    output << "; -----浠ヤ笅涓哄綋鍓嶄粎鍙湪 ini 涓慨鏀圭殑楂樼骇璁剧疆---- / Advanced settings that are currently intended for ini editing only" << '\n';
+    output << "; 杞欢鍐呯偣鎸?闀挎寜鍒ゅ畾闃堝€硷紙姣锛?/ Global software tap-vs-hold threshold in milliseconds" << '\n';
     output << "button_long_press_threshold_ms=" << read_button_long_press_threshold_ms_from_file(paths.config_file) << '\n';
     output << '\n';
-    output << "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
+    output << "; 缃戠粶鎾斁缂撳瓨绉掓暟锛岄粯璁ゅ€煎弬鑰?nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
     output << "demux_cache_sec=" << config.general.demux_cache_sec << '\n';
     output << '\n';
-    output << "; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent" << '\n';
+    output << "; 鎾斁杩涘害杈惧埌璇ョ櫨鍒嗘瘮鍚庡紑濮嬭褰曟柇鐐?/ Start writing resume records after this playback progress percent" << '\n';
     output << "resume_start_percent=" << config.general.resume_start_percent << '\n';
     output << '\n';
-    output << "; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent" << '\n';
+    output << "; 鍓╀綑杩涘害浣庝簬璇ョ櫨鍒嗘瘮鏃朵笉鍐嶈褰曟柇鐐?/ Stop writing resume records when remaining progress is below this percent" << '\n';
     output << "resume_stop_percent=" << config.general.resume_stop_percent << '\n';
     output << '\n';
-    output << "; 是否启用触摸操作 / Whether touch controls are enabled" << '\n';
+    output << "; 鏄惁鍚敤瑙︽懜鎿嶄綔 / Whether touch controls are enabled" << '\n';
     output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 是否启用播放器触控手势（双击暂停、左右滑动跳转、上下滑动音量、点击进度条定位） / Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek)" << '\n';
+    output << "; 鏄惁鍚敤鎾斁鍣ㄨЕ鎺ф墜鍔匡紙鍙屽嚮鏆傚仠銆佸乏鍙虫粦鍔ㄨ烦杞€佷笂涓嬫粦鍔ㄩ煶閲忋€佺偣鍑昏繘搴︽潯瀹氫綅锛?/ Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek)" << '\n';
     output << "touch_player_gestures=" << (config.general.touch_player_gestures ? "true" : "false") << '\n';
     output << '\n';
-    output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
+    output << "; 鎾斁鍣ㄩ粯璁ら煶閲忥紙0-100锛夛紝杩涘叆鎾斁鍣ㄦ椂璇诲彇锛岄€€鍑烘椂鍐欏洖 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
     output << "player_volume=" << config.general.player_volume << '\n';
     output << '\n';
-    output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
+    output << "; 鍙充晶闊抽噺娴獥鏄剧ず鏃堕暱锛堟绉掞級锛?=涓嶆樉绀?/ Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
     output << "player_volume_osd_duration_ms=" << config.general.player_volume_osd_duration_ms << '\n';
     output << '\n';
-    output << "; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
-    output << "; IPTV 播放等待提示出现前的延迟（毫秒），0=立即显示 / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate" << '\n';
+    output << "; 宸︿晶娴獥鐒︾偣鍋滅暀鍚庡紑濮嬫粴鍔ㄧ殑寤惰繜锛堟绉掞級锛?=绔嬪嵆婊氬姩 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
+    output << "; IPTV 鎾斁绛夊緟鎻愮ず鍑虹幇鍓嶇殑寤惰繜锛堟绉掞級锛?=绔嬪嵆鏄剧ず / Delay before showing the IPTV loading overlay while waiting for playback (milliseconds), 0 = immediate" << '\n';
     output << "player_loading_overlay_delay_ms=" << config.general.player_loading_overlay_delay_ms << '\n';
     output << '\n';
-    output << "; 左侧浮窗焦点停留后开始滚动的延迟（毫秒），0=立即滚动 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
+    output << "; 宸︿晶娴獥鐒︾偣鍋滅暀鍚庡紑濮嬫粴鍔ㄧ殑寤惰繜锛堟绉掞級锛?=绔嬪嵆婊氬姩 / Delay before marquee starts on focused item in left overlay (milliseconds), 0 = immediate" << '\n';
     output << "overlay_marquee_delay_ms=" << config.general.overlay_marquee_delay_ms << '\n';
     output << '\n';
     output << "; -----------IPTV--------------" << '\n';
-    output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';
-    output << "; 示例 / Example:" << '\n';
+    output << "; IPTV 婧愪娇鐢?[iptv-xxx] 褰㈠紡鐨勫垎缁勫悕 / IPTV sources use sections named [iptv-xxx]" << '\n';
+    output << "; 绀轰緥 / Example:" << '\n';
     output << "; [iptv-main]" << '\n';
-    output << "; title=主 IPTV / Main IPTV" << '\n';
+    output << "; title=涓?IPTV / Main IPTV" << '\n';
     output << "; url=http://example.com/playlist.m3u" << '\n';
     output << "; enabled=true" << '\n';
     output << "; use_history=true" << '\n';
@@ -1047,10 +1061,10 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     }
 
     output << "; -----------SMB--------------" << '\n';
-    output << "; SMB 源使用 [smb-xxx] 形式的分组名 / SMB sources use sections named [smb-xxx]" << '\n';
-    output << "; 示例 / Example:" << '\n';
+    output << "; SMB 婧愪娇鐢?[smb-xxx] 褰㈠紡鐨勫垎缁勫悕 / SMB sources use sections named [smb-xxx]" << '\n';
+    output << "; 绀轰緥 / Example:" << '\n';
     output << "; [smb-media]" << '\n';
-    output << "; title=家庭 NAS / Home NAS" << '\n';
+    output << "; title=瀹跺涵 NAS / Home NAS" << '\n';
     output << "; host=192.168.1.10" << '\n';
     output << "; share=video" << '\n';
     output << "; username=user" << '\n';
@@ -1088,61 +1102,61 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
     return file.good();
 #if 0
 
-    output << "; SwitchBOX 运行配置 / SwitchBOX runtime configuration" << '\n';
-    output << "; .SwitchBOX-Data/Langs/ 会相对当前 ini 所在目录查找 / .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
+    output << "; SwitchBOX 杩愯閰嶇疆 / SwitchBOX runtime configuration" << '\n';
+    output << "; .SwitchBOX-Data/Langs/ 浼氱浉瀵瑰綋鍓?ini 鎵€鍦ㄧ洰褰曟煡鎵?/ .SwitchBOX-Data/Langs/ is searched relative to this ini file" << '\n';
     output << '\n';
 
     output << "[general]" << '\n';
-    output << "; 设置页可直接修改的基础设置 / Basic settings exposed in the Settings page" << '\n';
+    output << "; 璁剧疆椤靛彲鐩存帴淇敼鐨勫熀纭€璁剧疆 / Basic settings exposed in the Settings page" << '\n';
     output << "language=" << config.general.language << '\n';
-    output << "; 可播放扩展名，使用逗号分隔，前导点可省略 / Comma-separated extensions, leading dots are optional." << '\n';
+    output << "; 鍙挱鏀炬墿灞曞悕锛屼娇鐢ㄩ€楀彿鍒嗛殧锛屽墠瀵肩偣鍙渷鐣?/ Comma-separated extensions, leading dots are optional." << '\n';
     output << "playable_extensions=" << config.general.playable_extensions << '\n';
-    output << "; 排序方式，可选值：name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
+    output << "; 鎺掑簭鏂瑰紡锛屽彲閫夊€硷細name_asc,name_desc,date_asc,date_desc,size_asc,size_desc / Supported values: name_asc,name_desc,date_asc,date_desc,size_asc,size_desc" << '\n';
     output << "sort_order=" << config.general.sort_order << '\n';
-    output << "; 是否启用硬件解码 / Whether hardware decoding is enabled" << '\n';
+    output << "; 鏄惁鍚敤纭欢瑙ｇ爜 / Whether hardware decoding is enabled" << '\n';
     output << "hardware_decode=" << (config.general.hardware_decode ? "true" : "false") << '\n';
-    output << "; 短按快进/快退秒数 / Short seek step in seconds" << '\n';
+    output << "; 鐭寜蹇繘/蹇€€绉掓暟 / Short seek step in seconds" << '\n';
     output << "short_seek=" << config.general.short_seek << '\n';
-    output << "; 长按快进/快退秒数 / Long seek step in seconds" << '\n';
+    output << "; 闀挎寜蹇繘/蹇€€绉掓暟 / Long seek step in seconds" << '\n';
     output << "long_seek=" << config.general.long_seek << '\n';
-    output << "; Y 倍速模式使用的倍速；点按 Y 开关，长按 Y 会再叠加一次同值倍速 / Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
+    output << "; Y 鍊嶉€熸ā寮忎娇鐢ㄧ殑鍊嶉€燂紱鐐规寜 Y 寮€鍏筹紝闀挎寜 Y 浼氬啀鍙犲姞涓€娆″悓鍊煎€嶉€?/ Playback speed used for Y speed mode; tap Y toggles it, and holding Y adds the same speed once more" << '\n';
     output << "y_hold_speed_multiplier=" << config.general.y_hold_speed_multiplier << '\n';
-    output << "; 连续跳转间隔（毫秒） / Continuous seek interval in milliseconds" << '\n';
+    output << "; 杩炵画璺宠浆闂撮殧锛堟绉掞級 / Continuous seek interval in milliseconds" << '\n';
     output << "continuous_seek_interval_ms=" << config.general.continuous_seek_interval_ms << '\n';
-    output << "; 是否启用音轨语言优先选择 / Whether preferred audio language is enabled" << '\n';
+    output << "; 鏄惁鍚敤闊宠建璇█浼樺厛閫夋嫨 / Whether preferred audio language is enabled" << '\n';
     output << "use_preferred_audio_language="
            << (config.general.use_preferred_audio_language ? "true" : "false") << '\n';
-    output << "; 音轨语言代码，建议使用 ISO 639 风格，例如 eng、jpn、chi / Preferred audio language code, ISO 639 style recommended, for example: eng, jpn, chi" << '\n';
+    output << "; 闊宠建璇█浠ｇ爜锛屽缓璁娇鐢?ISO 639 椋庢牸锛屼緥濡?eng銆乯pn銆乧hi / Preferred audio language code, ISO 639 style recommended, for example: eng, jpn, chi" << '\n';
     output << "preferred_audio_language=" << config.general.preferred_audio_language << '\n';
-    output << "; 是否启用字幕语言优先选择 / Whether preferred subtitle language is enabled" << '\n';
+    output << "; 鏄惁鍚敤瀛楀箷璇█浼樺厛閫夋嫨 / Whether preferred subtitle language is enabled" << '\n';
     output << "use_preferred_subtitle_language="
            << (config.general.use_preferred_subtitle_language ? "true" : "false") << '\n';
-    output << "; 字幕语言代码，建议使用 ISO 639 风格 / Preferred subtitle language code, ISO 639 style recommended" << '\n';
+    output << "; 瀛楀箷璇█浠ｇ爜锛屽缓璁娇鐢?ISO 639 椋庢牸 / Preferred subtitle language code, ISO 639 style recommended" << '\n';
     output << "preferred_subtitle_language=" << config.general.preferred_subtitle_language << '\n';
     output << '\n';
-    output << "; 以下为当前仅建议在 ini 中修改的高级设置 / Advanced settings that are currently intended for ini editing only" << '\n';
-    output << "; 网络播放缓存秒数，默认值参考 nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
+    output << "; 浠ヤ笅涓哄綋鍓嶄粎寤鸿鍦?ini 涓慨鏀圭殑楂樼骇璁剧疆 / Advanced settings that are currently intended for ini editing only" << '\n';
+    output << "; 缃戠粶鎾斁缂撳瓨绉掓暟锛岄粯璁ゅ€煎弬鑰?nxmp / Network playback cache in seconds, default inspired by nxmp" << '\n';
     output << "demux_cache_sec=" << config.general.demux_cache_sec << '\n';
-    output << "; 播放进度达到该百分比后开始记录断点 / Start writing resume records after this playback progress percent" << '\n';
+    output << "; 鎾斁杩涘害杈惧埌璇ョ櫨鍒嗘瘮鍚庡紑濮嬭褰曟柇鐐?/ Start writing resume records after this playback progress percent" << '\n';
     output << "resume_start_percent=" << config.general.resume_start_percent << '\n';
-    output << "; 剩余进度低于该百分比时不再记录断点 / Stop writing resume records when remaining progress is below this percent" << '\n';
+    output << "; 鍓╀綑杩涘害浣庝簬璇ョ櫨鍒嗘瘮鏃朵笉鍐嶈褰曟柇鐐?/ Stop writing resume records when remaining progress is below this percent" << '\n';
     output << "resume_stop_percent=" << config.general.resume_stop_percent << '\n';
-    output << "; 是否启用触摸操作，默认关闭 / Whether touch controls are enabled, disabled by default" << '\n';
+    output << "; 鏄惁鍚敤瑙︽懜鎿嶄綔锛岄粯璁ゅ叧闂?/ Whether touch controls are enabled, disabled by default" << '\n';
     output << "touch_enable=" << (config.general.touch_enable ? "true" : "false") << '\n';
-    output << "; 是否启用播放器触控手势（双击暂停、左右滑动跳转、上下滑动音量、点击进度条定位），默认关闭 / Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek), disabled by default" << '\n';
+    output << "; 鏄惁鍚敤鎾斁鍣ㄨЕ鎺ф墜鍔匡紙鍙屽嚮鏆傚仠銆佸乏鍙虫粦鍔ㄨ烦杞€佷笂涓嬫粦鍔ㄩ煶閲忋€佺偣鍑昏繘搴︽潯瀹氫綅锛夛紝榛樿鍏抽棴 / Whether player touch gestures are enabled (double-tap pause, horizontal seek, vertical volume, progress-bar tap seek), disabled by default" << '\n';
     output << "touch_player_gestures=" << (config.general.touch_player_gestures ? "true" : "false") << '\n';
-    output << "; 播放器默认音量（0-100），进入播放器时读取，退出时写回 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
+    output << "; 鎾斁鍣ㄩ粯璁ら煶閲忥紙0-100锛夛紝杩涘叆鎾斁鍣ㄦ椂璇诲彇锛岄€€鍑烘椂鍐欏洖 / Player volume (0-100), loaded on player open and written back on exit" << '\n';
     output << "player_volume=" << config.general.player_volume << '\n';
-    output << "; 右侧音量浮窗显示时长（毫秒），0=不显示 / Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
+    output << "; 鍙充晶闊抽噺娴獥鏄剧ず鏃堕暱锛堟绉掞級锛?=涓嶆樉绀?/ Right-side volume OSD duration in milliseconds, 0 = disabled" << '\n';
     output << "player_volume_osd_duration_ms=" << config.general.player_volume_osd_duration_ms << '\n';
-    output << "; Left overlay marquee delay in milliseconds, 0 = immediate / 宸︿晶娴獥鏂囦欢鍚嶆粴鍔ㄥ欢杩燂紙姣锛夛紝0=绔嬪嵆" << '\n';
+    output << "; Left overlay marquee delay in milliseconds, 0 = immediate" << '\n';
     output << "overlay_marquee_delay_ms=" << config.general.overlay_marquee_delay_ms << '\n';
     output << '\n';
 
-    output << "; IPTV 源使用 [iptv-xxx] 形式的分组名 / IPTV sources use sections named [iptv-xxx]" << '\n';
-    output << "; 示例 / Example:" << '\n';
+    output << "; IPTV 婧愪娇鐢?[iptv-xxx] 褰㈠紡鐨勫垎缁勫悕 / IPTV sources use sections named [iptv-xxx]" << '\n';
+    output << "; 绀轰緥 / Example:" << '\n';
     output << "; [iptv-main]" << '\n';
-    output << "; title=主 IPTV / Main IPTV" << '\n';
+    output << "; title=涓?IPTV / Main IPTV" << '\n';
     output << "; url=http://example.com/playlist.m3u" << '\n';
     output << "; enabled=true" << '\n';
     output << '\n';
@@ -1159,10 +1173,10 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << '\n';
     }
 
-    output << "; SMB 源使用 [smb-xxx] 形式的分组名 / SMB sources use sections named [smb-xxx]" << '\n';
-    output << "; 示例 / Example:" << '\n';
+    output << "; SMB 婧愪娇鐢?[smb-xxx] 褰㈠紡鐨勫垎缁勫悕 / SMB sources use sections named [smb-xxx]" << '\n';
+    output << "; 绀轰緥 / Example:" << '\n';
     output << "; [smb-media]" << '\n';
-    output << "; title=家庭 NAS / Home NAS" << '\n';
+    output << "; title=瀹跺涵 NAS / Home NAS" << '\n';
     output << "; host=192.168.1.10" << '\n';
     output << "; share=video" << '\n';
     output << "; username=user" << '\n';

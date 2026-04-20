@@ -252,6 +252,7 @@ PlaybackTarget make_smb_playback_target(
     const std::string& relative_path) {
     PlaybackTarget target;
     target.source_kind = PlaybackSourceKind::Smb;
+    target.source_key = source.key;
     target.title = relative_path.empty() ? source.title : split_relative_segments(relative_path).back();
     target.subtitle = smb_display_path(source, relative_path);
     target.source_label = smb_source_root_label(source);
@@ -276,6 +277,7 @@ PlaybackTarget make_iptv_playback_target(
     size_t overlay_group_index) {
     PlaybackTarget target;
     target.source_kind = PlaybackSourceKind::Iptv;
+    target.source_key = source.key;
     target.title = !entry.title.empty() ? entry.title : trim(source.title);
     target.subtitle = !entry.group_title.empty() ? entry.group_title : trim(source.title);
     target.source_label = trim(source.title).empty() ? "IPTV" : trim(source.title);

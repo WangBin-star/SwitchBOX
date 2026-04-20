@@ -39,6 +39,7 @@ struct PlaybackTarget {
     };
 
     PlaybackSourceKind source_kind = PlaybackSourceKind::Unknown;
+    std::string source_key;
     std::string title;
     std::string subtitle;
     std::string source_label;

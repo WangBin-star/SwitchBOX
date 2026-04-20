@@ -17,13 +17,14 @@
 #include <borealis/core/thread.hpp>
 #include <borealis/core/touch/tap_gesture.hpp>
 #include <borealis/views/applet_frame.hpp>
+#include <borealis/views/bottom_bar.hpp>
 #include <borealis/views/dialog.hpp>
 #include <borealis/views/h_scrolling_frame.hpp>
 #include <borealis/views/label.hpp>
 #include <borealis/views/rectangle.hpp>
 
+#include "switchbox/app/history_activity.hpp"
 #include "switchbox/app/iptv_browser_activity.hpp"
-#include "switchbox/app/placeholder_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
 #include "switchbox/core/app_config.hpp"
@@ -58,6 +59,10 @@ std::filesystem::path iptv_debug_log_path() {
 }
 
 void append_home_iptv_debug_log(const std::string& message) {
+    if (!iptv_debug_log_enabled()) {
+        return;
+    }
+
     std::ofstream output(iptv_debug_log_path(), std::ios::binary | std::ios::app);
     if (!output.is_open()) {
         return;
@@ -120,19 +125,6 @@ std::string visible_smb_title(const switchbox::core::SmbSourceSettings& source) 
     }
 
     return tr("home/cards/common/untitled_smb");
-}
-
-PlaceholderSection make_history_section() {
-    return {
-        .title = tr("sections/history/title"),
-        .subtitle = tr("sections/history/subtitle"),
-        .checkpoints =
-            {
-                tr("sections/history/checkpoints/1"),
-                tr("sections/history/checkpoints/2"),
-                tr("sections/history/checkpoints/3"),
-            },
-    };
 }
 
 struct HomeCardModel {
@@ -428,6 +420,31 @@ void apply_native_status_layout(brls::AppletFrame* frame) {
     frame->setTitle(tr("brand/app_name"));
 }
 
+void apply_footer_source_info(brls::AppletFrame* frame, const std::string& text) {
+    if (frame == nullptr || text.empty()) {
+        return;
+    }
+
+    auto* footer = frame->getFooter();
+    if (footer == nullptr) {
+        return;
+    }
+
+    auto* bottom_bar = dynamic_cast<brls::BottomBar*>(footer);
+    if (bottom_bar == nullptr) {
+        return;
+    }
+
+    auto* source_info = create_label(
+        text,
+        18.0f,
+        brls::Application::getTheme()["brls/text_disabled"],
+        true);
+    source_info->setLineHeight(24.0f);
+    source_info->setMaxWidth(980.0f);
+    bottom_bar->setLeftView(source_info);
+}
+
 }  // namespace
 
 struct HomeActivity::IptvLoadState {
@@ -491,7 +508,7 @@ brls::View* HomeActivity::build_content() {
         .accent_color = nvgRGB(235, 164, 72),
         .action =
             []() {
-                brls::Application::pushActivity(new PlaceholderActivity(make_history_section()));
+                brls::Application::pushActivity(new HistoryActivity());
             },
     });
 
@@ -578,6 +595,7 @@ brls::View* HomeActivity::build_content() {
         false,
         brls::SOUND_CLICK);
     apply_native_status_layout(frame);
+    apply_footer_source_info(frame, tr("home/source_info"));
     root->addView(frame);
 
     auto overlay_build = create_iptv_loading_overlay_content({});

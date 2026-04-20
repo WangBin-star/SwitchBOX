@@ -48,11 +48,17 @@ void prepare_language_override(const switchbox::core::LanguageState& language_st
 
 void apply_runtime_preferences_from_config() {
     bool touch_enabled = true;
+    bool exit_to_home_screen = true;
     if (switchbox::core::AppConfigStore::loaded_from_disk()) {
         touch_enabled = switchbox::core::AppConfigStore::current().general.touch_enable;
+        exit_to_home_screen =
+            switchbox::core::AppConfigStore::current().general.exit_to_home_screen;
     }
 
     brls::Application::setTouchInputEnabled(touch_enabled);
+    if (auto* platform = brls::Application::getPlatform()) {
+        platform->exitToHomeMode(exit_to_home_screen);
+    }
 }
 
 void rebuild_root_ui(const StartupContext& context, bool reopen_settings) {
@@ -130,10 +136,6 @@ int Application::run(const StartupContext& context) const {
     brls::Application::getExitEvent()->subscribe([]() {
         switchbox::core::switch_mpv_shutdown();
     });
-
-#ifdef __SWITCH__
-    brls::Application::getPlatform()->exitToHomeMode(false);
-#endif
 
     if (configReady) {
         const auto& config = switchbox::core::AppConfigStore::current();

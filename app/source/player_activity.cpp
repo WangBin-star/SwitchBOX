@@ -27,6 +27,7 @@
 
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
+#include "switchbox/core/playback_history.hpp"
 #include "switchbox/core/smb_browser.hpp"
 #include "switchbox/core/smb2_mount_fs.hpp"
 #include "switchbox/core/switch_mpv_player.hpp"
@@ -488,6 +489,8 @@ void PlayerActivity::begin_async_startup_for_target(const switchbox::core::Playb
 
 void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackTarget& next_target) {
     this->playback_session_stopped = false;
+    this->playback_history_recorded_for_target = false;
+    this->playback_history_restart_at_ms = 0;
     this->touch_horizontal_pan_active = false;
     this->touch_vertical_pan_active = false;
     this->target = next_target;
@@ -1496,6 +1499,7 @@ void PlayerActivity::tick_runtime_controls() {
     poll_pending_startup_task();
     update_startup_loading_overlay_state();
     present_startup_dialog_if_needed();
+    update_playback_history_state();
     update_auto_sleep_state();
     if (this->playback_error_dialog_open) {
         return;
@@ -1511,18 +1515,41 @@ void PlayerActivity::tick_runtime_controls() {
     present_runtime_error_if_needed();
 }
 
-void PlayerActivity::update_auto_sleep_state() {
-#if defined(__SWITCH__)
-    const bool should_disable_auto_sleep =
-        switchbox::core::switch_mpv_session_active() &&
-        switchbox::core::switch_mpv_has_media() &&
-        !switchbox::core::switch_mpv_is_paused();
-    if (should_disable_auto_sleep == this->auto_sleep_disabled) {
+void PlayerActivity::update_playback_history_state() {
+    if (this->playback_history_recorded_for_target) {
         return;
     }
 
-    if (R_SUCCEEDED(appletSetAutoSleepDisabled(should_disable_auto_sleep))) {
-        this->auto_sleep_disabled = should_disable_auto_sleep;
+    const std::uint64_t restart_at_ms = switchbox::core::switch_mpv_get_playback_restart_at_ms();
+    if (restart_at_ms == 0 || restart_at_ms == this->playback_history_restart_at_ms) {
+        return;
+    }
+
+    this->playback_history_restart_at_ms = restart_at_ms;
+    this->playback_history_recorded_for_target = true;
+    (void)switchbox::core::record_playback_history_for_target(
+        switchbox::core::AppConfigStore::paths(),
+        switchbox::core::AppConfigStore::current(),
+        this->target);
+}
+
+void PlayerActivity::update_auto_sleep_state() {
+#if defined(__SWITCH__)
+    const bool should_disable_idle_behaviors =
+        switchbox::core::switch_mpv_session_active() &&
+        switchbox::core::switch_mpv_has_media() &&
+        !switchbox::core::switch_mpv_is_paused();
+
+    if (should_disable_idle_behaviors != this->media_playback_state_enabled) {
+        if (R_SUCCEEDED(appletSetMediaPlaybackState(should_disable_idle_behaviors))) {
+            this->media_playback_state_enabled = should_disable_idle_behaviors;
+        }
+    }
+
+    if (should_disable_idle_behaviors != this->auto_sleep_disabled) {
+        if (R_SUCCEEDED(appletSetAutoSleepDisabled(should_disable_idle_behaviors))) {
+            this->auto_sleep_disabled = should_disable_idle_behaviors;
+        }
     }
 #endif
 }
@@ -1943,6 +1970,10 @@ void PlayerActivity::stop_playback_session_before_leave() {
     this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
     sync_overlay_to_surface();
 #if defined(__SWITCH__)
+    if (this->media_playback_state_enabled) {
+        appletSetMediaPlaybackState(false);
+        this->media_playback_state_enabled = false;
+    }
     if (this->auto_sleep_disabled) {
         appletSetAutoSleepDisabled(false);
         this->auto_sleep_disabled = false;

@@ -1,35 +1,43 @@
 #include "switchbox/app/settings_activity.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <functional>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <borealis/core/i18n.hpp>
+#include <borealis/core/thread.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/cells/cell_bool.hpp>
 #include <borealis/views/cells/cell_detail.hpp>
 #include <borealis/views/cells/cell_input.hpp>
 #include <borealis/views/dropdown.hpp>
 #include <borealis/views/hint.hpp>
+#include <borealis/views/image.hpp>
 #include <borealis/views/label.hpp>
 #include <borealis/views/scrolling_frame.hpp>
 #include <borealis/views/sidebar.hpp>
 
 #include "switchbox/app/application.hpp"
 #include "switchbox/core/app_config.hpp"
+#include "switchbox/core/build_info.hpp"
 #include "switchbox/core/language.hpp"
+#include "switchbox/core/playback_history.hpp"
+#include "switchbox/core/update_check.hpp"
 
 namespace switchbox::app {
 
-namespace {
-
 enum class SettingsSection {
+    Donate,
     General,
+    Update,
     Iptv,
     Smb,
 };
@@ -45,6 +53,13 @@ struct LanguageOption {
     std::string label;
 };
 
+enum class UpdateCheckStatus {
+    Idle,
+    Loading,
+    Ready,
+    Failed,
+};
+
 struct SettingsDraftState {
     switchbox::core::AppConfig saved_config;
     switchbox::core::AppConfig draft_config;
@@ -55,6 +70,31 @@ struct SettingsDraftState {
     brls::Box* right_content_box = nullptr;
     brls::ScrollingFrame* right_scrolling_frame = nullptr;
     std::string focus_restore_id;
+    UpdateCheckStatus update_check_status = UpdateCheckStatus::Idle;
+    std::string latest_release_version;
+    std::string latest_release_error;
+    std::shared_ptr<std::atomic_bool> update_check_cancel_flag = std::make_shared<std::atomic_bool>(false);
+    bool update_check_requested = false;
+};
+
+namespace {
+
+class StaticSafeScrollingFrame : public brls::ScrollingFrame {
+public:
+    void setTouchHitTestEnabled(bool enabled) {
+        this->touch_hit_test_enabled = enabled;
+    }
+
+    brls::View* hitTest(brls::Point point) override {
+        if (!this->touch_hit_test_enabled) {
+            return nullptr;
+        }
+
+        return brls::ScrollingFrame::hitTest(point);
+    }
+
+private:
+    bool touch_hit_test_enabled = true;
 };
 
 std::string tr(const std::string& key) {
@@ -76,6 +116,24 @@ brls::Label* create_label(
     label->setTextColor(color);
     label->setSingleLine(single_line);
     return label;
+}
+
+constexpr std::string_view kProjectGithubUrl = "https://github.com/WangBin-star/SwitchBOX";
+constexpr std::string_view kProjectQqGroup = "1022585620";
+
+std::string update_latest_version_display_text(const std::shared_ptr<SettingsDraftState>& state) {
+    switch (state->update_check_status) {
+        case UpdateCheckStatus::Ready:
+            return state->latest_release_version.empty()
+                ? tr("settings_page/update/latest_version_unavailable")
+                : state->latest_release_version;
+        case UpdateCheckStatus::Failed:
+            return tr("settings_page/update/latest_version_unavailable");
+        case UpdateCheckStatus::Loading:
+        case UpdateCheckStatus::Idle:
+        default:
+            return tr("settings_page/update/latest_version_loading");
+    }
 }
 
 brls::DetailCell* create_info_cell(
@@ -143,6 +201,7 @@ bool general_settings_equal(
     return lhs.language == rhs.language &&
            lhs.playable_extensions == rhs.playable_extensions &&
            lhs.sort_order == rhs.sort_order &&
+           lhs.exit_to_home_screen == rhs.exit_to_home_screen &&
            lhs.hardware_decode == rhs.hardware_decode &&
            lhs.short_seek == rhs.short_seek &&
            lhs.long_seek == rhs.long_seek &&
@@ -230,6 +289,99 @@ std::string raw_system_locale() {
     return brls::LOCALE_DEFAULT;
 }
 
+std::string trim(std::string value) {
+    const auto is_space = [](unsigned char character) {
+        return std::isspace(character) != 0;
+    };
+
+    value.erase(value.begin(), std::find_if_not(value.begin(), value.end(), is_space));
+    value.erase(std::find_if_not(value.rbegin(), value.rend(), is_space).base(), value.end());
+    return value;
+}
+
+bool equals_ignore_case(std::string_view left, std::string_view right) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+
+    for (size_t index = 0; index < left.size(); ++index) {
+        if (std::tolower(static_cast<unsigned char>(left[index])) !=
+            std::tolower(static_cast<unsigned char>(right[index]))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string normalize_language_tag_for_display(std::string value) {
+    value = trim(std::move(value));
+
+    if (value.empty()) {
+        return {};
+    }
+
+    std::replace(value.begin(), value.end(), '_', '-');
+
+    if (equals_ignore_case(value, "auto")) {
+        return "auto";
+    }
+
+    if (equals_ignore_case(value, "zh-cn") || equals_ignore_case(value, "zh-sg") ||
+        equals_ignore_case(value, "zh-hans")) {
+        return "zh-Hans";
+    }
+
+    if (equals_ignore_case(value, "zh-tw") || equals_ignore_case(value, "zh-hk") ||
+        equals_ignore_case(value, "zh-mo") || equals_ignore_case(value, "zh-hant")) {
+        return "zh-Hant";
+    }
+
+    if (equals_ignore_case(value, "en") || equals_ignore_case(value, "en-us")) {
+        return "en-US";
+    }
+
+    if (equals_ignore_case(value, "ja")) {
+        return "ja";
+    }
+
+    if (equals_ignore_case(value, "ko")) {
+        return "ko";
+    }
+
+    if (equals_ignore_case(value, "fr")) {
+        return "fr";
+    }
+
+    if (equals_ignore_case(value, "ru")) {
+        return "ru";
+    }
+
+    if (value.size() == 2) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        });
+        return value;
+    }
+
+    if (value.size() >= 5 && value[2] == '-') {
+        std::string normalized;
+        normalized.reserve(value.size());
+        normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(value[0]))));
+        normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(value[1]))));
+        normalized.push_back('-');
+
+        for (size_t index = 3; index < value.size(); ++index) {
+            const unsigned char character = static_cast<unsigned char>(value[index]);
+            normalized.push_back(static_cast<char>(index == 3 ? std::toupper(character) : std::tolower(character)));
+        }
+
+        return normalized;
+    }
+
+    return value;
+}
+
 std::string language_autonym(const std::string& locale) {
     if (locale == "en-US") {
         return "English (US)";
@@ -263,12 +415,17 @@ std::string language_autonym(const std::string& locale) {
 }
 
 std::vector<LanguageOption> build_language_options(const switchbox::core::LanguageState& language_state) {
+    std::string system_language = normalize_language_tag_for_display(raw_system_locale());
+    if (system_language.empty() || system_language == "auto") {
+        system_language = language_state.active_language;
+    }
+
     std::vector<LanguageOption> options;
     options.push_back({
         .value = "auto",
         .label = tr(
             "settings_page/language/options/auto",
-            language_autonym(language_state.active_language)),
+            language_autonym(system_language)),
     });
 
     for (const auto& locale : language_state.available_languages) {
@@ -745,6 +902,14 @@ void open_smb_editor(
 }
 
 void select_section(const std::shared_ptr<SettingsDraftState>& state, SettingsSection section) {
+    if (state == nullptr) {
+        return;
+    }
+
+    if (state->active_section == section) {
+        return;
+    }
+
     state->active_section = section;
     rebuild_right_panel(state);
     if (state->right_scrolling_frame != nullptr) {
@@ -772,6 +937,10 @@ bool apply_draft_changes(const std::shared_ptr<SettingsDraftState>& state) {
         brls::Application::notify(tr("settings_page/save_failed"));
         return true;
     }
+
+    (void)switchbox::core::remove_playback_history_missing_sources(
+        switchbox::core::AppConfigStore::paths(),
+        mutable_config);
 
     switchbox::app::Application::apply_runtime_preferences();
 
@@ -873,6 +1042,13 @@ void toggle_hardware_decode(const std::shared_ptr<SettingsDraftState>& state) {
 
 void toggle_touch_enable(const std::shared_ptr<SettingsDraftState>& state) {
     state->draft_config.general.touch_enable = !state->draft_config.general.touch_enable;
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void toggle_exit_to_home_screen(const std::shared_ptr<SettingsDraftState>& state) {
+    state->draft_config.general.exit_to_home_screen =
+        !state->draft_config.general.exit_to_home_screen;
     sync_dirty_state(state);
     rebuild_right_panel(state);
 }
@@ -1139,6 +1315,263 @@ void open_preferred_subtitle_language_picker(const std::shared_ptr<SettingsDraft
     brls::Application::pushActivity(new brls::Activity(dropdown));
 }
 
+void start_update_check(const std::shared_ptr<SettingsDraftState>& state) {
+    if (state == nullptr || state->update_check_cancel_flag == nullptr) {
+        return;
+    }
+
+    state->update_check_cancel_flag->store(false);
+    state->update_check_status = UpdateCheckStatus::Loading;
+    state->latest_release_version.clear();
+    state->latest_release_error.clear();
+
+    auto cancel_flag = state->update_check_cancel_flag;
+    brls::async([state, cancel_flag]() {
+        switchbox::core::UpdateCheckResult result;
+        try {
+            result = switchbox::core::fetch_latest_release_version(cancel_flag);
+        } catch (const std::exception& exception) {
+            result.error_message = std::string("Update check failed: ") + trim(exception.what());
+        } catch (...) {
+            result.error_message = "Update check failed: unknown exception.";
+        }
+
+        brls::sync([state, cancel_flag, result]() {
+            if (state == nullptr || state->update_check_cancel_flag != cancel_flag || cancel_flag->load()) {
+                return;
+            }
+
+            state->latest_release_version = result.latest_version;
+            state->latest_release_error = result.error_message;
+            state->update_check_status = result.success ? UpdateCheckStatus::Ready : UpdateCheckStatus::Failed;
+
+            if (!state->ui_ready || state->right_content_box == nullptr) {
+                return;
+            }
+
+            if (state->active_section == SettingsSection::Update) {
+                rebuild_right_panel(state);
+            }
+        });
+    });
+}
+
+void schedule_update_check(const std::shared_ptr<SettingsDraftState>& state) {
+    if (state == nullptr || state->update_check_requested) {
+        return;
+    }
+
+    state->update_check_requested = true;
+    state->update_check_status = UpdateCheckStatus::Loading;
+    state->latest_release_version.clear();
+    state->latest_release_error.clear();
+
+    brls::delay(100, [state]() {
+        if (state == nullptr || state->update_check_cancel_flag == nullptr || !state->ui_ready) {
+            return;
+        }
+
+        start_update_check(state);
+    });
+}
+
+void rebuild_update_panel(const std::shared_ptr<SettingsDraftState>& state) {
+    constexpr float kQrImageWidth = 320.0f;
+    constexpr float kQrImageAspect = 1430.0f / 1284.0f;
+    constexpr float kSectionTitleSize = 20.0f;
+    constexpr float kBodyTextSize = 18.0f;
+    constexpr float kValueTextSize = 20.0f;
+    constexpr float kSectionTopMargin = 26.0f;
+    constexpr float kTitleToContentGap = 10.0f;
+
+    auto* container = state->right_content_box;
+    auto theme = brls::Application::getTheme();
+    container->setJustifyContent(brls::JustifyContent::CENTER);
+
+    auto* layout = new brls::Box(brls::Axis::ROW);
+    layout->setAlignItems(brls::AlignItems::CENTER);
+    layout->setHeightPercentage(100.0f);
+
+    auto* left_box = new brls::Box(brls::Axis::COLUMN);
+    left_box->setGrow(1.0f);
+    left_box->setMargins(0, 0, 0, 36);
+    left_box->setJustifyContent(brls::JustifyContent::CENTER);
+
+    auto* github_title = create_label(
+        tr("settings_page/update/github_title"),
+        kSectionTitleSize,
+        theme["brls/highlight/color2"],
+        true);
+    github_title->setMargins(6, 6, kTitleToContentGap, 0);
+    left_box->addView(github_title);
+
+    auto* github_value = create_label(
+        std::string(kProjectGithubUrl),
+        kValueTextSize,
+        theme["brls/list/listItem_value_color"],
+        false);
+    github_value->setMargins(6, 0, 12, 0);
+    github_value->setMaxWidth(560.0f);
+    github_value->setLineHeight(1.12f);
+    left_box->addView(github_value);
+
+    auto* current_title = create_label(
+        tr("settings_page/update/current_version_title"),
+        kSectionTitleSize,
+        theme["brls/highlight/color2"],
+        true);
+    current_title->setMargins(6, kSectionTopMargin, kTitleToContentGap, 0);
+    left_box->addView(current_title);
+
+    auto* current_value = create_label(
+        switchbox::core::BuildInfo::version_string(),
+        kValueTextSize,
+        theme["brls/list/listItem_value_color"],
+        true);
+    current_value->setMargins(6, 0, 12, 0);
+    current_value->setLineHeight(1.08f);
+    left_box->addView(current_value);
+
+    auto* latest_title = create_label(
+        tr("settings_page/update/latest_version_title"),
+        kSectionTitleSize,
+        theme["brls/highlight/color2"],
+        true);
+    latest_title->setMargins(6, kSectionTopMargin, kTitleToContentGap, 0);
+    left_box->addView(latest_title);
+
+    auto* latest_value = create_label(
+        update_latest_version_display_text(state),
+        kValueTextSize,
+        theme["brls/list/listItem_value_color"],
+        false);
+    latest_value->setMargins(6, 0, 12, 0);
+    latest_value->setMaxWidth(560.0f);
+    latest_value->setLineHeight(1.12f);
+    left_box->addView(latest_value);
+
+    if (state->update_check_status == UpdateCheckStatus::Failed && !state->latest_release_error.empty()) {
+        auto* latest_error = create_label(
+            tr("settings_page/update/latest_version_failed", state->latest_release_error),
+            15.0f,
+            theme["brls/text_disabled"],
+            false);
+        latest_error->setMargins(6, 8, 12, 0);
+        latest_error->setMaxWidth(560.0f);
+        latest_error->setLineHeight(1.25f);
+        left_box->addView(latest_error);
+    }
+
+    auto* community_title = create_label(
+        tr("settings_page/update/community_title"),
+        kSectionTitleSize,
+        theme["brls/highlight/color2"],
+        true);
+    community_title->setMargins(6, kSectionTopMargin, kTitleToContentGap, 0);
+    left_box->addView(community_title);
+
+    auto* community_github = create_label(
+        tr("settings_page/update/community_text_github"),
+        kBodyTextSize,
+        theme["brls/text"],
+        false);
+    community_github->setMargins(6, 0, 12, 0);
+    community_github->setMaxWidth(560.0f);
+    community_github->setLineHeight(1.24f);
+    left_box->addView(community_github);
+
+    auto* community_group = create_label(
+        tr("settings_page/update/community_text_group", std::string(kProjectQqGroup)),
+        kBodyTextSize,
+        theme["brls/text"],
+        false);
+    community_group->setMargins(6, 8, 12, 0);
+    community_group->setMaxWidth(560.0f);
+    community_group->setLineHeight(1.24f);
+    left_box->addView(community_group);
+
+    layout->addView(left_box);
+
+    auto* right_box = new brls::Box(brls::Axis::COLUMN);
+    right_box->setAlignItems(brls::AlignItems::CENTER);
+    right_box->setJustifyContent(brls::JustifyContent::CENTER);
+    right_box->setWidth(360.0f);
+
+    auto* image_hint = create_label(
+        tr("settings_page/update/image_hint"),
+        kSectionTitleSize,
+        theme["brls/highlight/color2"],
+        true);
+    image_hint->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    image_hint->setMargins(0, 6, kTitleToContentGap, 0);
+    right_box->addView(image_hint);
+
+    auto* image = new brls::Image();
+    image->setImageFromRes("img/qq_group_qr.jpg");
+    image->setScalingType(brls::ImageScalingType::FIT);
+    image->setDimensions(kQrImageWidth, kQrImageWidth * kQrImageAspect);
+    right_box->addView(image);
+
+    layout->addView(right_box);
+    container->addView(layout);
+}
+
+void rebuild_donate_panel(const std::shared_ptr<SettingsDraftState>& state) {
+    constexpr float kDonateImageWidth = 720.0f;
+    constexpr float kDonateImageAspect = 448.0f / 938.0f;
+
+    auto* container = state->right_content_box;
+    auto theme = brls::Application::getTheme();
+    container->setJustifyContent(brls::JustifyContent::FLEX_START);
+
+    auto* summary = create_label(
+        tr("settings_page/donate/summary"),
+        17.0f,
+        theme["brls/header/subtitle"],
+        false);
+    summary->setMargins(6, 6, 16, 0);
+    summary->setMaxWidth(760.0f);
+    summary->setLineHeight(1.26f);
+    container->addView(summary);
+
+    auto* paypal_title = create_label(
+        tr("settings_page/donate/paypal_title"),
+        20.0f,
+        theme["brls/highlight/color2"],
+        true);
+    paypal_title->setMargins(8, 18, 4, 0);
+    container->addView(paypal_title);
+
+    auto* paypal_value = create_label(
+        "star_ujn@qq.com",
+        22.0f,
+        theme["brls/list/listItem_value_color"],
+        true);
+    paypal_value->setMargins(8, 0, 12, 0);
+    paypal_value->setLineHeight(1.08f);
+    container->addView(paypal_value);
+
+    auto* image_hint = create_label(
+        tr("settings_page/donate/image_hint"),
+        16.0f,
+        theme["brls/text_disabled"],
+        true);
+    image_hint->setMargins(8, 16, 12, 0);
+    container->addView(image_hint);
+
+    auto* image_box = new brls::Box(brls::Axis::COLUMN);
+    image_box->setAlignItems(brls::AlignItems::CENTER);
+    image_box->setMargins(8, 0, 20, 0);
+
+    auto* image = new brls::Image();
+    image->setImageFromRes("img/donation_qr.png");
+    image->setScalingType(brls::ImageScalingType::FIT);
+    image->setDimensions(kDonateImageWidth, kDonateImageWidth * kDonateImageAspect);
+    image_box->addView(image);
+
+    container->addView(image_box);
+}
+
 void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
     auto* container = state->right_content_box;
     auto theme = brls::Application::getTheme();
@@ -1181,6 +1614,16 @@ void rebuild_general_panel(const std::shared_ptr<SettingsDraftState>& state) {
         [state](brls::View*) {
             request_focus_restore(state, "settings/general/touch_enable");
             toggle_touch_enable(state);
+            return true;
+        });
+
+    add_setting_cell(
+        "settings/general/exit_to_home_screen",
+        tr("settings_page/general/exit_to_home_screen/title"),
+        bool_display_text(general.exit_to_home_screen),
+        [state](brls::View*) {
+            request_focus_restore(state, "settings/general/exit_to_home_screen");
+            toggle_exit_to_home_screen(state);
             return true;
         });
 
@@ -1466,15 +1909,32 @@ void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
         return;
     }
 
+    if (state->right_scrolling_frame != nullptr) {
+        const bool interactive_section =
+            state->active_section != SettingsSection::Donate &&
+            state->active_section != SettingsSection::Update;
+        state->right_scrolling_frame->setFocusable(interactive_section);
+        if (auto* static_safe_frame = dynamic_cast<StaticSafeScrollingFrame*>(state->right_scrolling_frame)) {
+            static_safe_frame->setTouchHitTestEnabled(interactive_section);
+        }
+    }
+
     sync_dirty_state(state);
     const std::string focus_restore_id = state->focus_restore_id;
     state->focus_restore_id.clear();
 
     state->right_content_box->clearViews();
+    state->right_content_box->setJustifyContent(brls::JustifyContent::FLEX_START);
 
     switch (state->active_section) {
+        case SettingsSection::Donate:
+            rebuild_donate_panel(state);
+            break;
         case SettingsSection::General:
             rebuild_general_panel(state);
+            break;
+        case SettingsSection::Update:
+            rebuild_update_panel(state);
             break;
         case SettingsSection::Iptv:
             rebuild_iptv_panel(state);
@@ -1491,8 +1951,7 @@ void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
     }
 }
 
-brls::View* create_settings_content() {
-    auto state = std::make_shared<SettingsDraftState>();
+brls::View* create_settings_content(const std::shared_ptr<SettingsDraftState>& state) {
     state->saved_config = switchbox::core::AppConfigStore::current();
     state->draft_config = state->saved_config;
 
@@ -1508,6 +1967,16 @@ brls::View* create_settings_content() {
             select_section(state, SettingsSection::General);
         });
     sidebar->addItem(
+        tr("settings_page/update/title"),
+        [state](brls::View*) {
+            select_section(state, SettingsSection::Update);
+        });
+    sidebar->addItem(
+        tr("settings_page/donate/title"),
+        [state](brls::View*) {
+            select_section(state, SettingsSection::Donate);
+        });
+    sidebar->addItem(
         tr("sections/iptv/title"),
         [state](brls::View*) {
             select_section(state, SettingsSection::Iptv);
@@ -1517,13 +1986,18 @@ brls::View* create_settings_content() {
         [state](brls::View*) {
             select_section(state, SettingsSection::Smb);
         });
+    if (auto& sidebar_children = sidebar->getChildren(); !sidebar_children.empty()) {
+        if (auto* sidebar_content = dynamic_cast<brls::Box*>(sidebar_children.back())) {
+            sidebar_content->setDefaultFocusedIndex(0);
+        }
+    }
     root->addView(sidebar);
 
     auto* right_content = new brls::Box(brls::Axis::COLUMN);
     right_content->setPadding(24, 40, 24, 40);
     state->right_content_box = right_content;
 
-    auto* right_frame = new brls::ScrollingFrame();
+    auto* right_frame = new StaticSafeScrollingFrame();
     right_frame->setContentView(right_content);
     right_frame->setGrow(1.0f);
     state->right_scrolling_frame = right_frame;
@@ -1559,8 +2033,30 @@ brls::View* create_settings_content() {
 }  // namespace
 
 SettingsActivity::SettingsActivity()
-    : brls::Activity(create_settings_content()) {
-    registerExitAction();
+    : brls::Activity()
+    , state(std::make_shared<SettingsDraftState>()) {}
+
+brls::View* SettingsActivity::createContentView() {
+    return create_settings_content(this->state);
+}
+
+void SettingsActivity::willAppear(bool resetState) {
+    brls::Activity::willAppear(resetState);
+    schedule_update_check(this->state);
+}
+
+SettingsActivity::~SettingsActivity() {
+    if (this->state == nullptr) {
+        return;
+    }
+
+    this->state->ui_ready = false;
+    this->state->sidebar = nullptr;
+    this->state->right_content_box = nullptr;
+    this->state->right_scrolling_frame = nullptr;
+    if (this->state->update_check_cancel_flag != nullptr) {
+        this->state->update_check_cancel_flag->store(true);
+    }
 }
 
 }  // namespace switchbox::app

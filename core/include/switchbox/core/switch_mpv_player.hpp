@@ -51,6 +51,7 @@ int switch_mpv_get_video_rotation_degrees();
 bool switch_mpv_set_volume(int volume);
 int switch_mpv_get_volume();
 int64_t switch_mpv_get_transfer_speed_bytes_per_second();
+std::uint64_t switch_mpv_get_playback_restart_at_ms();
 std::vector<MpvTrackOption> switch_mpv_list_audio_tracks();
 std::vector<MpvTrackOption> switch_mpv_list_subtitle_tracks();
 bool switch_mpv_set_audio_track(int id, std::string& error_message);
