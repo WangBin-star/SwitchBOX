@@ -12,6 +12,7 @@
             "enable": "Enable",
             "disable": "Disable",
             "delete": "Delete",
+            "clear": "Clear",
             "home": "Home"
         },
         "smb_browser": {
@@ -112,7 +113,11 @@
             "empty_title": "No playback history yet",
             "empty_detail": "Start playing an IPTV channel or SMB file and it will appear here",
             "untitled": "Untitled item",
-            "open_failed": "Unable to open this history item."
+            "open_failed": "Unable to open this history item.",
+            "delete_confirm": "Delete playback history item \"{0}\"?",
+            "delete_failed": "Failed to delete playback history item.",
+            "clear_confirm": "Clear all playback history?",
+            "clear_failed": "Failed to clear playback history."
         },
         "placeholder": {
             "eyebrow": "DELIVERY PANEL",

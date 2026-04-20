@@ -52,6 +52,15 @@ This section describes the main controls available in the current version, with 
 - `B` 请求退出软件，会弹出确认框。  
   Press `B` to request app exit with a confirmation dialog.
 
+### 播放历史 / Playback History
+
+- `A` 打开当前历史条目对应的内容。  
+  `A`: open the content referenced by the current history item.
+- `X` 删除当前历史条目，并弹出确认框。  
+  `X`: delete the current history item with confirmation.
+- `+` 清空全部播放历史，并弹出确认框。  
+  `+`: clear all playback history with confirmation.
+
 ### 设置页 / Settings
 
 - 左侧切换页面，右侧编辑当前页面内容。  
@@ -75,6 +84,8 @@ This section describes the main controls available in the current version, with 
   `A`: enter a folder or play the current file.
 - `B` 返回上一级，或退出当前 SMB 浏览页。  
   `B`: go to the parent directory, or leave the current SMB browser.
+- 从子目录返回上一层时，焦点会回到刚刚退出的子目录项。  
+  When returning from a child directory, focus goes back to the directory item you just left.
 - `X` 删除当前焦点条目，并弹出确认框。  
   `X`: delete the focused item with confirmation.
 - `Y` 直接返回主页。  
@@ -129,6 +140,8 @@ This section describes the main controls available in the current version, with 
 
 - `十字键左 / 左摇杆左 / 右摇杆左`：打开或关闭左侧列表浮窗。  
   `D-Pad Left / Left Stick Left / Right Stick Left`: open or close the left-side list overlay.
+- `SMB` 左侧浮窗每次打开都会从当前正在播放的文件定位。  
+  The `SMB` left overlay always reopens at the file currently being played.
 - `+`：打开或关闭底部进度控制面板。  
   `+`: open or close the bottom progress control panel.
 - 底部面板当前支持旋转、长短跳转、播放暂停、音轨、字幕、音量与传输速率显示。  

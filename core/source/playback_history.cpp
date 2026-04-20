@@ -439,6 +439,34 @@ bool record_playback_history_for_target(
     return record_playback_history_entry(paths, std::move(entry));
 }
 
+bool remove_playback_history_entry(const AppPaths& paths, std::string_view stable_key) {
+    const std::string trimmed_stable_key = trim_copy(std::string(stable_key));
+    if (trimmed_stable_key.empty()) {
+        return false;
+    }
+
+    std::vector<PlaybackHistoryEntry> entries = load_entries_from_disk(paths);
+    const auto original_size = entries.size();
+    entries.erase(
+        std::remove_if(
+            entries.begin(),
+            entries.end(),
+            [&trimmed_stable_key](const PlaybackHistoryEntry& existing) {
+                return existing.stable_key == trimmed_stable_key;
+            }),
+        entries.end());
+
+    if (entries.size() == original_size) {
+        return true;
+    }
+
+    return write_entries_to_disk(paths, entries);
+}
+
+bool clear_playback_history(const AppPaths& paths) {
+    return write_entries_to_disk(paths, {});
+}
+
 bool remove_playback_history_missing_sources(const AppPaths& paths, const AppConfig& config) {
     std::vector<PlaybackHistoryEntry> entries = load_entries_from_disk(paths);
     std::vector<PlaybackHistoryEntry> filtered;

@@ -12,6 +12,7 @@
             "enable": "\u542f\u7528",
             "disable": "\u505c\u7528",
             "delete": "\u5220\u9664",
+            "clear": "\u6e05\u7a7a",
             "home": "\u9996\u9875"
         },
         "smb_browser": {
@@ -112,7 +113,11 @@
             "empty_title": "\u8fd8\u6ca1\u6709\u64ad\u653e\u5386\u53f2",
             "empty_detail": "\u5148\u64ad\u653e\u4e00\u4e2a IPTV \u9891\u9053\u6216 SMB \u6587\u4ef6\uff0c\u5b83\u5c31\u4f1a\u51fa\u73b0\u5728\u8fd9\u91cc",
             "untitled": "\u672a\u547d\u540d\u6761\u76ee",
-            "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a\u5386\u53f2\u6761\u76ee\u3002"
+            "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a\u5386\u53f2\u6761\u76ee\u3002",
+            "delete_confirm": "\u786e\u5b9a\u5220\u9664\u64ad\u653e\u5386\u53f2\u300c{0}\u300d\u5417\uff1f",
+            "delete_failed": "\u5220\u9664\u64ad\u653e\u5386\u53f2\u5931\u8d25\u3002",
+            "clear_confirm": "\u786e\u5b9a\u6e05\u7a7a\u6240\u6709\u64ad\u653e\u5386\u53f2\u5417\uff1f",
+            "clear_failed": "\u6e05\u7a7a\u64ad\u653e\u5386\u53f2\u5931\u8d25\u3002"
         },
         "placeholder": {
             "eyebrow": "\u4ea4\u4ed8\u9762\u677f",

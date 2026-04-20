@@ -58,6 +58,20 @@ static nlohmann::json normalizeLocaleJson(const std::string& name, nlohmann::jso
     return strings;
 }
 
+static void mergeLocaleSection(nlohmann::json* target, const std::string& key, nlohmann::json strings)
+{
+    if (target == nullptr)
+        return;
+
+    if (!(*target)[key].is_object() || !strings.is_object())
+    {
+        (*target)[key] = std::move(strings);
+        return;
+    }
+
+    (*target)[key].merge_patch(strings);
+}
+
 static void loadLocaleDirectory(const fs::path& localePath, std::string locale, nlohmann::json* target)
 {
     std::error_code error;
@@ -118,7 +132,7 @@ static void loadLocaleDirectory(const fs::path& localePath, std::string locale, 
         }
 
         const std::string key = name.substr(0, name.length() - 5);
-        (*target)[key]        = normalizeLocaleJson(key, std::move(strings));
+        mergeLocaleSection(target, key, normalizeLocaleJson(key, std::move(strings)));
     }
 }
 
@@ -141,7 +155,10 @@ static void loadLocale(std::string locale, nlohmann::json* target)
             continue;
 
         const std::string key = name.substr(0, name.length() - 5);
-        (*target)[key]        = normalizeLocaleJson(key, nlohmann::json::parse(romfs::get(path).string()));
+        mergeLocaleSection(
+            target,
+            key,
+            normalizeLocaleJson(key, nlohmann::json::parse(romfs::get(path).string())));
     }
 #else
     loadLocaleDirectory(BRLS_ASSET("i18n/" + locale), locale, target);

@@ -19,7 +19,8 @@ public:
         std::string deleted_relative_path = {});
     static void request_refresh_after_return(
         const switchbox::core::SmbSourceSettings& source,
-        std::string directory_relative_path);
+        std::string directory_relative_path,
+        std::string focus_relative_path = {});
     static void request_delete_after_return(
         const switchbox::core::SmbSourceSettings& source,
         std::string directory_relative_path,

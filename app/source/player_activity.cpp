@@ -874,6 +874,13 @@ bool PlayerActivity::handle_b_action() {
         return true;
     }
 
+    if (this->has_smb_source && !this->current_relative_path.empty()) {
+        SmbBrowserActivity::request_focus_after_return(
+            this->smb_source,
+            switchbox::core::smb_parent_relative_path(this->current_relative_path),
+            this->current_relative_path);
+    }
+
     stop_playback_session_before_leave();
     dismiss_to_previous_activity_if_still_top();
     return true;
@@ -1393,9 +1400,12 @@ void PlayerActivity::toggle_overlay() {
         this->volume_osd_visible = false;
         this->volume_osd_hide_time = std::chrono::steady_clock::time_point::min();
         this->iptv_overlay_group_picker = false;
+        if (this->has_smb_source) {
+            this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+        }
     }
     if (this->overlay_visible) {
-        refresh_overlay_entries(true);
+        refresh_overlay_entries(false);
     } else {
         sync_overlay_to_surface();
     }
@@ -2217,7 +2227,7 @@ std::string PlayerActivity::find_next_focus_after_delete() const {
 
 switchbox::core::SmbSourceSettings PlayerActivity::make_smb_source_from_target() const {
     switchbox::core::SmbSourceSettings source;
-    source.key = "runtime";
+    source.key = this->target.source_key.empty() ? "runtime" : this->target.source_key;
     source.title = this->target.source_label.empty() ? "SMB" : this->target.source_label;
     if (this->target.smb_locator.has_value()) {
         source.host = this->target.smb_locator->host;

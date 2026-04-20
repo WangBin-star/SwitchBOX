@@ -103,7 +103,7 @@ add_custom_target(switchbox_switch_runtime_assets
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_SOURCE_DIR}/.SwitchBOX-Data" "${CMAKE_CURRENT_BINARY_DIR}/.SwitchBOX-Data"
 )
 
-set(SWITCHBOX_RELEASE_ROOT "${SWITCHBOX_RELEASES_DIR}/${SWITCHBOX_RELEASE_VERSION}/switch")
+set(SWITCHBOX_RELEASE_ROOT "${SWITCHBOX_RELEASES_DIR}/${SWITCHBOX_RELEASE_VERSION}/switch-${SWITCHBOX_RELEASE_VERSION}")
 
 add_custom_target(switchbox_switch_package
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "${SWITCHBOX_RELEASE_ROOT}"

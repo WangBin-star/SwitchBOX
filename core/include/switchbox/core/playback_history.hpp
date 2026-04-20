@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "switchbox/core/app_config.hpp"
@@ -34,6 +35,8 @@ bool record_playback_history_for_target(
     const AppPaths& paths,
     const AppConfig& config,
     const PlaybackTarget& target);
+bool remove_playback_history_entry(const AppPaths& paths, std::string_view stable_key);
+bool clear_playback_history(const AppPaths& paths);
 bool remove_playback_history_missing_sources(const AppPaths& paths, const AppConfig& config);
 bool build_playback_target_from_history_entry(
     const AppConfig& config,
