@@ -671,6 +671,40 @@ uint64_t initial_load_timeout_ms_for_source(PlaybackSourceKind source_kind) {
     }
 }
 
+enum class AsyncCommandKind : uint64_t {
+    Unknown = 0,
+    LoadFile = 1,
+    Stop = 2,
+    Seek = 3,
+};
+
+AsyncCommandKind async_command_kind_from_reply_userdata(uint64_t reply_userdata) {
+    switch (reply_userdata) {
+        case static_cast<uint64_t>(AsyncCommandKind::LoadFile):
+            return AsyncCommandKind::LoadFile;
+        case static_cast<uint64_t>(AsyncCommandKind::Stop):
+            return AsyncCommandKind::Stop;
+        case static_cast<uint64_t>(AsyncCommandKind::Seek):
+            return AsyncCommandKind::Seek;
+        default:
+            return AsyncCommandKind::Unknown;
+    }
+}
+
+const char* async_command_kind_label(AsyncCommandKind kind) {
+    switch (kind) {
+        case AsyncCommandKind::LoadFile:
+            return "loadfile";
+        case AsyncCommandKind::Stop:
+            return "stop";
+        case AsyncCommandKind::Seek:
+            return "seek";
+        case AsyncCommandKind::Unknown:
+        default:
+            return "unknown";
+    }
+}
+
 int command_loadfile_with_options(
     mpv_handle* handle,
     const std::string& locator,
@@ -681,7 +715,10 @@ int command_loadfile_with_options(
 
     if (option_pairs.empty()) {
         const char* command[] = {"loadfile", locator.c_str(), "replace", nullptr};
-        return mpv_command_async(handle, 0, command);
+        return mpv_command_async(
+            handle,
+            static_cast<uint64_t>(AsyncCommandKind::LoadFile),
+            command);
     }
 
     std::string command_name = "loadfile";
@@ -726,7 +763,10 @@ int command_loadfile_with_options(
     mpv_node root {};
     root.format = MPV_FORMAT_NODE_ARRAY;
     root.u.list = &command_array;
-    return mpv_command_node_async(handle, 0, &root);
+    return mpv_command_node_async(
+        handle,
+        static_cast<uint64_t>(AsyncCommandKind::LoadFile),
+        &root);
 }
 
 constexpr const char* kHwdecCodecs =
@@ -1228,7 +1268,10 @@ public:
             process_pending_events(0.0);
             if (!is_idle_active() && this->handle != nullptr) {
                 const char* command[] = {"stop", nullptr};
-                const int rc = mpv_command_async(this->handle, 0, command);
+                const int rc = mpv_command_async(
+                    this->handle,
+                    static_cast<uint64_t>(AsyncCommandKind::Stop),
+                    command);
                 if (rc < 0) {
                     append_debug_log(
                         std::string("[open] deferred-stop cleanup stop command failed: ") + mpv_error_string(rc));
@@ -1397,7 +1440,10 @@ public:
         append_debug_log("[stop] requested");
         if (this->handle != nullptr) {
             const char* command[] = {"stop", nullptr};
-            const int rc = mpv_command_async(this->handle, 0, command);
+            const int rc = mpv_command_async(
+                this->handle,
+                static_cast<uint64_t>(AsyncCommandKind::Stop),
+                command);
             if (rc < 0) {
                 append_debug_log(std::string("[stop] async stop command failed: ") + mpv_error_string(rc));
             } else {
@@ -1489,10 +1535,13 @@ public:
         stream << delta_seconds;
         const std::string delta_text = stream.str();
         const char* command[] = {"seek", delta_text.c_str(), "relative", "keyframes", nullptr};
-        const int rc = mpv_command_async(this->handle, 0, command);
+        const int rc = mpv_command_async(
+            this->handle,
+            static_cast<uint64_t>(AsyncCommandKind::Seek),
+            command);
         if (rc < 0) {
-            this->last_error = std::string("Seek failed: ") + mpv_error_string(rc);
-            append_debug_log("[input] seek failed: " + this->last_error);
+            append_debug_log(
+                std::string("[input] seek ignored after async queue failure: ") + mpv_error_string(rc));
             return false;
         }
 
@@ -1514,10 +1563,13 @@ public:
         stream << target_seconds;
         const std::string target_text = stream.str();
         const char* command[] = {"seek", target_text.c_str(), "absolute", "exact", nullptr};
-        const int rc = mpv_command_async(this->handle, 0, command);
+        const int rc = mpv_command_async(
+            this->handle,
+            static_cast<uint64_t>(AsyncCommandKind::Seek),
+            command);
         if (rc < 0) {
-            this->last_error = std::string("Absolute seek failed: ") + mpv_error_string(rc);
-            append_debug_log("[input] absolute seek failed: " + this->last_error);
+            append_debug_log(
+                std::string("[input] absolute seek ignored after async queue failure: ") + mpv_error_string(rc));
             return false;
         }
 
@@ -2230,7 +2282,10 @@ private:
             " timeout_ms=" + std::to_string(timeout_ms));
 
         const char* command[] = {"stop", nullptr};
-        const int rc = mpv_command_async(this->handle, 0, command);
+        const int rc = mpv_command_async(
+            this->handle,
+            static_cast<uint64_t>(AsyncCommandKind::Stop),
+            command);
         if (rc < 0) {
             append_debug_log(std::string("[event] timeout stop command failed: ") + mpv_error_string(rc));
         } else {
@@ -2473,7 +2528,10 @@ private:
         if (this->handle != nullptr) {
             this->suppress_stop_related_errors = true;
             const char* command[] = {"stop", nullptr};
-            const int rc = mpv_command_async(this->handle, 0, command);
+            const int rc = mpv_command_async(
+                this->handle,
+                static_cast<uint64_t>(AsyncCommandKind::Stop),
+                command);
             if (rc < 0) {
                 append_debug_log(std::string("[stop] async stop command failed: ") + mpv_error_string(rc));
                 fully_stopped = false;
@@ -2599,6 +2657,27 @@ private:
                 }
                 case MPV_EVENT_COMMAND_REPLY:
                     if (event->error < 0) {
+                        const AsyncCommandKind command_kind =
+                            async_command_kind_from_reply_userdata(event->reply_userdata);
+                        const std::string command_error = mpv_error_string(event->error);
+
+                        if (command_kind == AsyncCommandKind::Seek) {
+                            append_debug_log(
+                                "[event] MPV_EVENT_COMMAND_REPLY seek error ignored: " + command_error);
+                            break;
+                        }
+
+                        if (command_kind == AsyncCommandKind::Stop) {
+                            if (this->suppress_stop_related_errors) {
+                                append_debug_log(
+                                    "[event] MPV_EVENT_COMMAND_REPLY stop error suppressed during intentional stop");
+                            } else {
+                                append_debug_log(
+                                    "[event] MPV_EVENT_COMMAND_REPLY stop error ignored: " + command_error);
+                            }
+                            break;
+                        }
+
                         this->has_media = false;
                         this->session_active.store(false);
                         this->open_requested_at_ms.store(0);
@@ -2617,7 +2696,10 @@ private:
                         if (this->suppress_stop_related_errors) {
                             append_debug_log("[event] MPV_EVENT_COMMAND_REPLY error suppressed during intentional stop");
                         } else {
-                            this->last_error = std::string("mpv command failed: ") + mpv_error_string(event->error);
+                            this->last_error = std::string("mpv ")
+                                + async_command_kind_label(command_kind)
+                                + " command failed: "
+                                + command_error;
                             append_debug_log("[event] MPV_EVENT_COMMAND_REPLY error: " + this->last_error);
                         }
                     }

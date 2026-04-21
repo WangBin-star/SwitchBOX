@@ -76,6 +76,7 @@ private:
     PlayerOverlayViewModel overlay_model;
     double overlay_selected_since_seconds = 0.0;
     double overlay_visible_since_seconds = 0.0;
+    int overlay_first_row = 0;
     std::function<void()> pause_icon_tap_handler;
     std::function<void()> double_tap_handler;
     std::function<void(float)> progress_tap_handler;

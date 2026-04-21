@@ -440,6 +440,9 @@ void PlayerVideoSurface::set_overlay_model(PlayerOverlayViewModel model) {
     if (visibility_changed && model.visible) {
         this->overlay_visible_since_seconds = now_seconds;
     }
+    if (!model.visible) {
+        this->overlay_first_row = 0;
+    }
 
     this->overlay_model = std::move(model);
     this->invalidate();
@@ -596,17 +599,24 @@ void PlayerVideoSurface::draw(
             path_marquee_enabled,
             path_marquee_elapsed);
 
-        int first_row = 0;
-        if (this->overlay_model.selected_index >= max_rows) {
-            first_row = this->overlay_model.selected_index - max_rows + 1;
-        }
-
         const float scrollbar_width = 8.0f;
         const float scrollbar_right_padding = 8.0f;
         const float scrollbar_x = panel_x + panel_width - scrollbar_right_padding - scrollbar_width;
         const float row_text_right_padding = 14.0f + scrollbar_width + scrollbar_right_padding;
 
         const int entry_count = static_cast<int>(this->overlay_model.entries.size());
+        const int max_first_row = std::max(0, entry_count - max_rows);
+        int first_row = std::clamp(this->overlay_first_row, 0, max_first_row);
+        if (this->overlay_model.selected_index >= 0) {
+            if (this->overlay_model.selected_index < first_row) {
+                first_row = this->overlay_model.selected_index;
+            } else if (this->overlay_model.selected_index >= first_row + max_rows) {
+                first_row = this->overlay_model.selected_index - max_rows + 1;
+            }
+        }
+        first_row = std::clamp(first_row, 0, max_first_row);
+        this->overlay_first_row = first_row;
+
         for (int index = first_row; index < entry_count && index < first_row + max_rows; ++index) {
             const auto& entry = this->overlay_model.entries[static_cast<size_t>(index)];
             const bool selected = index == this->overlay_model.selected_index;
@@ -663,7 +673,6 @@ void PlayerVideoSurface::draw(
 
             const float ratio = static_cast<float>(max_rows) / static_cast<float>(entry_count);
             const float thumb_height = std::max(22.0f, list_height * ratio);
-            const int max_first_row = std::max(0, entry_count - max_rows);
             const float normalized_top =
                 max_first_row > 0 ? static_cast<float>(first_row) / static_cast<float>(max_first_row) : 0.0f;
             const float thumb_y = list_top + (list_height - thumb_height) * normalized_top;

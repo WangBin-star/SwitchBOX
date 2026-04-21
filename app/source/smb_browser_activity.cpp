@@ -253,6 +253,8 @@ SmbBrowserContentBuild create_smb_browser_content(
 
     brls::View* focus_view = nullptr;
     brls::View* fallback_focus_view = nullptr;
+    int focus_view_index = -1;
+    int fallback_focus_view_index = -1;
     const bool should_restore_focus = !preferred_focus_relative_path.empty();
     if (entries.empty()) {
         auto* empty_label = create_focusable_message_label(
@@ -262,9 +264,11 @@ SmbBrowserContentBuild create_smb_browser_content(
         empty_label->setMargins(8, 10, 14, 14);
         content->addView(empty_label);
         focus_view = empty_label;
+        focus_view_index = 0;
     }
 
-    for (const auto& entry : entries) {
+    for (size_t entry_index = 0; entry_index < entries.size(); ++entry_index) {
+        const auto& entry = entries[entry_index];
         const std::string title = format_entry_title(entry);
         const std::string detail = entry.is_directory ? tr("smb_browser/folder_detail")
                                                       : tr(
@@ -295,15 +299,23 @@ SmbBrowserContentBuild create_smb_browser_content(
         if (!preferred_focus_relative_path.empty() &&
             entry.relative_path == preferred_focus_relative_path) {
             focus_view = cell;
+            focus_view_index = static_cast<int>(entry_index);
         } else if (should_restore_focus && fallback_focus_view == nullptr && !entry.is_directory) {
             fallback_focus_view = cell;
+            fallback_focus_view_index = static_cast<int>(entry_index);
         } else if (should_restore_focus && fallback_focus_view == nullptr) {
             fallback_focus_view = cell;
+            fallback_focus_view_index = static_cast<int>(entry_index);
         }
     }
 
     if (should_restore_focus && focus_view == nullptr) {
         focus_view = fallback_focus_view;
+        focus_view_index = fallback_focus_view_index;
+    }
+
+    if (focus_view_index >= 0) {
+        content->setDefaultFocusedIndex(focus_view_index);
     }
 
     auto* scrolling_frame = new brls::ScrollingFrame();
@@ -542,6 +554,145 @@ void SmbBrowserActivity::sync_focused_entry_from_ui() {
     }
 }
 
+void SmbBrowserActivity::update_focused_entry_state(const std::string& relative_path) {
+    const std::string normalized_relative_path =
+        switchbox::core::smb_join_relative_path({}, relative_path);
+    this->focused_entry_relative_path.clear();
+    this->focused_entry_is_directory = false;
+
+    if (normalized_relative_path.empty()) {
+        return;
+    }
+
+    for (const auto& entry : this->cached_entries) {
+        if (switchbox::core::smb_join_relative_path({}, entry.relative_path) ==
+            normalized_relative_path) {
+            this->focused_entry_relative_path = normalized_relative_path;
+            this->focused_entry_is_directory = entry.is_directory;
+            return;
+        }
+    }
+}
+
+void SmbBrowserActivity::ensure_view_visible(brls::View* focus_target) {
+    if (focus_target == nullptr) {
+        return;
+    }
+
+    auto* scrolling = find_scrolling_frame_from_root(this->getContentView());
+    if (scrolling == nullptr) {
+        return;
+    }
+
+    float local_y = focus_target->getLocalY();
+    float item_height = focus_target->getHeight();
+    brls::View* parent = focus_target->getParent();
+    while (parent != nullptr && dynamic_cast<brls::ScrollingFrame*>(parent->getParent()) == nullptr) {
+        local_y += parent->getLocalY();
+        parent = parent->getParent();
+    }
+
+    const float frame_height = scrolling->getHeight();
+    if (frame_height <= 0.0f) {
+        return;
+    }
+
+    const float visible_top = scrolling->getContentOffsetY();
+    const float visible_bottom = visible_top + frame_height;
+    float next_offset = visible_top;
+
+    if (local_y < visible_top) {
+        next_offset = local_y;
+    } else if (local_y + item_height > visible_bottom) {
+        next_offset = local_y + item_height - frame_height;
+    } else {
+        return;
+    }
+
+    scrolling->setContentOffsetY(std::max(0.0f, next_offset), false);
+}
+
+bool SmbBrowserActivity::restore_focus_now(const std::string& preferred_focus_relative_path) {
+    const std::string normalized_focus =
+        switchbox::core::smb_join_relative_path({}, preferred_focus_relative_path);
+    brls::View* focus_target = nullptr;
+    std::string restored_focus_relative_path;
+
+    if (!normalized_focus.empty()) {
+        focus_target = this->getView(make_entry_view_id(normalized_focus));
+        if (focus_target != nullptr && focus_target->getVisibility() == brls::Visibility::VISIBLE) {
+            restored_focus_relative_path = normalized_focus;
+        } else {
+            focus_target = nullptr;
+        }
+    }
+
+    if (focus_target == nullptr && !this->cached_entries.empty()) {
+        std::string fallback_relative_path;
+        for (const auto& entry : this->cached_entries) {
+            const std::string candidate =
+                switchbox::core::smb_join_relative_path({}, entry.relative_path);
+            if (fallback_relative_path.empty()) {
+                fallback_relative_path = candidate;
+            }
+            if (!entry.is_directory) {
+                fallback_relative_path = candidate;
+                break;
+            }
+        }
+
+        if (!fallback_relative_path.empty()) {
+            focus_target = this->getView(make_entry_view_id(fallback_relative_path));
+            if (focus_target != nullptr &&
+                focus_target->getVisibility() == brls::Visibility::VISIBLE) {
+                restored_focus_relative_path = fallback_relative_path;
+            } else {
+                focus_target = nullptr;
+            }
+        }
+    }
+
+    if (focus_target == nullptr) {
+        focus_target = this->getDefaultFocus();
+        if (focus_target != nullptr && focus_target->getVisibility() != brls::Visibility::VISIBLE) {
+            focus_target = nullptr;
+        }
+    }
+
+    if (focus_target == nullptr) {
+        return false;
+    }
+
+    this->ensure_view_visible(focus_target);
+    brls::Application::giveFocus(focus_target);
+    if (!restored_focus_relative_path.empty()) {
+        this->update_focused_entry_state(restored_focus_relative_path);
+    } else {
+        this->sync_focused_entry_from_ui();
+    }
+
+    auto* current_focus = brls::Application::getCurrentFocus();
+    return current_focus != nullptr && current_focus->getParentActivity() == this;
+}
+
+void SmbBrowserActivity::schedule_focus_restore(
+    const std::string& preferred_focus_relative_path,
+    int attempts_remaining) {
+    const std::string normalized_focus =
+        switchbox::core::smb_join_relative_path({}, preferred_focus_relative_path);
+    auto* self = this;
+    brls::delay(1, [self, normalized_focus, attempts_remaining]() {
+        const auto activities = brls::Application::getActivitiesStack();
+        if (activities.empty() || activities.back() != self) {
+            return;
+        }
+
+        if (!self->restore_focus_now(normalized_focus) && attempts_remaining > 1) {
+            self->schedule_focus_restore(normalized_focus, attempts_remaining - 1);
+        }
+    });
+}
+
 void SmbBrowserActivity::apply_local_delete_result(
     const std::string& deleted_relative_path,
     const std::string& preferred_focus_relative_path) {
@@ -574,18 +725,8 @@ void SmbBrowserActivity::apply_local_delete_result(
     this->focused_entry_relative_path.clear();
     this->focused_entry_is_directory = false;
 
-    if (!next_focus.empty()) {
-        if (auto* next_view = getView(make_entry_view_id(next_focus)); next_view != nullptr) {
-            brls::Application::giveFocus(next_view);
-        }
-
-        for (const auto& entry : this->cached_entries) {
-            if (switchbox::core::smb_join_relative_path({}, entry.relative_path) == next_focus) {
-                this->focused_entry_relative_path = next_focus;
-                this->focused_entry_is_directory = entry.is_directory;
-                break;
-            }
-        }
+    if (!restore_focus_now(next_focus)) {
+        schedule_focus_restore(next_focus);
     }
 }
 
@@ -740,102 +881,89 @@ bool SmbBrowserActivity::consume_pending_refresh_if_any() {
         return false;
     }
 
+    if (g_pending_delete_refresh.kind != PendingRefreshKind::RefreshFromServer) {
+        return false;
+    }
+
+    const std::string directory = g_pending_delete_refresh.directory_relative_path;
+    const std::string focus = g_pending_delete_refresh.focus_relative_path;
+    const std::string normalized_directory =
+        switchbox::core::smb_join_relative_path({}, directory);
+    const std::string normalized_current =
+        switchbox::core::smb_join_relative_path({}, this->relative_path);
+    if (normalized_directory != normalized_current) {
+        return false;
+    }
+    g_pending_delete_refresh.pending = false;
+    g_pending_delete_refresh.kind = PendingRefreshKind::None;
+    g_pending_delete_refresh.deleted_relative_path.clear();
+    auto* self = this;
+    brls::delay(1, [self, normalized_directory, focus]() {
+        const auto activities = brls::Application::getActivitiesStack();
+        if (activities.empty() || activities.back() != self) {
+            return;
+        }
+        self->refresh_after_player_delete(normalized_directory, focus);
+    });
+    return true;
+}
+
+bool SmbBrowserActivity::apply_pending_return_from_player_if_any() {
+    if (!g_pending_delete_refresh.pending) {
+        return false;
+    }
+
+    if (!same_smb_source(g_pending_delete_refresh.source, this->source)) {
+        return false;
+    }
+
+    const PendingRefreshKind kind = g_pending_delete_refresh.kind;
+    if (kind != PendingRefreshKind::FocusAfterPlayerExit &&
+        kind != PendingRefreshKind::DeleteAfterPlayerExit) {
+        return false;
+    }
+
     const std::string directory = g_pending_delete_refresh.directory_relative_path;
     const std::string focus = g_pending_delete_refresh.focus_relative_path;
     const std::string hidden = g_pending_delete_refresh.deleted_relative_path;
-    const PendingRefreshKind kind = g_pending_delete_refresh.kind;
     const std::string normalized_directory =
         switchbox::core::smb_join_relative_path({}, directory);
     const std::string normalized_current =
         switchbox::core::smb_join_relative_path({}, this->relative_path);
 
+    g_pending_delete_refresh.pending = false;
+    g_pending_delete_refresh.kind = PendingRefreshKind::None;
+    g_pending_delete_refresh.deleted_relative_path.clear();
+
     if (kind == PendingRefreshKind::DeleteAfterPlayerExit) {
-        g_pending_delete_refresh.pending = false;
-        g_pending_delete_refresh.kind = PendingRefreshKind::None;
-        auto* self = this;
-        brls::delay(1, [self, normalized_directory, focus, hidden]() {
-            const auto activities = brls::Application::getActivitiesStack();
-            if (activities.empty() || activities.back() != self) {
-                return;
+        std::string error_message;
+        if (!switchbox::core::delete_smb_file(this->source, hidden, error_message)) {
+            if (error_message.empty()) {
+                error_message = "Failed to delete SMB file.";
             }
-
-            std::string error_message;
-            if (!switchbox::core::delete_smb_file(self->source, hidden, error_message)) {
-                if (error_message.empty()) {
-                    error_message = "Failed to delete SMB file.";
-                }
-                auto* failed = new brls::Dialog(error_message);
-                failed->open();
-                return;
-            }
-
-            const std::string current_directory =
-                switchbox::core::smb_join_relative_path({}, self->relative_path);
-            if (normalized_directory == current_directory && self->has_cached_entries) {
-                self->apply_local_delete_result(hidden, focus);
-            } else {
-                self->refresh_after_player_delete(normalized_directory, focus, hidden);
-            }
-        });
-        return true;
-    }
-
-    if (kind == PendingRefreshKind::RefreshFromServer) {
-        if (normalized_directory != normalized_current) {
-            return false;
+            auto* failed = new brls::Dialog(error_message);
+            failed->open();
+            return true;
         }
-        g_pending_delete_refresh.pending = false;
-        g_pending_delete_refresh.kind = PendingRefreshKind::None;
-        g_pending_delete_refresh.deleted_relative_path.clear();
-        auto* self = this;
-        brls::delay(1, [self, normalized_directory, focus]() {
-            const auto activities = brls::Application::getActivitiesStack();
-            if (activities.empty() || activities.back() != self) {
-                return;
-            }
-            self->refresh_after_player_delete(normalized_directory, focus);
-        });
+
+        if (normalized_directory == normalized_current && this->has_cached_entries) {
+            this->apply_local_delete_result(hidden, focus);
+            return true;
+        }
+
+        this->refresh_after_player_delete(normalized_directory, focus, hidden);
         return true;
     }
 
-    if (kind == PendingRefreshKind::FocusAfterPlayerExit) {
-        g_pending_delete_refresh.pending = false;
-        g_pending_delete_refresh.kind = PendingRefreshKind::None;
-        g_pending_delete_refresh.deleted_relative_path.clear();
-        auto* self = this;
-        brls::delay(1, [self, normalized_directory, focus]() {
-            const auto activities = brls::Application::getActivitiesStack();
-            if (activities.empty() || activities.back() != self) {
-                return;
-            }
-
-            const std::string current_directory =
-                switchbox::core::smb_join_relative_path({}, self->relative_path);
-            const std::string normalized_focus =
-                switchbox::core::smb_join_relative_path({}, focus);
-            if (normalized_directory == current_directory && self->has_cached_entries &&
-                !normalized_focus.empty()) {
-                if (auto* focus_view = self->getView(make_entry_view_id(normalized_focus));
-                    focus_view != nullptr) {
-                    brls::Application::giveFocus(focus_view);
-                    self->focused_entry_relative_path = normalized_focus;
-                    for (const auto& entry : self->cached_entries) {
-                        if (switchbox::core::smb_join_relative_path({}, entry.relative_path) ==
-                            normalized_focus) {
-                            self->focused_entry_is_directory = entry.is_directory;
-                            break;
-                        }
-                    }
-                    return;
-                }
-            }
-
-            self->refresh_after_player_delete(normalized_directory, focus);
-        });
+    if (normalized_directory == normalized_current && this->has_cached_entries) {
+        if (!this->restore_focus_now(focus)) {
+            this->schedule_focus_restore(focus);
+        }
         return true;
     }
 
-    return false;
+    this->refresh_after_player_delete(normalized_directory, focus);
+    return true;
 }
 
 void SmbBrowserActivity::refresh_after_player_delete(
@@ -855,6 +983,11 @@ void SmbBrowserActivity::refresh_after_player_delete(
         }
     }
 
+    if (auto* current_focus = brls::Application::getCurrentFocus();
+        current_focus != nullptr && current_focus->getParentActivity() == this) {
+        brls::Application::giveFocus(nullptr);
+    }
+
     this->relative_path = normalized_directory;
     auto rebuilt = create_smb_browser_content(
         this->source,
@@ -871,10 +1004,10 @@ void SmbBrowserActivity::refresh_after_player_delete(
         scrolling->setContentOffsetY(keep_scroll ? previous_scroll_offset : 0.0f, false);
     }
 
-    if (rebuilt.focus_view != nullptr) {
-        brls::Application::giveFocus(rebuilt.focus_view);
-    } else if (auto* fallback_focus = getDefaultFocus()) {
-        brls::Application::giveFocus(fallback_focus);
+    const std::string normalized_focus =
+        switchbox::core::smb_join_relative_path({}, focus_relative_path);
+    if (!restore_focus_now(normalized_focus)) {
+        schedule_focus_restore(normalized_focus);
     }
 }
 

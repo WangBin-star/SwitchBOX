@@ -788,6 +788,10 @@ void PlayerActivity::dismiss_to_previous_activity_if_still_top() {
             }
 
             auto* current_activity = remaining_activities.back();
+            if (auto* smb_activity = dynamic_cast<SmbBrowserActivity*>(current_activity)) {
+                smb_activity->apply_pending_return_from_player_if_any();
+            }
+
             auto* current_focus = brls::Application::getCurrentFocus();
             if (current_focus != nullptr && current_focus->getParentActivity() == current_activity) {
                 return;
