@@ -144,8 +144,7 @@ static void loadLocale(std::string locale, nlohmann::json* target)
     auto localePath = romfs::list("i18n/" + locale);
     if (localePath.empty())
     {
-        Logger::error("Cannot load locale {}: directory i18n/{} doesn't exist", locale, locale);
-        return;
+        Logger::debug("Locale {} not found in romfs, trying external translation search paths", locale);
     }
     for (auto& entry : localePath)
     {
