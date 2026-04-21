@@ -2064,6 +2064,16 @@ public:
         return duration;
     }
 
+    bool is_seekable() {
+        if (this->handle == nullptr) {
+            return false;
+        }
+
+        int seekable = 0;
+        const int rc = mpv_get_property(this->handle, "seekable", MPV_FORMAT_FLAG, &seekable);
+        return rc >= 0 && seekable != 0;
+    }
+
     bool is_paused() const {
         return this->paused.load();
     }
@@ -3059,6 +3069,10 @@ double switch_mpv_get_duration_seconds() {
     return SwitchMpvPlayer::instance().get_duration_seconds();
 }
 
+bool switch_mpv_is_seekable() {
+    return SwitchMpvPlayer::instance().is_seekable();
+}
+
 bool switch_mpv_is_paused() {
     return SwitchMpvPlayer::instance().is_paused();
 }
@@ -3209,6 +3223,10 @@ double switch_mpv_get_position_seconds() {
 
 double switch_mpv_get_duration_seconds() {
     return 0.0;
+}
+
+bool switch_mpv_is_seekable() {
+    return false;
 }
 
 bool switch_mpv_is_paused() {

@@ -58,6 +58,7 @@ bool switch_mpv_set_audio_track(int id, std::string& error_message);
 bool switch_mpv_set_subtitle_track(int id, std::string& error_message);
 double switch_mpv_get_position_seconds();
 double switch_mpv_get_duration_seconds();
+bool switch_mpv_is_seekable();
 bool switch_mpv_is_paused();
 std::string switch_mpv_consume_last_error();
 

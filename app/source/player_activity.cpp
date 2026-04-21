@@ -38,6 +38,8 @@ namespace {
 
 constexpr int kPlayerVerticalRepeatIntervalMs = 90;
 constexpr int kPlayerControlsHorizontalRepeatIntervalMs = 90;
+constexpr int kResumePersistIntervalMs = 5000;
+constexpr int kResumeRestoreTimeoutMs = 15000;
 std::string tr(const std::string& key) {
     return brls::getStr("switchbox/" + key);
 }
@@ -491,6 +493,10 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
     this->playback_session_stopped = false;
     this->playback_history_recorded_for_target = false;
     this->playback_history_restart_at_ms = 0;
+    this->resume_restore_pending = false;
+    this->resume_restore_position_seconds = 0.0;
+    this->resume_restore_started_at = std::chrono::steady_clock::time_point::min();
+    this->last_resume_persist_time = std::chrono::steady_clock::time_point::min();
     this->touch_horizontal_pan_active = false;
     this->touch_vertical_pan_active = false;
     this->target = next_target;
@@ -527,6 +533,7 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
     switchbox::core::switch_mpv_set_speed(1.0);
     apply_hold_speed_if_needed();
     switchbox::core::switch_mpv_set_volume(this->session_volume);
+    refresh_resume_restore_state_for_target();
     refresh_overlay_entries(true);
 }
 
@@ -689,6 +696,9 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
     }
 
     cancel_pending_startup_task();
+    if (has_existing_playback_session) {
+        flush_playback_resume_state(true);
+    }
     if (full_backend_restart_for_switch) {
         switchbox::core::switch_mpv_append_debug_log_note("start_playback restart_backend_for_switch");
         switchbox::core::switch_mpv_shutdown();
@@ -1514,6 +1524,8 @@ void PlayerActivity::tick_runtime_controls() {
     update_startup_loading_overlay_state();
     present_startup_dialog_if_needed();
     update_playback_history_state();
+    maybe_apply_resume_restore();
+    flush_playback_resume_state(false);
     update_auto_sleep_state();
     if (this->playback_error_dialog_open) {
         return;
@@ -1545,6 +1557,153 @@ void PlayerActivity::update_playback_history_state() {
         switchbox::core::AppConfigStore::paths(),
         switchbox::core::AppConfigStore::current(),
         this->target);
+}
+
+void PlayerActivity::refresh_resume_restore_state_for_target() {
+    double resume_position_seconds = 0.0;
+    double resume_duration_seconds = 0.0;
+    if (!switchbox::core::load_playback_resume_for_target(
+            switchbox::core::AppConfigStore::paths(),
+            switchbox::core::AppConfigStore::current(),
+            this->target,
+            resume_position_seconds,
+            resume_duration_seconds)) {
+        return;
+    }
+
+    if (resume_position_seconds <= 0.0 || resume_duration_seconds <= 0.0) {
+        return;
+    }
+
+    this->resume_restore_pending = true;
+    this->resume_restore_position_seconds = resume_position_seconds;
+    this->resume_restore_started_at = std::chrono::steady_clock::now();
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "resume_restore pending position_seconds=" + std::to_string(resume_position_seconds));
+}
+
+void PlayerActivity::maybe_apply_resume_restore() {
+    if (!this->resume_restore_pending ||
+        this->playback_error_dialog_open ||
+        this->startup_dialog_pending ||
+        this->pending_startup_task != nullptr) {
+        return;
+    }
+
+    if (!switchbox::core::switch_mpv_session_active() || !switchbox::core::switch_mpv_has_media()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (this->resume_restore_started_at == std::chrono::steady_clock::time_point::min()) {
+        this->resume_restore_started_at = now;
+    } else if (now >= this->resume_restore_started_at + std::chrono::milliseconds(kResumeRestoreTimeoutMs)) {
+        this->resume_restore_pending = false;
+        this->resume_restore_position_seconds = 0.0;
+        switchbox::core::switch_mpv_append_debug_log_note("resume_restore timeout");
+        return;
+    }
+
+    if (switchbox::core::switch_mpv_get_playback_restart_at_ms() == 0) {
+        return;
+    }
+
+    const double duration = switchbox::core::switch_mpv_get_duration_seconds();
+    if (duration <= 0.0 || !switchbox::core::switch_mpv_is_seekable()) {
+        return;
+    }
+
+    const double stop_percent = std::clamp(
+        static_cast<double>(switchbox::core::AppConfigStore::current().general.resume_stop_percent),
+        0.0,
+        100.0);
+    const double clamped_target_seconds =
+        std::clamp(this->resume_restore_position_seconds, 0.0, duration);
+    const double remaining_percent =
+        duration > 0.0 ? std::max(0.0, duration - clamped_target_seconds) * 100.0 / duration : 100.0;
+    if (clamped_target_seconds <= 0.0 || remaining_percent <= stop_percent) {
+        this->resume_restore_pending = false;
+        this->resume_restore_position_seconds = 0.0;
+        return;
+    }
+
+    const double current_position = switchbox::core::switch_mpv_get_position_seconds();
+    if (current_position > 0.0 && std::fabs(current_position - clamped_target_seconds) <= 1.0) {
+        this->resume_restore_pending = false;
+        this->resume_restore_position_seconds = 0.0;
+        return;
+    }
+
+    if (seek_absolute(clamped_target_seconds)) {
+        this->resume_restore_pending = false;
+        this->resume_restore_position_seconds = 0.0;
+        this->last_resume_persist_time = now;
+        switchbox::core::switch_mpv_append_debug_log_note(
+            "resume_restore applied position_seconds=" + std::to_string(clamped_target_seconds));
+    }
+}
+
+void PlayerActivity::flush_playback_resume_state(bool force) {
+    if (this->pending_startup_task != nullptr ||
+        (!force && this->startup_dialog_pending) ||
+        (!force && this->playback_error_dialog_open)) {
+        return;
+    }
+
+    if (!switchbox::core::playback_target_uses_history(
+            switchbox::core::AppConfigStore::current(),
+            this->target)) {
+        return;
+    }
+
+    if (!switchbox::core::switch_mpv_session_active() || !switchbox::core::switch_mpv_has_media()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!force &&
+        this->last_resume_persist_time != std::chrono::steady_clock::time_point::min() &&
+        now < this->last_resume_persist_time + std::chrono::milliseconds(kResumePersistIntervalMs)) {
+        return;
+    }
+
+    const double duration = switchbox::core::switch_mpv_get_duration_seconds();
+    if (duration <= 0.0 || !switchbox::core::switch_mpv_is_seekable()) {
+        return;
+    }
+
+    const double position = std::clamp(switchbox::core::switch_mpv_get_position_seconds(), 0.0, duration);
+    if (position <= 0.0) {
+        return;
+    }
+
+    const auto& general = switchbox::core::AppConfigStore::current().general;
+    const double start_percent = std::clamp(static_cast<double>(general.resume_start_percent), 0.0, 100.0);
+    const double stop_percent = std::clamp(static_cast<double>(general.resume_stop_percent), 0.0, 100.0);
+    const double progress_percent = duration > 0.0 ? position * 100.0 / duration : 0.0;
+    const double remaining_percent = duration > 0.0 ? std::max(0.0, duration - position) * 100.0 / duration : 100.0;
+
+    if (progress_percent < start_percent) {
+        return;
+    }
+
+    if (remaining_percent <= stop_percent) {
+        (void)switchbox::core::clear_playback_resume_for_target(
+            switchbox::core::AppConfigStore::paths(),
+            switchbox::core::AppConfigStore::current(),
+            this->target);
+        this->last_resume_persist_time = now;
+        return;
+    }
+
+    if (switchbox::core::update_playback_resume_for_target(
+            switchbox::core::AppConfigStore::paths(),
+            switchbox::core::AppConfigStore::current(),
+            this->target,
+            position,
+            duration)) {
+        this->last_resume_persist_time = now;
+    }
 }
 
 void PlayerActivity::update_auto_sleep_state() {
@@ -1960,13 +2119,16 @@ void PlayerActivity::present_runtime_error_if_needed() {
     dialog->open();
 }
 
-void PlayerActivity::stop_playback_session_before_leave() {
+void PlayerActivity::stop_playback_session_before_leave(bool persist_resume) {
     if (this->playback_session_stopped) {
         return;
     }
 
     switchbox::core::switch_mpv_append_debug_log_note("stop_before_leave begin");
     this->playback_session_stopped = true;
+    if (persist_resume) {
+        flush_playback_resume_state(true);
+    }
     cancel_pending_startup_task();
     if (this->runtime_initialized) {
         this->runtime_tick.stop();
@@ -2177,7 +2339,7 @@ void PlayerActivity::confirm_delete_current_file() {
         const std::string deleting_relative_path = this->current_relative_path;
         const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
         const std::string next_focus = find_next_focus_after_delete();
-        stop_playback_session_before_leave();
+        stop_playback_session_before_leave(false);
         SmbBrowserActivity::request_delete_after_return(
             source,
             directory,

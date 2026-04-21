@@ -18,6 +18,8 @@ struct PlaybackHistoryEntry {
     std::string item_subtitle;
     std::string stable_key;
     std::uint64_t last_played_at_epoch_seconds = 0;
+    double resume_position_seconds = 0.0;
+    double resume_duration_seconds = 0.0;
 
     std::string smb_relative_path;
 
@@ -29,9 +31,31 @@ struct PlaybackHistoryEntry {
     std::vector<std::string> iptv_http_header_fields;
 };
 
+std::string playback_history_stable_key_for_target(const PlaybackTarget& target);
+bool playback_target_uses_history(const AppConfig& config, const PlaybackTarget& target);
 std::vector<PlaybackHistoryEntry> load_playback_history(const AppPaths& paths);
+bool find_playback_history_entry(
+    const AppPaths& paths,
+    std::string_view stable_key,
+    PlaybackHistoryEntry& entry);
 bool record_playback_history_entry(const AppPaths& paths, PlaybackHistoryEntry entry);
 bool record_playback_history_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target);
+bool load_playback_resume_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target,
+    double& resume_position_seconds,
+    double& resume_duration_seconds);
+bool update_playback_resume_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target,
+    double resume_position_seconds,
+    double resume_duration_seconds);
+bool clear_playback_resume_for_target(
     const AppPaths& paths,
     const AppConfig& config,
     const PlaybackTarget& target);

@@ -58,6 +58,8 @@ This section describes the main controls available in the current version, with 
 
 - `A` 打开当前历史条目对应的内容。  
   `A`: open the content referenced by the current history item.
+- 对启用历史记录的来源，历史条目会同时携带断点信息；重新打开时会自动续播。  
+  For sources with history enabled, history entries also carry resume data and reopen from the saved position automatically.
 - `X` 删除当前历史条目，并弹出确认框。  
   `X`: delete the current history item with confirmation.
 - `+` 清空全部播放历史，并弹出确认框。  
@@ -116,6 +118,8 @@ This section describes the main controls available in the current version, with 
   `A`: play / pause.
 - `B`：退出播放器，回到来源页面。  
   `B`: exit the player and return to the source page.
+- 对启用历史记录且可 seek 的点播内容，播放器会自动断点续播；直播、无总时长内容或禁用历史的来源不会续播。  
+  For seekable on-demand content with history enabled, the player automatically resumes from the saved position; live streams, durationless content, or sources with history disabled do not resume.
 - `X`：仅对 `SMB` 文件有效；确认后先退出播放器，再删除文件并返回列表。  
   `X`: only valid for `SMB` files; after confirmation, exit the player, delete the file, and return to the list.
 - `上 / 下`：调整音量。  

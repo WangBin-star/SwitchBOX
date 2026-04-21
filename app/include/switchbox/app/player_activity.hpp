@@ -73,10 +73,13 @@ private:
     void apply_continuous_seek_if_needed();
     void apply_hold_speed_if_needed();
     void update_playback_history_state();
+    void refresh_resume_restore_state_for_target();
+    void maybe_apply_resume_restore();
+    void flush_playback_resume_state(bool force);
     void update_auto_sleep_state();
     void update_volume_osd_timeout();
     void present_runtime_error_if_needed();
-    void stop_playback_session_before_leave();
+    void stop_playback_session_before_leave(bool persist_resume = true);
     void adjust_volume(int delta);
     bool seek_relative(double seconds);
     bool seek_absolute(double seconds);
@@ -177,6 +180,10 @@ private:
     bool playback_session_stopped = false;
     bool playback_history_recorded_for_target = false;
     std::uint64_t playback_history_restart_at_ms = 0;
+    bool resume_restore_pending = false;
+    double resume_restore_position_seconds = 0.0;
+    std::chrono::steady_clock::time_point resume_restore_started_at = std::chrono::steady_clock::time_point::min();
+    std::chrono::steady_clock::time_point last_resume_persist_time = std::chrono::steady_clock::time_point::min();
     bool media_playback_state_enabled = false;
     bool auto_sleep_disabled = false;
     bool touch_horizontal_pan_active = false;

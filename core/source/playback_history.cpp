@@ -20,7 +20,7 @@ namespace {
 
 using json = nlohmann::json;
 
-constexpr std::uint64_t kPlaybackHistoryVersion = 1;
+constexpr std::uint64_t kPlaybackHistoryVersion = 2;
 constexpr size_t kMaxPlaybackHistoryEntries = 50;
 
 std::string trim_copy(std::string value) {
@@ -85,6 +85,18 @@ std::string normalize_relative_path(std::string_view raw_path) {
         normalized += segments[index];
     }
     return normalized;
+}
+
+std::uint64_t current_epoch_seconds() {
+    return static_cast<std::uint64_t>(std::time(nullptr));
+}
+
+std::string pick_target_locator(const PlaybackTarget& target) {
+    if (!trim_copy(target.primary_locator).empty()) {
+        return trim_copy(target.primary_locator);
+    }
+
+    return trim_copy(target.fallback_locator);
 }
 
 std::string source_kind_token(PlaybackSourceKind kind) {
@@ -160,6 +172,50 @@ const IptvSourceSettings* find_iptv_source(const AppConfig& config, std::string_
     return &(*it);
 }
 
+std::string playback_history_stable_key_for_target_internal(const PlaybackTarget& target) {
+    const std::string source_key = trim_copy(target.source_key);
+    if (source_key.empty()) {
+        return {};
+    }
+
+    if (target.source_kind == PlaybackSourceKind::Smb) {
+        if (target.smb_locator.has_value()) {
+            return make_smb_stable_key(source_key, target.smb_locator->relative_path);
+        }
+
+        PlaybackTarget::SmbLocator parsed_locator;
+        if (try_parse_smb_locator_from_uri(pick_target_locator(target), parsed_locator)) {
+            return make_smb_stable_key(source_key, parsed_locator.relative_path);
+        }
+
+        return {};
+    }
+
+    if (target.source_kind == PlaybackSourceKind::Iptv) {
+        return make_iptv_stable_key(
+            source_key,
+            trim_copy(target.iptv_overlay_entry_key),
+            pick_target_locator(target));
+    }
+
+    return {};
+}
+
+bool playback_target_uses_history_internal(const AppConfig& config, const PlaybackTarget& target) {
+    switch (target.source_kind) {
+        case PlaybackSourceKind::Smb: {
+            const auto* source = find_smb_source(config, target.source_key);
+            return source != nullptr && source->use_history;
+        }
+        case PlaybackSourceKind::Iptv: {
+            const auto* source = find_iptv_source(config, target.source_key);
+            return source != nullptr && source->use_history;
+        }
+        default:
+            return false;
+    }
+}
+
 json entry_to_json(const PlaybackHistoryEntry& entry) {
     json object = json::object();
     object["source_kind"] = source_kind_token(entry.source_kind);
@@ -169,6 +225,12 @@ json entry_to_json(const PlaybackHistoryEntry& entry) {
     object["item_subtitle"] = entry.item_subtitle;
     object["stable_key"] = entry.stable_key;
     object["last_played_at_epoch_seconds"] = entry.last_played_at_epoch_seconds;
+    if (entry.resume_position_seconds > 0.0) {
+        object["resume_position_seconds"] = entry.resume_position_seconds;
+    }
+    if (entry.resume_duration_seconds > 0.0) {
+        object["resume_duration_seconds"] = entry.resume_duration_seconds;
+    }
 
     if (!entry.smb_relative_path.empty()) {
         object["smb_relative_path"] = entry.smb_relative_path;
@@ -209,6 +271,8 @@ bool parse_entry_from_json(const json& object, PlaybackHistoryEntry& entry) {
     entry.item_subtitle = object.value("item_subtitle", std::string{});
     entry.stable_key = object.value("stable_key", std::string{});
     entry.last_played_at_epoch_seconds = object.value("last_played_at_epoch_seconds", std::uint64_t{0});
+    entry.resume_position_seconds = std::max(0.0, object.value("resume_position_seconds", 0.0));
+    entry.resume_duration_seconds = std::max(0.0, object.value("resume_duration_seconds", 0.0));
     entry.smb_relative_path = object.value("smb_relative_path", std::string{});
     entry.iptv_entry_key = object.value("iptv_entry_key", std::string{});
     entry.iptv_group_title = object.value("iptv_group_title", std::string{});
@@ -379,52 +443,128 @@ void dedupe_and_prune_entries(std::vector<PlaybackHistoryEntry>& entries) {
     entries = std::move(deduped);
 }
 
+void populate_missing_fields_from_existing(
+    PlaybackHistoryEntry& entry,
+    const PlaybackHistoryEntry& existing,
+    bool preserve_existing_resume_if_missing) {
+    if (entry.source_title.empty()) {
+        entry.source_title = existing.source_title;
+    }
+    if (entry.item_title.empty()) {
+        entry.item_title = existing.item_title;
+    }
+    if (entry.item_subtitle.empty()) {
+        entry.item_subtitle = existing.item_subtitle;
+    }
+    if (entry.smb_relative_path.empty()) {
+        entry.smb_relative_path = existing.smb_relative_path;
+    }
+    if (entry.iptv_entry_key.empty()) {
+        entry.iptv_entry_key = existing.iptv_entry_key;
+    }
+    if (entry.iptv_group_title.empty()) {
+        entry.iptv_group_title = existing.iptv_group_title;
+    }
+    if (entry.iptv_stream_url_snapshot.empty()) {
+        entry.iptv_stream_url_snapshot = existing.iptv_stream_url_snapshot;
+    }
+    if (entry.iptv_http_user_agent.empty()) {
+        entry.iptv_http_user_agent = existing.iptv_http_user_agent;
+    }
+    if (entry.iptv_http_referrer.empty()) {
+        entry.iptv_http_referrer = existing.iptv_http_referrer;
+    }
+    if (entry.iptv_http_header_fields.empty()) {
+        entry.iptv_http_header_fields = existing.iptv_http_header_fields;
+    }
+    if (preserve_existing_resume_if_missing &&
+        entry.resume_position_seconds <= 0.0 &&
+        entry.resume_duration_seconds <= 0.0) {
+        entry.resume_position_seconds = existing.resume_position_seconds;
+        entry.resume_duration_seconds = existing.resume_duration_seconds;
+    }
+}
+
+bool upsert_playback_history_entry(
+    const AppPaths& paths,
+    PlaybackHistoryEntry entry,
+    bool preserve_existing_resume_if_missing) {
+    if (entry.stable_key.empty()) {
+        return false;
+    }
+
+    if (entry.last_played_at_epoch_seconds == 0) {
+        entry.last_played_at_epoch_seconds = current_epoch_seconds();
+    }
+
+    std::vector<PlaybackHistoryEntry> entries = load_entries_from_disk(paths);
+    const auto existing_it = std::find_if(
+        entries.begin(),
+        entries.end(),
+        [&entry](const PlaybackHistoryEntry& existing) {
+            return existing.stable_key == entry.stable_key;
+        });
+    if (existing_it != entries.end()) {
+        populate_missing_fields_from_existing(
+            entry,
+            *existing_it,
+            preserve_existing_resume_if_missing);
+        entries.erase(existing_it);
+    }
+
+    entries.insert(entries.begin(), std::move(entry));
+    dedupe_and_prune_entries(entries);
+    return write_entries_to_disk(paths, entries);
+}
+
 }  // namespace
+
+std::string playback_history_stable_key_for_target(const PlaybackTarget& target) {
+    return playback_history_stable_key_for_target_internal(target);
+}
+
+bool playback_target_uses_history(const AppConfig& config, const PlaybackTarget& target) {
+    return playback_target_uses_history_internal(config, target);
+}
 
 std::vector<PlaybackHistoryEntry> load_playback_history(const AppPaths& paths) {
     return load_entries_from_disk(paths);
 }
 
-bool record_playback_history_entry(const AppPaths& paths, PlaybackHistoryEntry entry) {
-    if (entry.stable_key.empty()) {
+bool find_playback_history_entry(
+    const AppPaths& paths,
+    std::string_view stable_key,
+    PlaybackHistoryEntry& entry) {
+    const std::string normalized_stable_key = trim_copy(std::string(stable_key));
+    if (normalized_stable_key.empty()) {
         return false;
     }
 
     std::vector<PlaybackHistoryEntry> entries = load_entries_from_disk(paths);
-    entries.erase(
-        std::remove_if(
-            entries.begin(),
-            entries.end(),
-            [&entry](const PlaybackHistoryEntry& existing) {
-                return existing.stable_key == entry.stable_key;
-            }),
-        entries.end());
-    entries.insert(entries.begin(), std::move(entry));
-    dedupe_and_prune_entries(entries);
-    return write_entries_to_disk(paths, entries);
+    const auto existing_it = std::find_if(
+        entries.begin(),
+        entries.end(),
+        [&normalized_stable_key](const PlaybackHistoryEntry& existing) {
+            return existing.stable_key == normalized_stable_key;
+        });
+    if (existing_it == entries.end()) {
+        return false;
+    }
+
+    entry = *existing_it;
+    return true;
+}
+
+bool record_playback_history_entry(const AppPaths& paths, PlaybackHistoryEntry entry) {
+    return upsert_playback_history_entry(paths, std::move(entry), true);
 }
 
 bool record_playback_history_for_target(
     const AppPaths& paths,
     const AppConfig& config,
     const PlaybackTarget& target) {
-    switch (target.source_kind) {
-        case PlaybackSourceKind::Smb: {
-            const auto* source = find_smb_source(config, target.source_key);
-            if (source == nullptr || !source->use_history) {
-                return true;
-            }
-            break;
-        }
-        case PlaybackSourceKind::Iptv: {
-            const auto* source = find_iptv_source(config, target.source_key);
-            if (source == nullptr || !source->use_history) {
-                return true;
-            }
-            break;
-        }
-        default:
-            return true;
+    if (!playback_target_uses_history_internal(config, target)) {
+        return true;
     }
 
     PlaybackHistoryEntry entry = build_history_entry_from_target(target);
@@ -437,6 +577,82 @@ bool record_playback_history_for_target(
     }
 
     return record_playback_history_entry(paths, std::move(entry));
+}
+
+bool load_playback_resume_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target,
+    double& resume_position_seconds,
+    double& resume_duration_seconds) {
+    resume_position_seconds = 0.0;
+    resume_duration_seconds = 0.0;
+
+    if (!playback_target_uses_history_internal(config, target)) {
+        return false;
+    }
+
+    PlaybackHistoryEntry entry;
+    if (!find_playback_history_entry(paths, playback_history_stable_key_for_target_internal(target), entry)) {
+        return false;
+    }
+
+    if (entry.resume_position_seconds <= 0.0 || entry.resume_duration_seconds <= 0.0) {
+        return false;
+    }
+
+    resume_position_seconds = entry.resume_position_seconds;
+    resume_duration_seconds = entry.resume_duration_seconds;
+    return true;
+}
+
+bool update_playback_resume_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target,
+    double resume_position_seconds,
+    double resume_duration_seconds) {
+    if (!playback_target_uses_history_internal(config, target)) {
+        return true;
+    }
+
+    if (resume_position_seconds <= 0.0 || resume_duration_seconds <= 0.0) {
+        return true;
+    }
+
+    PlaybackHistoryEntry entry = build_history_entry_from_target(target);
+    if (entry.stable_key.empty()) {
+        return false;
+    }
+
+    if (entry.item_title.empty()) {
+        entry.item_title = entry.source_title;
+    }
+
+    entry.resume_duration_seconds = std::max(0.0, resume_duration_seconds);
+    entry.resume_position_seconds =
+        std::clamp(resume_position_seconds, 0.0, entry.resume_duration_seconds);
+    entry.last_played_at_epoch_seconds = current_epoch_seconds();
+    return upsert_playback_history_entry(paths, std::move(entry), false);
+}
+
+bool clear_playback_resume_for_target(
+    const AppPaths& paths,
+    const AppConfig& config,
+    const PlaybackTarget& target) {
+    if (!playback_target_uses_history_internal(config, target)) {
+        return true;
+    }
+
+    PlaybackHistoryEntry existing_entry;
+    if (!find_playback_history_entry(paths, playback_history_stable_key_for_target_internal(target), existing_entry)) {
+        return true;
+    }
+
+    existing_entry.resume_position_seconds = 0.0;
+    existing_entry.resume_duration_seconds = 0.0;
+    existing_entry.last_played_at_epoch_seconds = current_epoch_seconds();
+    return upsert_playback_history_entry(paths, std::move(existing_entry), false);
 }
 
 bool remove_playback_history_entry(const AppPaths& paths, std::string_view stable_key) {
