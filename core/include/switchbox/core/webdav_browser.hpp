@@ -83,4 +83,9 @@ WebDavFileReadResult read_webdav_file_range(
     std::uintmax_t offset,
     std::size_t max_bytes);
 
+bool delete_webdav_file(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message);
+
 }  // namespace switchbox::core

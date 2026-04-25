@@ -2,11 +2,13 @@
 
 ## 本项目的目的 / Project Goal
 
-让 `Nintendo Switch` 像机顶盒一样使用，当前聚焦两类核心能力。  
-SwitchBOX turns `Nintendo Switch` into a set-top-box-style media app, focused on two core capabilities today.
+让 `Nintendo Switch` 像机顶盒一样使用，当前聚焦三类核心能力。  
+SwitchBOX turns `Nintendo Switch` into a set-top-box-style media app, focused on three core capabilities today.
 
 - 播放 `SMB` 共享中的视频文件。  
   Play video files from `SMB` shares.
+- 播放 `WebDAV` 目录中的媒体文件。  
+  Play media files from `WebDAV` directories.
 - 播放 `IPTV` 播放列表中的频道与节目。  
   Play channels and programs from `IPTV` playlists.
 
@@ -77,10 +79,10 @@ This section describes the main controls available in the current version, with 
   `B`: leave Settings; if there are unsaved changes, a `Cancel / Confirm` dialog appears with default focus on `Cancel`.
 - 基础设置中可直接控制语言、触控、播放器手势、硬件解码、退出时是否返回主屏幕等通用行为。  
   General settings directly control language, touch input, player gestures, hardware decoding, whether app exit returns to Home, and other common behaviors.
-- 在 `IPTV / SMB` 源列表中，`Y` 可快速切换当前源是否显示在主页。  
-  In `IPTV / SMB` source lists, `Y` quickly toggles whether the current source is shown on Home.
-- 在 `IPTV / SMB` 源列表中，`X` 删除当前源，并弹出确认框。  
-  In `IPTV / SMB` source lists, `X` deletes the current source with confirmation.
+- 在 `IPTV / SMB / WebDAV` 源列表中，`Y` 可快速切换当前源是否显示在主页。  
+  In `IPTV / SMB / WebDAV` source lists, `Y` quickly toggles whether the current source is shown on Home.
+- 在 `IPTV / SMB / WebDAV` 源列表中，`X` 删除当前源，并弹出确认框。  
+  In `IPTV / SMB / WebDAV` source lists, `X` deletes the current source with confirmation.
 
 ### SMB 浏览页 / SMB Browser
 
@@ -88,6 +90,19 @@ This section describes the main controls available in the current version, with 
   `A`: enter a folder or play the current file.
 - `B` 返回上一级，或退出当前 SMB 浏览页。  
   `B`: go to the parent directory, or leave the current SMB browser.
+- 从子目录返回上一层时，焦点会回到刚刚退出的子目录项。  
+  When returning from a child directory, focus goes back to the directory item you just left.
+- `X` 删除当前焦点条目，并弹出确认框。  
+  `X`: delete the focused item with confirmation.
+- `Y` 直接返回主页。  
+  `Y`: return directly to Home.
+
+### WebDAV 浏览页 / WebDAV Browser
+
+- `A` 进入文件夹或播放当前文件。  
+  `A`: enter a folder or play the current file.
+- `B` 返回上一级，或退出当前 WebDAV 浏览页。  
+  `B`: go to the parent directory, or leave the current WebDAV browser.
 - 从子目录返回上一层时，焦点会回到刚刚退出的子目录项。  
   When returning from a child directory, focus goes back to the directory item you just left.
 - `X` 删除当前焦点条目，并弹出确认框。  
@@ -120,8 +135,8 @@ This section describes the main controls available in the current version, with 
   `B`: exit the player and return to the source page.
 - 对启用历史记录且可 seek 的点播内容，播放器会自动断点续播；直播、无总时长内容或禁用历史的来源不会续播。  
   For seekable on-demand content with history enabled, the player automatically resumes from the saved position; live streams, durationless content, or sources with history disabled do not resume.
-- `X`：仅对 `SMB` 文件有效；确认后先退出播放器，再删除文件并返回列表。  
-  `X`: only valid for `SMB` files; after confirmation, exit the player, delete the file, and return to the list.
+- `X`：对 `SMB / WebDAV` 文件有效；确认后先退出播放器，再删除文件并返回列表。  
+  `X`: valid for `SMB / WebDAV` files; after confirmation, exit the player, delete the file, and return to the list.
 - `上 / 下`：调整音量。  
   `Up / Down`: adjust volume.
 
@@ -146,8 +161,8 @@ This section describes the main controls available in the current version, with 
 
 - `十字键左 / 左摇杆左 / 右摇杆左`：打开或关闭左侧列表浮窗。  
   `D-Pad Left / Left Stick Left / Right Stick Left`: open or close the left-side list overlay.
-- `SMB` 左侧浮窗每次打开都会从当前正在播放的文件定位。  
-  The `SMB` left overlay always reopens at the file currently being played.
+- 文件型来源左侧浮窗每次打开都会从当前正在播放的文件定位。  
+  The file-source left overlay always reopens at the file currently being played.
 - `+`：打开或关闭底部进度控制面板。  
   `+`: open or close the bottom progress control panel.
 - 底部面板当前支持旋转、长短跳转、播放暂停、音轨、字幕、音量与传输速率显示。  
@@ -179,7 +194,6 @@ If this project helps you and you want to support future development, donations 
 
 ## 未来计划支持 / Planned Support
 
-- `WebDAV`
 - `FTP`
 - 更多 IPTV 源兼容性与稳定性优化。  
   More IPTV source compatibility and stability improvements.

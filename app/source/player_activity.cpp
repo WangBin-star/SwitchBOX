@@ -27,6 +27,7 @@
 
 #include "switchbox/app/header_status_hint.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
+#include "switchbox/app/webdav_browser_activity.hpp"
 #include "switchbox/core/playback_history.hpp"
 #include "switchbox/core/smb_browser.hpp"
 #include "switchbox/core/smb2_mount_fs.hpp"
@@ -912,6 +913,8 @@ void PlayerActivity::dismiss_to_previous_activity_if_still_top() {
             auto* current_activity = remaining_activities.back();
             if (auto* smb_activity = dynamic_cast<SmbBrowserActivity*>(current_activity)) {
                 smb_activity->apply_pending_return_from_player_if_any();
+            } else if (auto* webdav_activity = dynamic_cast<WebDavBrowserActivity*>(current_activity)) {
+                webdav_activity->apply_pending_return_from_player_if_any();
             }
 
             auto* current_focus = brls::Application::getCurrentFocus();
@@ -1004,6 +1007,11 @@ bool PlayerActivity::handle_b_action() {
         SmbBrowserActivity::request_focus_after_return(
             this->smb_source,
             switchbox::core::smb_parent_relative_path(this->current_relative_path),
+            this->current_relative_path);
+    } else if (this->has_webdav_source && !this->current_relative_path.empty()) {
+        WebDavBrowserActivity::request_focus_after_return(
+            this->webdav_source,
+            switchbox::core::webdav_parent_relative_path(this->current_relative_path),
             this->current_relative_path);
     }
 
@@ -2489,8 +2497,8 @@ void PlayerActivity::handle_touch_progress_tap(float ratio) {
 }
 
 void PlayerActivity::confirm_delete_current_file() {
-    if (!this->has_smb_source || this->current_relative_path.empty()) {
-        brls::Application::notify("Current source is not a deletable SMB file.");
+    if ((!this->has_smb_source && !this->has_webdav_source) || this->current_relative_path.empty()) {
+        brls::Application::notify("Current source is not deletable.");
         return;
     }
 
@@ -2503,40 +2511,66 @@ void PlayerActivity::confirm_delete_current_file() {
     auto* dialog = new brls::Dialog(confirm_message);
     dialog->addButton(brls::getStr("hints/cancel"), []() {});
     dialog->addButton(brls::getStr("hints/ok"), [this]() {
-        const switchbox::core::SmbSourceSettings source = this->smb_source;
         const std::string deleting_relative_path = this->current_relative_path;
-        const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
         const std::string next_focus = find_next_focus_after_delete();
         stop_playback_session_before_leave(false);
-        SmbBrowserActivity::request_delete_after_return(
-            source,
-            directory,
-            next_focus,
-            deleting_relative_path);
+        if (this->has_smb_source) {
+            SmbBrowserActivity::request_delete_after_return(
+                this->smb_source,
+                switchbox::core::smb_parent_relative_path(this->current_relative_path),
+                next_focus,
+                deleting_relative_path);
+        } else if (this->has_webdav_source) {
+            WebDavBrowserActivity::request_delete_after_return(
+                this->webdav_source,
+                switchbox::core::webdav_parent_relative_path(this->current_relative_path),
+                next_focus,
+                deleting_relative_path);
+        }
         dismiss_to_previous_activity_if_still_top();
     });
     dialog->open();
 }
 
 std::string PlayerActivity::find_next_focus_after_delete() const {
-    if (!this->has_smb_source || this->current_relative_path.empty()) {
+    if (this->current_relative_path.empty()) {
         return {};
     }
 
-    const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
-    const auto result = switchbox::core::browse_smb_directory(
-        this->smb_source,
-        switchbox::core::AppConfigStore::current().general,
-        directory);
-    if (!result.success || result.entries.empty()) {
-        return {};
-    }
-
+    const auto& general = switchbox::core::AppConfigStore::current().general;
     std::vector<std::string> files;
-    files.reserve(result.entries.size());
-    for (const auto& entry : result.entries) {
-        if (!entry.is_directory) {
-            files.push_back(entry.relative_path);
+
+    if (this->has_smb_source) {
+        const std::string directory = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+        const auto result = switchbox::core::browse_smb_directory(
+            this->smb_source,
+            general,
+            directory);
+        if (!result.success || result.entries.empty()) {
+            return {};
+        }
+
+        files.reserve(result.entries.size());
+        for (const auto& entry : result.entries) {
+            if (!entry.is_directory) {
+                files.push_back(entry.relative_path);
+            }
+        }
+    } else if (this->has_webdav_source) {
+        const std::string directory = switchbox::core::webdav_parent_relative_path(this->current_relative_path);
+        const auto result = switchbox::core::browse_webdav_directory(
+            this->webdav_source,
+            general,
+            directory);
+        if (!result.success || result.entries.empty()) {
+            return {};
+        }
+
+        files.reserve(result.entries.size());
+        for (const auto& entry : result.entries) {
+            if (!entry.is_directory) {
+                files.push_back(entry.relative_path);
+            }
         }
     }
 

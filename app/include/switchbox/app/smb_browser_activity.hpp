@@ -54,6 +54,7 @@ private:
     void apply_local_delete_result(
         const std::string& deleted_relative_path,
         const std::string& preferred_focus_relative_path);
+    bool handle_back_action();
     void install_common_actions();
     void bind_entry_focus_tracking();
     void confirm_delete_focused_entry();

@@ -40,7 +40,7 @@ namespace switchbox::core {
 
 namespace {
 
-constexpr bool kPlaybackDebugLogEnabled = true;
+constexpr bool kPlaybackDebugLogEnabled = false;
 
 struct PlaybackDebugLogState {
     std::mutex mutex;

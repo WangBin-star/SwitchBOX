@@ -730,6 +730,46 @@ void SmbBrowserActivity::apply_local_delete_result(
     }
 }
 
+bool SmbBrowserActivity::handle_back_action() {
+    const std::string parent_relative_path =
+        switchbox::core::smb_parent_relative_path(this->relative_path);
+    const std::string normalized_parent_relative_path =
+        switchbox::core::smb_join_relative_path({}, parent_relative_path);
+
+    SmbBrowserActivity* previous_browser = nullptr;
+    const auto activities = brls::Application::getActivitiesStack();
+    if (activities.size() >= 2) {
+        previous_browser = dynamic_cast<SmbBrowserActivity*>(activities[activities.size() - 2]);
+    }
+
+    const bool can_pop_to_previous_browser =
+        previous_browser != nullptr &&
+        same_smb_source(previous_browser->source, this->source) &&
+        switchbox::core::smb_join_relative_path({}, previous_browser->relative_path) ==
+            normalized_parent_relative_path;
+    if (can_pop_to_previous_browser) {
+        brls::Application::popActivity(brls::TransitionAnimation::FADE);
+        return true;
+    }
+
+    if (this->relative_path.empty()) {
+        return_to_home();
+        return true;
+    }
+
+    const std::string current_relative_path = this->relative_path;
+    auto* self = this;
+    brls::delay(1, [self, parent_relative_path, current_relative_path]() {
+        const auto activities = brls::Application::getActivitiesStack();
+        if (activities.empty() || activities.back() != self) {
+            return;
+        }
+
+        self->refresh_after_player_delete(parent_relative_path, current_relative_path);
+    });
+    return true;
+}
+
 void SmbBrowserActivity::install_common_actions() {
     if (this->action_back_id != ACTION_NONE) {
         unregisterAction(this->action_back_id);
@@ -747,9 +787,8 @@ void SmbBrowserActivity::install_common_actions() {
     this->action_back_id = registerAction(
         brls::getStr("hints/back"),
         brls::BUTTON_B,
-        [](brls::View*) {
-            brls::Application::popActivity(brls::TransitionAnimation::FADE);
-            return true;
+        [this](brls::View*) {
+            return handle_back_action();
         });
     this->action_delete_id = registerAction(
         tr("actions/delete"),

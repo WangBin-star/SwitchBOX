@@ -43,7 +43,7 @@ namespace switchbox::core {
 
 namespace {
 
-constexpr bool kWebDavDebugLogEnabled = true;
+constexpr bool kWebDavDebugLogEnabled = false;
 
 struct WebDavDebugLogState {
     std::mutex mutex;
@@ -996,6 +996,32 @@ std::string build_get_request_text(
     }
 
     std::string request = "GET " + request_target + " HTTP/1.1\r\n";
+    for (const std::string& header : header_fields) {
+        request += trim(header);
+        request += "\r\n";
+    }
+    request += "\r\n";
+    return request;
+}
+
+std::string build_delete_request_text(
+    const ParsedHttpUrl& parsed_url,
+    const std::string& request_target,
+    const std::string& authorization_header) {
+    std::vector<std::string> header_fields = {
+        "Host: " + parsed_url.authority,
+        "User-Agent: " + build_default_http_user_agent(),
+        "Accept: */*",
+        "Accept-Encoding: identity",
+        "Content-Length: 0",
+        "Connection: close",
+    };
+
+    if (!authorization_header.empty()) {
+        header_fields.push_back(authorization_header);
+    }
+
+    std::string request = "DELETE " + request_target + " HTTP/1.1\r\n";
     for (const std::string& header : header_fields) {
         request += trim(header);
         request += "\r\n";
@@ -1980,6 +2006,7 @@ WebDavBrowserResult browse_webdav_directory(
     const WebDavSourceSettings& source,
     const GeneralSettings& general,
     const std::string& relative_path,
+    bool include_all_entries,
     std::function<void(const WebDavBrowseLoadProgress&)> progress_callback) {
     WebDavBrowserResult result;
     result.root_label = webdav_source_root_label(source);
@@ -2124,7 +2151,7 @@ WebDavBrowserResult browse_webdav_directory(
             }
         }
 
-        if (entry.is_directory || entry.playable) {
+        if (entry.is_directory || include_all_entries || entry.playable) {
             result.entries.push_back(std::move(entry));
         }
     }
@@ -2137,6 +2164,225 @@ WebDavBrowserResult browse_webdav_directory(
         " requested_path=" + result.requested_path);
     return result;
 #endif
+}
+
+bool send_webdav_delete_request_once(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    bool directory,
+    const std::string& authorization_header,
+    std::string& error_message) {
+#if !SWITCHBOX_HAS_WEBDAV_HTTP_CLIENT
+    (void)source;
+    (void)relative_path;
+    (void)directory;
+    (void)authorization_header;
+    error_message = "The WebDAV browser backend is not available in this build.";
+    return false;
+#else
+    error_message.clear();
+    const std::string normalized_relative_path = webdav_join_relative_path({}, relative_path);
+    if (normalized_relative_path.empty()) {
+        error_message = "Delete WebDAV file failed: empty path.";
+        return false;
+    }
+
+    const auto parsed_root_url = parse_http_url(source.url);
+    if (!parsed_root_url.has_value()) {
+        error_message = "Delete WebDAV file failed: invalid URL.";
+        return false;
+    }
+
+    const std::vector<std::string> segments = root_and_relative_segments(source, normalized_relative_path);
+    const std::string request_url = build_url_from_segments(parsed_root_url.value(), segments, directory);
+    const std::string request_target = build_request_target_from_segments(segments, directory);
+    append_webdav_debug_log(
+        "[webdav][delete] request begin path=" + normalized_relative_path +
+        " directory=" + std::string(directory ? "true" : "false") +
+        " url=" + sanitize_url_for_debug_log(request_url));
+
+    WebDavConnectionContext connection;
+    std::string transport_error;
+    if (!connect_webdav_transport(parsed_root_url.value(), connection, transport_error)) {
+        error_message = "Delete WebDAV file failed: " + transport_error;
+        append_webdav_debug_log("[webdav][delete] connect_failed error=" + error_message);
+        return false;
+    }
+
+    const std::string request_text =
+        build_delete_request_text(parsed_root_url.value(), request_target, authorization_header);
+    if (!write_all_to_transport(connection, request_text, transport_error)) {
+        error_message = "Delete WebDAV file failed: " + transport_error;
+        append_webdav_debug_log("[webdav][delete] write_failed error=" + error_message);
+        return false;
+    }
+
+    HttpResponse response;
+    if (!read_http_response_from_transport(connection, kWebDavMaxResponseBytes, response, transport_error)) {
+        error_message = "Delete WebDAV file failed: " + transport_error;
+        append_webdav_debug_log("[webdav][delete] response_failed error=" + error_message);
+        return false;
+    }
+
+    append_webdav_debug_log(
+        "[webdav][delete] response status=" + std::to_string(response.status_code) +
+        " body_bytes=" + std::to_string(response.body.size()));
+    if (response.status_code < 200 || response.status_code >= 300) {
+        error_message = "Delete WebDAV file failed: HTTP " + std::to_string(response.status_code);
+        append_webdav_debug_log(
+            "[webdav][delete] http_error status=" + std::to_string(response.status_code) +
+            " body_preview=" + summarize_body_for_debug_log(response.body));
+        return false;
+    }
+
+    append_webdav_debug_log("[webdav][delete] request success path=" + normalized_relative_path);
+    return true;
+#endif
+}
+
+bool send_webdav_delete_request(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    bool directory,
+    std::string& error_message) {
+#if !SWITCHBOX_HAS_WEBDAV_HTTP_CLIENT
+    (void)source;
+    (void)relative_path;
+    (void)directory;
+    error_message = "The WebDAV browser backend is not available in this build.";
+    return false;
+#else
+    const std::string authorization_header = build_basic_auth_header_for_source(source);
+    std::string last_error;
+    for (int transport_attempt = 1; transport_attempt <= kWebDavTransientRetryCount; ++transport_attempt) {
+        if (send_webdav_delete_request_once(
+                source,
+                relative_path,
+                directory,
+                authorization_header,
+                last_error)) {
+            error_message.clear();
+            return true;
+        }
+
+        const bool should_retry_transport =
+            transport_attempt < kWebDavTransientRetryCount &&
+            is_transient_webdav_transport_error(last_error);
+        if (!should_retry_transport) {
+            break;
+        }
+
+        append_webdav_debug_log(
+            "[webdav][delete] retry_scheduled attempt=" + std::to_string(transport_attempt) +
+            " delay_ms=250");
+        svcSleepThread(kWebDavTransientRetryDelayNs);
+    }
+
+    error_message = last_error.empty() ? "Delete WebDAV file failed: I/O error" : last_error;
+    return false;
+#endif
+}
+
+bool delete_webdav_directory_recursive(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message);
+
+bool delete_webdav_path_recursive(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message) {
+    const std::string normalized_relative_path = webdav_join_relative_path({}, relative_path);
+    if (normalized_relative_path.empty()) {
+        error_message = "WebDAV file path is empty.";
+        return false;
+    }
+
+    GeneralSettings general;
+    const std::string parent_relative_path = webdav_parent_relative_path(normalized_relative_path);
+    const auto parent_result =
+        browse_webdav_directory(
+            source,
+            general,
+            parent_relative_path,
+            true,
+            {});
+
+    if (parent_result.success) {
+        const auto found = std::find_if(
+            parent_result.entries.begin(),
+            parent_result.entries.end(),
+            [&normalized_relative_path](const WebDavBrowserEntry& entry) {
+                return webdav_join_relative_path({}, entry.relative_path) == normalized_relative_path;
+            });
+        if (found != parent_result.entries.end()) {
+            if (found->is_directory) {
+                return delete_webdav_directory_recursive(source, normalized_relative_path, error_message);
+            }
+            return send_webdav_delete_request(source, normalized_relative_path, false, error_message);
+        }
+    }
+
+    std::string file_error;
+    if (send_webdav_delete_request(source, normalized_relative_path, false, file_error)) {
+        error_message.clear();
+        return true;
+    }
+
+    std::string directory_error;
+    if (delete_webdav_directory_recursive(source, normalized_relative_path, directory_error)) {
+        error_message.clear();
+        return true;
+    }
+
+    error_message = file_error;
+    if (!directory_error.empty() && directory_error != file_error) {
+        if (!error_message.empty()) {
+            error_message += " | ";
+        }
+        error_message += directory_error;
+    }
+    if (error_message.empty() && !parent_result.success && !parent_result.error_message.empty()) {
+        error_message = parent_result.error_message;
+    }
+    return false;
+}
+
+bool delete_webdav_directory_recursive(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message) {
+    GeneralSettings general;
+    const auto browse_result =
+        browse_webdav_directory(
+            source,
+            general,
+            relative_path,
+            true,
+            {});
+    if (!browse_result.success) {
+        error_message =
+            browse_result.error_message.empty()
+                ? "Open WebDAV directory failed: I/O error"
+                : browse_result.error_message;
+        return false;
+    }
+
+    for (const auto& entry : browse_result.entries) {
+        if (!delete_webdav_path_recursive(source, entry.relative_path, error_message)) {
+            return false;
+        }
+    }
+
+    return send_webdav_delete_request(source, relative_path, true, error_message);
+}
+
+WebDavBrowserResult browse_webdav_directory(
+    const WebDavSourceSettings& source,
+    const GeneralSettings& general,
+    const std::string& relative_path,
+    std::function<void(const WebDavBrowseLoadProgress&)> progress_callback) {
+    return browse_webdav_directory(source, general, relative_path, false, std::move(progress_callback));
 }
 
 WebDavFileProbeResult probe_webdav_file(
@@ -2176,6 +2422,13 @@ WebDavFileReadResult read_webdav_file_range(
         max_bytes,
         build_basic_auth_header_for_source(source));
 #endif
+}
+
+bool delete_webdav_file(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path,
+    std::string& error_message) {
+    return delete_webdav_path_recursive(source, relative_path, error_message);
 }
 
 }  // namespace switchbox::core

@@ -10,7 +10,7 @@ std::string BuildInfo::version_string() {
 #ifdef SWITCHBOX_APP_VERSION
     return SWITCHBOX_APP_VERSION;
 #else
-    return "1.1.1";
+    return "1.2.1";
 #endif
 }
 

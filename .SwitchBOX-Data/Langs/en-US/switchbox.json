@@ -195,8 +195,8 @@
             "summary": "This page now receives the resolved SMB playback target. The next implementation step is wiring a real playback backend into this handoff instead of routing through a placeholder view.",
             "not_available": "Not available",
             "delete": {
-                "confirm_generic": "Delete the current file from this SMB share?",
-                "confirm_named": "Delete \"{0}\" from this SMB share?"
+                "confirm_generic": "Delete the current file?",
+                "confirm_named": "Delete \"{0}\"?"
             },
             "actions": {
                 "start": "Playback Test",
