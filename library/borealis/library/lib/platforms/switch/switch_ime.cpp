@@ -19,22 +19,27 @@ limitations under the License.
 #include <switch.h>
 
 #include <borealis/platforms/switch/switch_ime.hpp>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
 namespace brls
 {
 
+constexpr size_t kSwkbdBufferSize = 0x100;
+constexpr int kSwkbdMaxInputLength = static_cast<int>(kSwkbdBufferSize - 1);
+
 static SwkbdConfig createSwkbdBaseConfig(std::string headerText, std::string subText, int maxStringLength, std::string initialText)
 {
     SwkbdConfig config;
+    const int sanitized_max_length = std::clamp(maxStringLength, 1, kSwkbdMaxInputLength);
 
     swkbdCreate(&config, 0);
 
     swkbdConfigMakePresetDefault(&config);
     swkbdConfigSetHeaderText(&config, headerText.c_str());
     swkbdConfigSetSubText(&config, subText.c_str());
-    swkbdConfigSetStringLenMax(&config, maxStringLength);
+    swkbdConfigSetStringLenMax(&config, sanitized_max_length);
     swkbdConfigSetInitialText(&config, initialText.c_str());
     swkbdConfigSetBlurBackground(&config, true);
 
@@ -92,9 +97,9 @@ bool SwitchImeManager::openForText(std::function<void(std::string)> f, std::stri
     swkbdConfigSetType(&config, SwkbdType_All);
     swkbdConfigSetKeySetDisableBitmask(&config, getSwkbdKeyDisableBitmask(kbdDisableBitmask));
 
-    char buffer[0x100];
+    char buffer[kSwkbdBufferSize];
 
-    if (R_SUCCEEDED(swkbdShow(&config, buffer, 0x100)))
+    if (R_SUCCEEDED(swkbdShow(&config, buffer, kSwkbdBufferSize)))
     {
         f(buffer);
 
@@ -119,9 +124,9 @@ bool SwitchImeManager::openForNumber(std::function<void(long)> f, std::string he
     swkbdConfigSetRightOptionalSymbolKey(&config, rightButton.c_str());
     swkbdConfigSetKeySetDisableBitmask(&config, getSwkbdKeyDisableBitmask(kbdDisableBitmask));
 
-    char buffer[0x100];
+    char buffer[kSwkbdBufferSize];
 
-    if (R_SUCCEEDED(swkbdShow(&config, buffer, 0x100)) && strcmp(buffer, "") != 0)
+    if (R_SUCCEEDED(swkbdShow(&config, buffer, kSwkbdBufferSize)) && strcmp(buffer, "") != 0)
     {
         f(std::stoll(buffer));
 

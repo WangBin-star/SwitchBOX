@@ -40,6 +40,7 @@ enum class SettingsSection {
     Update,
     Iptv,
     Smb,
+    WebDav,
 };
 
 enum class PreferredLanguagePreset {
@@ -120,6 +121,7 @@ brls::Label* create_label(
 
 constexpr std::string_view kProjectGithubUrl = "https://github.com/WangBin-star/SwitchBOX";
 constexpr std::string_view kProjectQqGroup = "1022585620";
+constexpr int kSettingsTextInputMaxLength = 0xFF;
 
 std::string update_latest_version_display_text(const std::shared_ptr<SettingsDraftState>& state) {
     switch (state->update_check_status) {
@@ -174,7 +176,7 @@ brls::InputCell* create_input_cell(
     const std::string& hint,
     brls::Event<std::string>::Callback callback) {
     auto* cell = new brls::InputCell();
-    cell->init(title, value, std::move(callback), placeholder, hint);
+    cell->init(title, value, std::move(callback), placeholder, hint, kSettingsTextInputMaxLength);
     return cell;
 }
 
@@ -243,6 +245,18 @@ bool smb_source_equal(
            lhs.use_history == rhs.use_history;
 }
 
+bool webdav_source_equal(
+    const switchbox::core::WebDavSourceSettings& lhs,
+    const switchbox::core::WebDavSourceSettings& rhs) {
+    return lhs.key == rhs.key &&
+           lhs.title == rhs.title &&
+           lhs.url == rhs.url &&
+           lhs.username == rhs.username &&
+           lhs.password == rhs.password &&
+           lhs.enabled == rhs.enabled &&
+           lhs.use_history == rhs.use_history;
+}
+
 bool iptv_sources_equal(
     const std::vector<switchbox::core::IptvSourceSettings>& lhs,
     const std::vector<switchbox::core::IptvSourceSettings>& rhs) {
@@ -275,10 +289,27 @@ bool smb_sources_equal(
     return true;
 }
 
+bool webdav_sources_equal(
+    const std::vector<switchbox::core::WebDavSourceSettings>& lhs,
+    const std::vector<switchbox::core::WebDavSourceSettings>& rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    for (size_t index = 0; index < lhs.size(); ++index) {
+        if (!webdav_source_equal(lhs[index], rhs[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool app_config_equal(const switchbox::core::AppConfig& lhs, const switchbox::core::AppConfig& rhs) {
     return general_settings_equal(lhs.general, rhs.general) &&
            iptv_sources_equal(lhs.iptv_sources, rhs.iptv_sources) &&
-           smb_sources_equal(lhs.smb_sources, rhs.smb_sources);
+           smb_sources_equal(lhs.smb_sources, rhs.smb_sources) &&
+           webdav_sources_equal(lhs.webdav_sources, rhs.webdav_sources);
 }
 
 std::string raw_system_locale() {
@@ -510,6 +541,14 @@ std::string summarize_smb_source(const switchbox::core::SmbSourceSettings& sourc
     return tr("settings_page/common/not_set");
 }
 
+std::string summarize_webdav_source(const switchbox::core::WebDavSourceSettings& source) {
+    if (!source.url.empty()) {
+        return source.url;
+    }
+
+    return tr("settings_page/common/not_set");
+}
+
 std::string summarize_detail_text(const std::string& value, size_t max_length = 56) {
     if (value.size() <= max_length) {
         return value;
@@ -599,6 +638,10 @@ std::string make_smb_source_view_id(const std::string& key) {
     return "settings/smb/source/" + key;
 }
 
+std::string make_webdav_source_view_id(const std::string& key) {
+    return "settings/webdav/source/" + key;
+}
+
 std::string status_icon_title(bool enabled, const std::string& title) {
     return std::string(enabled ? "● " : "○ ") + visible_entry_title(title);
 }
@@ -644,6 +687,23 @@ switchbox::core::SmbSourceSettings* find_smb_source(
     return &(*it);
 }
 
+switchbox::core::WebDavSourceSettings* find_webdav_source(
+    const std::shared_ptr<SettingsDraftState>& state,
+    const std::string& key) {
+    const auto it = std::find_if(
+        state->draft_config.webdav_sources.begin(),
+        state->draft_config.webdav_sources.end(),
+        [&key](const switchbox::core::WebDavSourceSettings& source) {
+            return source.key == key;
+        });
+
+    if (it == state->draft_config.webdav_sources.end()) {
+        return nullptr;
+    }
+
+    return &(*it);
+}
+
 std::string make_unique_iptv_key(const std::shared_ptr<SettingsDraftState>& state) {
     int index = 1;
     while (true) {
@@ -660,6 +720,17 @@ std::string make_unique_smb_key(const std::shared_ptr<SettingsDraftState>& state
     while (true) {
         const std::string key = "source-" + std::to_string(index);
         if (find_smb_source(state, key) == nullptr) {
+            return key;
+        }
+        ++index;
+    }
+}
+
+std::string make_unique_webdav_key(const std::shared_ptr<SettingsDraftState>& state) {
+    int index = 1;
+    while (true) {
+        const std::string key = "source-" + std::to_string(index);
+        if (find_webdav_source(state, key) == nullptr) {
             return key;
         }
         ++index;
@@ -694,6 +765,19 @@ void upsert_smb_source(
     rebuild_right_panel(state);
 }
 
+void upsert_webdav_source(
+    const std::shared_ptr<SettingsDraftState>& state,
+    const switchbox::core::WebDavSourceSettings& source) {
+    if (auto* existing = find_webdav_source(state, source.key)) {
+        *existing = source;
+    } else {
+        state->draft_config.webdav_sources.push_back(source);
+    }
+
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
 void remove_iptv_source(
     const std::shared_ptr<SettingsDraftState>& state,
     const std::string& key) {
@@ -720,6 +804,23 @@ void remove_smb_source(
             sources.begin(),
             sources.end(),
             [&key](const switchbox::core::SmbSourceSettings& source) {
+                return source.key == key;
+            }),
+        sources.end());
+
+    sync_dirty_state(state);
+    rebuild_right_panel(state);
+}
+
+void remove_webdav_source(
+    const std::shared_ptr<SettingsDraftState>& state,
+    const std::string& key) {
+    auto& sources = state->draft_config.webdav_sources;
+    sources.erase(
+        std::remove_if(
+            sources.begin(),
+            sources.end(),
+            [&key](const switchbox::core::WebDavSourceSettings& source) {
                 return source.key == key;
             }),
         sources.end());
@@ -889,6 +990,82 @@ brls::View* create_smb_editor_content(
     return frame;
 }
 
+brls::View* create_webdav_editor_content(
+    const std::shared_ptr<SettingsDraftState>& state,
+    switchbox::core::WebDavSourceSettings source) {
+    auto editor_state = std::make_shared<switchbox::core::WebDavSourceSettings>(std::move(source));
+
+    auto* content = new brls::Box(brls::Axis::COLUMN);
+    content->setPadding(24, 40, 24, 40);
+
+    content->addView(create_input_cell(
+        tr("settings_page/webdav/fields/title"),
+        editor_state->title,
+        tr("settings_page/webdav/placeholders/title"),
+        tr("settings_page/webdav/hints/title"),
+        [editor_state](const std::string& value) {
+            editor_state->title = value;
+        }));
+
+    content->addView(create_bool_cell(
+        tr("settings_page/webdav/fields/enabled"),
+        editor_state->enabled,
+        [editor_state](bool enabled) {
+            editor_state->enabled = enabled;
+        }));
+
+    content->addView(create_bool_cell(
+        tr("settings_page/webdav/fields/use_history"),
+        editor_state->use_history,
+        [editor_state](bool use_history) {
+            editor_state->use_history = use_history;
+        }));
+
+    content->addView(create_input_cell(
+        tr("settings_page/webdav/fields/url"),
+        editor_state->url,
+        tr("settings_page/webdav/placeholders/url"),
+        tr("settings_page/webdav/hints/url"),
+        [editor_state](const std::string& value) {
+            editor_state->url = value;
+        }));
+
+    content->addView(create_input_cell(
+        tr("settings_page/webdav/fields/username"),
+        editor_state->username,
+        tr("settings_page/webdav/placeholders/username"),
+        tr("settings_page/webdav/hints/username"),
+        [editor_state](const std::string& value) {
+            editor_state->username = value;
+        }));
+
+    content->addView(create_input_cell(
+        tr("settings_page/webdav/fields/password"),
+        editor_state->password,
+        tr("settings_page/webdav/placeholders/password"),
+        tr("settings_page/webdav/hints/password"),
+        [editor_state](const std::string& value) {
+            editor_state->password = value;
+        }));
+
+    auto* frame = create_editor_frame(content, tr("settings_page/webdav/editor_title"));
+    frame->registerAction(
+        tr("actions/save"),
+        brls::BUTTON_START,
+        [state, editor_state](brls::View*) {
+            brls::Application::popActivity(
+                brls::TransitionAnimation::FADE,
+                [state, editor_state]() {
+                    upsert_webdav_source(state, *editor_state);
+                });
+            return true;
+        },
+        false,
+        false,
+        brls::SOUND_CLICK);
+    return frame;
+}
+
 void open_iptv_editor(
     const std::shared_ptr<SettingsDraftState>& state,
     switchbox::core::IptvSourceSettings source) {
@@ -899,6 +1076,12 @@ void open_smb_editor(
     const std::shared_ptr<SettingsDraftState>& state,
     switchbox::core::SmbSourceSettings source) {
     brls::Application::pushActivity(new brls::Activity(create_smb_editor_content(state, std::move(source))));
+}
+
+void open_webdav_editor(
+    const std::shared_ptr<SettingsDraftState>& state,
+    switchbox::core::WebDavSourceSettings source) {
+    brls::Application::pushActivity(new brls::Activity(create_webdav_editor_content(state, std::move(source))));
 }
 
 void select_section(const std::shared_ptr<SettingsDraftState>& state, SettingsSection section) {
@@ -1029,7 +1212,7 @@ void open_playable_extensions_editor(const std::shared_ptr<SettingsDraftState>& 
         },
         tr("settings_page/general/playable_extensions/title"),
         tr("settings_page/general/playable_extensions/hint"),
-        512,
+        kSettingsTextInputMaxLength,
         value,
         0);
 }
@@ -1129,7 +1312,7 @@ void open_short_seek_editor(const std::shared_ptr<SettingsDraftState>& state) {
         },
         tr("settings_page/general/short_seek/title"),
         tr("settings_page/general/short_seek/hint"),
-        16,
+        kSettingsTextInputMaxLength,
         std::to_string(state->draft_config.general.short_seek),
         0);
 }
@@ -1152,7 +1335,7 @@ void open_long_seek_editor(const std::shared_ptr<SettingsDraftState>& state) {
         },
         tr("settings_page/general/long_seek/title"),
         tr("settings_page/general/long_seek/hint"),
-        16,
+        kSettingsTextInputMaxLength,
         std::to_string(state->draft_config.general.long_seek),
         0);
 }
@@ -1175,7 +1358,7 @@ void open_y_hold_speed_multiplier_editor(const std::shared_ptr<SettingsDraftStat
         },
         tr("settings_page/general/y_hold_speed_multiplier/title"),
         tr("settings_page/general/y_hold_speed_multiplier/hint"),
-        16,
+        kSettingsTextInputMaxLength,
         format_float_value(state->draft_config.general.y_hold_speed_multiplier, 1),
         0);
 }
@@ -1198,7 +1381,7 @@ void open_continuous_seek_interval_editor(const std::shared_ptr<SettingsDraftSta
         },
         tr("settings_page/general/continuous_seek_interval_ms/title"),
         tr("settings_page/general/continuous_seek_interval_ms/hint"),
-        16,
+        kSettingsTextInputMaxLength,
         std::to_string(state->draft_config.general.continuous_seek_interval_ms),
         0);
 }
@@ -1252,7 +1435,7 @@ void open_preferred_audio_language_picker(const std::shared_ptr<SettingsDraftSta
                 },
                 tr("settings_page/general/preferred_audio_language/title"),
                 tr("settings_page/general/preferred_audio_language/hint"),
-                32,
+                kSettingsTextInputMaxLength,
                 preferred_language_custom_seed(state->draft_config.general.preferred_audio_language),
                 0);
         });
@@ -1308,7 +1491,7 @@ void open_preferred_subtitle_language_picker(const std::shared_ptr<SettingsDraft
                 },
                 tr("settings_page/general/preferred_subtitle_language/title"),
                 tr("settings_page/general/preferred_subtitle_language/hint"),
-                32,
+                kSettingsTextInputMaxLength,
                 preferred_language_custom_seed(state->draft_config.general.preferred_subtitle_language),
                 0);
         });
@@ -1904,6 +2087,82 @@ void rebuild_smb_panel(const std::shared_ptr<SettingsDraftState>& state) {
         }));
 }
 
+void rebuild_webdav_panel(const std::shared_ptr<SettingsDraftState>& state) {
+    auto* container = state->right_content_box;
+    auto theme = brls::Application::getTheme();
+
+    for (const auto& source : state->draft_config.webdav_sources) {
+        auto* cell = create_action_cell(
+            status_icon_title(source.enabled, source.title),
+            summarize_webdav_source(source),
+            source.enabled ? theme["brls/list/listItem_value_color"] : theme["brls/text_disabled"],
+            [state, key = source.key](brls::View*) {
+                if (auto* selected = find_webdav_source(state, key)) {
+                    open_webdav_editor(state, *selected);
+                }
+                return true;
+            },
+            make_webdav_source_view_id(source.key));
+        cell->registerAction(
+            source.enabled ? tr("actions/disable") : tr("actions/enable"),
+            brls::BUTTON_Y,
+            [state, key = source.key](brls::View*) {
+                if (auto* selected = find_webdav_source(state, key)) {
+                    request_focus_restore(state, make_webdav_source_view_id(key));
+                    selected->enabled = !selected->enabled;
+                    sync_dirty_state(state);
+                    rebuild_right_panel(state);
+                    return true;
+                }
+                return false;
+            },
+            false,
+            false,
+            brls::SOUND_CLICK);
+        cell->registerAction(
+            tr("actions/delete"),
+            brls::BUTTON_X,
+            [state, key = source.key](brls::View*) {
+                auto* selected = find_webdav_source(state, key);
+                if (selected == nullptr) {
+                    return false;
+                }
+
+                confirm_delete_entry(
+                    tr("settings_page/webdav/delete_confirm", visible_entry_title(selected->title)),
+                    [state, key]() {
+                        remove_webdav_source(state, key);
+                    });
+                return true;
+            },
+            false,
+            false,
+            brls::SOUND_CLICK);
+        container->addView(cell);
+    }
+
+    if (state->draft_config.webdav_sources.empty()) {
+        auto* empty_label = create_label(
+            tr("settings_page/webdav/list_empty"),
+            17.0f,
+            theme["brls/text_disabled"]);
+        empty_label->setMargins(8, 14, 14, 14);
+        container->addView(empty_label);
+    }
+
+    container->addView(create_action_cell(
+        tr("settings_page/webdav/add_entry"),
+        tr("settings_page/webdav/add_entry_detail"),
+        theme["brls/highlight/color2"],
+        [state](brls::View*) {
+            switchbox::core::WebDavSourceSettings source;
+            source.key = make_unique_webdav_key(state);
+            source.title = tr("settings_page/webdav/default_title");
+            open_webdav_editor(state, std::move(source));
+            return true;
+        }));
+}
+
 void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
     if (state->right_content_box == nullptr) {
         return;
@@ -1941,6 +2200,9 @@ void rebuild_right_panel(const std::shared_ptr<SettingsDraftState>& state) {
             break;
         case SettingsSection::Smb:
             rebuild_smb_panel(state);
+            break;
+        case SettingsSection::WebDav:
+            rebuild_webdav_panel(state);
             break;
     }
 
@@ -1985,6 +2247,11 @@ brls::View* create_settings_content(const std::shared_ptr<SettingsDraftState>& s
         tr("sections/smb/title"),
         [state](brls::View*) {
             select_section(state, SettingsSection::Smb);
+        });
+    sidebar->addItem(
+        tr("sections/webdav/title"),
+        [state](brls::View*) {
+            select_section(state, SettingsSection::WebDav);
         });
     if (auto& sidebar_children = sidebar->getChildren(); !sidebar_children.empty()) {
         if (auto* sidebar_content = dynamic_cast<brls::Box*>(sidebar_children.back())) {

@@ -7,7 +7,7 @@
 #include "switchbox/core/build_info.hpp"
 #include "switchbox/platform/switch/platform_switch.hpp"
 
-extern "C" u32 __nx_applet_exit_mode, __nx_nv_service_type, __nx_nv_transfermem_size;
+extern "C" u32 __nx_applet_exit_mode, __nx_nv_service_type, __nx_nv_transfermem_size, __nx_ssl_service_type;
 
 int main(int argc, char* argv[]) {
     svcSetThreadPriority(CUR_THREAD_HANDLE, 0x20);
@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) {
         applet_type == AppletType_Application || applet_type == AppletType_SystemApplication;
 
     __nx_nv_service_type = NvServiceType_Factory;
+    __nx_ssl_service_type = SslServiceType_System;
     __nx_nv_transfermem_size = (application_mode ? 16 : 3) * 0x100000;
 
     switchbox::app::StartupContext context{

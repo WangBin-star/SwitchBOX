@@ -10,6 +10,7 @@ add_library(switchbox_core STATIC
     source/switch_mpv_player.cpp
     source/smb_browser.cpp
     source/update_check.cpp
+    source/webdav_browser.cpp
 )
 
 target_include_directories(switchbox_core
@@ -60,6 +61,7 @@ endif ()
 
 target_include_directories(switchbox_core PRIVATE "${SWITCHBOX_SWITCH_MEDIA_INCLUDE_DIR}" "${SWITCHBOX_SWITCH_PORTLIBS_INCLUDE_DIR}")
 target_link_libraries(switchbox_core PRIVATE "${SWITCHBOX_SWITCH_LIBSMB2_LIBRARY}")
+target_link_libraries(switchbox_core PRIVATE tinyxml2)
 
 if (
     EXISTS "${SWITCHBOX_SWITCH_MEDIA_INCLUDE_DIR}/mpv/client.h" AND

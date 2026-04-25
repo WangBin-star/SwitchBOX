@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "switchbox/core/playback_target.hpp"
+#include "switchbox/core/webdav_browser.hpp"
 
 namespace switchbox::core {
 
@@ -20,7 +21,7 @@ namespace {
 
 using json = nlohmann::json;
 
-constexpr std::uint64_t kPlaybackHistoryVersion = 2;
+constexpr std::uint64_t kPlaybackHistoryVersion = 3;
 constexpr size_t kMaxPlaybackHistoryEntries = 50;
 
 std::string trim_copy(std::string value) {
@@ -105,6 +106,8 @@ std::string source_kind_token(PlaybackSourceKind kind) {
             return "smb";
         case PlaybackSourceKind::Iptv:
             return "iptv";
+        case PlaybackSourceKind::WebDav:
+            return "webdav";
         default:
             return "unknown";
     }
@@ -116,6 +119,9 @@ PlaybackSourceKind parse_source_kind_token(const std::string& token) {
     }
     if (token == "iptv") {
         return PlaybackSourceKind::Iptv;
+    }
+    if (token == "webdav") {
+        return PlaybackSourceKind::WebDav;
     }
     return PlaybackSourceKind::Unknown;
 }
@@ -146,6 +152,15 @@ std::string make_iptv_stable_key(
     return {};
 }
 
+std::string make_webdav_stable_key(const std::string& source_key, std::string_view relative_path) {
+    const std::string normalized_path = normalize_relative_path(relative_path);
+    if (source_key.empty() || normalized_path.empty()) {
+        return {};
+    }
+
+    return "webdav:" + source_key + ":" + normalized_path;
+}
+
 const SmbSourceSettings* find_smb_source(const AppConfig& config, std::string_view source_key) {
     const auto it = std::find_if(
         config.smb_sources.begin(),
@@ -167,6 +182,19 @@ const IptvSourceSettings* find_iptv_source(const AppConfig& config, std::string_
             return source.key == source_key;
         });
     if (it == config.iptv_sources.end()) {
+        return nullptr;
+    }
+    return &(*it);
+}
+
+const WebDavSourceSettings* find_webdav_source(const AppConfig& config, std::string_view source_key) {
+    const auto it = std::find_if(
+        config.webdav_sources.begin(),
+        config.webdav_sources.end(),
+        [source_key](const WebDavSourceSettings& source) {
+            return source.key == source_key;
+        });
+    if (it == config.webdav_sources.end()) {
         return nullptr;
     }
     return &(*it);
@@ -198,6 +226,14 @@ std::string playback_history_stable_key_for_target_internal(const PlaybackTarget
             pick_target_locator(target));
     }
 
+    if (target.source_kind == PlaybackSourceKind::WebDav) {
+        if (target.webdav_locator.has_value()) {
+            return make_webdav_stable_key(source_key, target.webdav_locator->relative_path);
+        }
+
+        return {};
+    }
+
     return {};
 }
 
@@ -209,6 +245,10 @@ bool playback_target_uses_history_internal(const AppConfig& config, const Playba
         }
         case PlaybackSourceKind::Iptv: {
             const auto* source = find_iptv_source(config, target.source_key);
+            return source != nullptr && source->use_history;
+        }
+        case PlaybackSourceKind::WebDav: {
+            const auto* source = find_webdav_source(config, target.source_key);
             return source != nullptr && source->use_history;
         }
         default:
@@ -234,6 +274,9 @@ json entry_to_json(const PlaybackHistoryEntry& entry) {
 
     if (!entry.smb_relative_path.empty()) {
         object["smb_relative_path"] = entry.smb_relative_path;
+    }
+    if (!entry.webdav_relative_path.empty()) {
+        object["webdav_relative_path"] = entry.webdav_relative_path;
     }
 
     if (!entry.iptv_entry_key.empty()) {
@@ -274,6 +317,7 @@ bool parse_entry_from_json(const json& object, PlaybackHistoryEntry& entry) {
     entry.resume_position_seconds = std::max(0.0, object.value("resume_position_seconds", 0.0));
     entry.resume_duration_seconds = std::max(0.0, object.value("resume_duration_seconds", 0.0));
     entry.smb_relative_path = object.value("smb_relative_path", std::string{});
+    entry.webdav_relative_path = object.value("webdav_relative_path", std::string{});
     entry.iptv_entry_key = object.value("iptv_entry_key", std::string{});
     entry.iptv_group_title = object.value("iptv_group_title", std::string{});
     entry.iptv_stream_url_snapshot = object.value("iptv_stream_url_snapshot", std::string{});
@@ -293,6 +337,11 @@ bool parse_entry_from_json(const json& object, PlaybackHistoryEntry& entry) {
         entry.smb_relative_path = normalize_relative_path(entry.smb_relative_path);
         if (entry.stable_key.empty()) {
             entry.stable_key = make_smb_stable_key(entry.source_key, entry.smb_relative_path);
+        }
+    } else if (entry.source_kind == PlaybackSourceKind::WebDav) {
+        entry.webdav_relative_path = normalize_relative_path(entry.webdav_relative_path);
+        if (entry.stable_key.empty()) {
+            entry.stable_key = make_webdav_stable_key(entry.source_key, entry.webdav_relative_path);
         }
     } else if (entry.source_kind == PlaybackSourceKind::Iptv) {
         if (entry.stable_key.empty()) {
@@ -401,6 +450,14 @@ PlaybackHistoryEntry build_history_entry_from_target(const PlaybackTarget& targe
         return entry;
     }
 
+    if (target.source_kind == PlaybackSourceKind::WebDav) {
+        if (target.webdav_locator.has_value()) {
+            entry.webdav_relative_path = normalize_relative_path(target.webdav_locator->relative_path);
+            entry.stable_key = make_webdav_stable_key(entry.source_key, entry.webdav_relative_path);
+        }
+        return entry;
+    }
+
     if (target.source_kind == PlaybackSourceKind::Iptv) {
         entry.iptv_entry_key = trim_copy(target.iptv_overlay_entry_key);
         entry.iptv_group_title = trim_copy(target.subtitle);
@@ -458,6 +515,9 @@ void populate_missing_fields_from_existing(
     }
     if (entry.smb_relative_path.empty()) {
         entry.smb_relative_path = existing.smb_relative_path;
+    }
+    if (entry.webdav_relative_path.empty()) {
+        entry.webdav_relative_path = existing.webdav_relative_path;
     }
     if (entry.iptv_entry_key.empty()) {
         entry.iptv_entry_key = existing.iptv_entry_key;
@@ -691,6 +751,8 @@ bool remove_playback_history_missing_sources(const AppPaths& paths, const AppCon
     for (auto& entry : entries) {
         const bool keep = entry.source_kind == PlaybackSourceKind::Smb
                               ? find_smb_source(config, entry.source_key) != nullptr
+                              : entry.source_kind == PlaybackSourceKind::WebDav
+                                    ? find_webdav_source(config, entry.source_key) != nullptr
                               : entry.source_kind == PlaybackSourceKind::Iptv
                                     ? find_iptv_source(config, entry.source_key) != nullptr
                                     : false;
@@ -763,6 +825,21 @@ bool build_playback_target_from_history_entry(
         rebuilt_target.iptv_overlay_entry_key = entry.iptv_entry_key;
         rebuilt_target.locator_is_direct = !rebuilt_target.primary_locator.empty();
         target = std::move(rebuilt_target);
+        return true;
+    }
+
+    if (entry.source_kind == PlaybackSourceKind::WebDav) {
+        const auto* source = find_webdav_source(config, entry.source_key);
+        if (source == nullptr) {
+            error_message = "The WebDAV source used by this history item no longer exists.";
+            return false;
+        }
+        if (entry.webdav_relative_path.empty()) {
+            error_message = "This WebDAV history item no longer exposes a valid relative path.";
+            return false;
+        }
+
+        target = make_webdav_playback_target(*source, entry.webdav_relative_path);
         return true;
     }
 

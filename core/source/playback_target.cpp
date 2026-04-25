@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "switchbox/core/smb_browser.hpp"
+#include "switchbox/core/webdav_browser.hpp"
 
 namespace switchbox::core {
 
@@ -292,6 +293,34 @@ PlaybackTarget make_iptv_playback_target(
     target.iptv_overlay_entry_key = entry.favorite_key;
     target.locator_pre_resolved = false;
     target.locator_is_direct = !target.primary_locator.empty();
+    return target;
+}
+
+PlaybackTarget make_webdav_playback_target(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path) {
+    PlaybackTarget target;
+    target.source_kind = PlaybackSourceKind::WebDav;
+    target.source_key = source.key;
+    target.title = relative_path.empty() ? source.title : split_relative_segments(relative_path).back();
+    target.subtitle = webdav_display_path(source, relative_path);
+    target.source_label = webdav_source_root_label(source);
+    target.primary_locator = webdav_authorized_file_url(source, relative_path);
+    target.display_locator = webdav_file_url(source, relative_path);
+    target.fallback_locator.clear();
+
+    const std::string authorization_header = webdav_build_basic_auth_header(source);
+    if (!authorization_header.empty()) {
+        target.http_header_fields.push_back(authorization_header);
+    }
+
+    target.locator_is_direct = !target.primary_locator.empty();
+    target.webdav_locator = PlaybackTarget::WebDavLocator{
+        .url = source.url,
+        .username = source.username,
+        .password = source.password,
+        .relative_path = relative_path,
+    };
     return target;
 }
 

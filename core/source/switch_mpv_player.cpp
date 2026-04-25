@@ -32,6 +32,7 @@
 #include "switchbox/core/app_config.hpp"
 #include "switchbox/core/build_info.hpp"
 #include "switchbox/core/smb2_mount_fs.hpp"
+#include "switchbox/core/webdav_browser.hpp"
 
 namespace switchbox::core {
 
@@ -39,7 +40,7 @@ namespace switchbox::core {
 
 namespace {
 
-constexpr bool kPlaybackDebugLogEnabled = false;
+constexpr bool kPlaybackDebugLogEnabled = true;
 
 struct PlaybackDebugLogState {
     std::mutex mutex;
@@ -116,7 +117,7 @@ void reset_debug_log_session_locked(PlaybackDebugLogState& state) {
     state.session_token = make_playback_debug_session_token();
 
     output << "\n========== PLAYBACK LOG SESSION BEGIN ==========\n";
-    output << "[t+0ms][#" << (++state.sequence) << "] [session] log_format=2026-04-17f\n";
+    output << "[t+0ms][#" << (++state.sequence) << "] [session] log_format=2026-04-25g\n";
     output << "[t+0ms][#" << (++state.sequence) << "] [session] session_token=" << state.session_token << '\n';
     output << "[t+0ms][#" << (++state.sequence) << "] [session] base_directory="
            << switchbox::core::AppConfigStore::paths().base_directory.string()
@@ -167,6 +168,9 @@ constexpr uint64_t kInitialLoadTimeoutMs = 15000;
 constexpr uint64_t kIptvInitialLoadTimeoutMs = 45000;
 constexpr const char* kMemoryTextProtocol = "switchboxmem";
 constexpr const char* kMemoryTextProtocolPrefix = "switchboxmem://";
+constexpr const char* kWebDavStreamProtocol = "switchboxwebdav";
+constexpr const char* kWebDavStreamProtocolPrefix = "switchboxwebdav://";
+constexpr uint64_t kWebDavStreamChunkBytes = 8 * 1024 * 1024;
 
 struct MemoryTextStreamData {
     std::vector<char> bytes;
@@ -179,10 +183,33 @@ struct MemoryTextStreamCookie {
     std::atomic_bool cancelled = false;
 };
 
+struct WebDavStreamSpec {
+    switchbox::core::WebDavSourceSettings source;
+    std::string relative_path;
+};
+
+struct WebDavStreamCookie {
+    std::string key;
+    std::shared_ptr<WebDavStreamSpec> spec;
+    std::vector<char> buffer;
+    uint64_t buffer_offset = 0;
+    uint64_t position = 0;
+    uint64_t file_size = 0;
+    bool size_known = false;
+    bool eof = false;
+    std::atomic_bool cancelled = false;
+};
+
 struct MemoryTextStreamRegistry {
     std::mutex mutex;
     uint64_t next_id = 0;
     std::unordered_map<std::string, std::shared_ptr<MemoryTextStreamData>> streams;
+};
+
+struct WebDavStreamRegistry {
+    std::mutex mutex;
+    uint64_t next_id = 0;
+    std::unordered_map<std::string, std::shared_ptr<WebDavStreamSpec>> streams;
 };
 
 void configure_embedded_subtitle_fonts(mpv_handle* handle) {
@@ -218,6 +245,11 @@ std::string to_hex(uint64_t value) {
 
 MemoryTextStreamRegistry& memory_text_stream_registry() {
     static MemoryTextStreamRegistry registry;
+    return registry;
+}
+
+WebDavStreamRegistry& webdav_stream_registry() {
+    static WebDavStreamRegistry registry;
     return registry;
 }
 
@@ -413,6 +445,217 @@ int memory_text_stream_open_ro(void*, char* uri, mpv_stream_cb_info* info) {
     return 0;
 }
 
+bool is_webdav_stream_locator(std::string_view locator) {
+    return locator.rfind(kWebDavStreamProtocolPrefix, 0) == 0;
+}
+
+std::string extract_webdav_stream_key(std::string_view uri) {
+    if (!is_webdav_stream_locator(uri)) {
+        return {};
+    }
+
+    return std::string(uri.substr(std::char_traits<char>::length(kWebDavStreamProtocolPrefix)));
+}
+
+bool webdav_stream_probe_size(WebDavStreamCookie* cookie) {
+    if (cookie == nullptr || cookie->spec == nullptr) {
+        return false;
+    }
+    if (cookie->size_known) {
+        return true;
+    }
+    if (cookie->cancelled.load()) {
+        return false;
+    }
+
+    const auto result =
+        switchbox::core::probe_webdav_file(cookie->spec->source, cookie->spec->relative_path);
+    if (!result.success) {
+        append_debug_log(
+            "[webdav_stream] probe_failed path=" + cookie->spec->relative_path +
+            " error=" + result.error_message);
+        return false;
+    }
+
+    cookie->file_size = static_cast<uint64_t>(result.file_size);
+    cookie->size_known = true;
+    return true;
+}
+
+bool webdav_stream_fill_buffer(WebDavStreamCookie* cookie, uint64_t minimum_bytes) {
+    if (cookie == nullptr || cookie->spec == nullptr) {
+        return false;
+    }
+    if (cookie->cancelled.load()) {
+        return false;
+    }
+    if (!webdav_stream_probe_size(cookie)) {
+        return false;
+    }
+    if (cookie->position >= cookie->file_size) {
+        cookie->buffer.clear();
+        cookie->buffer_offset = cookie->position;
+        cookie->eof = true;
+        return true;
+    }
+
+    const uint64_t fetch_bytes = std::max<uint64_t>(minimum_bytes, kWebDavStreamChunkBytes);
+    const auto result = switchbox::core::read_webdav_file_range(
+        cookie->spec->source,
+        cookie->spec->relative_path,
+        cookie->position,
+        static_cast<size_t>(fetch_bytes));
+    if (!result.success) {
+        append_debug_log(
+            "[webdav_stream] read_failed path=" + cookie->spec->relative_path +
+            " offset=" + std::to_string(cookie->position) +
+            " error=" + result.error_message);
+        return false;
+    }
+
+    cookie->buffer = result.bytes;
+    cookie->buffer_offset = static_cast<uint64_t>(result.response_offset);
+    cookie->file_size = static_cast<uint64_t>(result.file_size);
+    cookie->size_known = true;
+    cookie->eof = result.eof;
+
+    append_debug_log(
+        "[webdav_stream] buffer path=" + cookie->spec->relative_path +
+        " offset=" + std::to_string(cookie->buffer_offset) +
+        " bytes=" + std::to_string(cookie->buffer.size()) +
+        " file_size=" + std::to_string(cookie->file_size) +
+        " eof=" + std::string(cookie->eof ? "true" : "false"));
+    return true;
+}
+
+int64_t webdav_stream_read(void* cookie_ptr, char* buffer, uint64_t byte_count) {
+    auto* cookie = static_cast<WebDavStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->spec == nullptr || buffer == nullptr) {
+        return -1;
+    }
+    if (cookie->cancelled.load()) {
+        return -1;
+    }
+    if (byte_count == 0) {
+        return 0;
+    }
+    if (!webdav_stream_probe_size(cookie)) {
+        return -1;
+    }
+    if (cookie->position >= cookie->file_size) {
+        return 0;
+    }
+
+    uint64_t total_read = 0;
+    while (total_read < byte_count) {
+        const uint64_t buffer_end = cookie->buffer_offset + cookie->buffer.size();
+        if (cookie->position < cookie->buffer_offset || cookie->position >= buffer_end) {
+            if (!webdav_stream_fill_buffer(cookie, byte_count - total_read)) {
+                return total_read > 0 ? static_cast<int64_t>(total_read) : -1;
+            }
+            if (cookie->buffer.empty()) {
+                break;
+            }
+        }
+
+        const uint64_t local_offset = cookie->position - cookie->buffer_offset;
+        const uint64_t available = cookie->buffer.size() - static_cast<size_t>(local_offset);
+        const uint64_t remaining = byte_count - total_read;
+        const uint64_t to_copy = std::min(available, remaining);
+        std::memcpy(
+            buffer + total_read,
+            cookie->buffer.data() + static_cast<size_t>(local_offset),
+            static_cast<size_t>(to_copy));
+        cookie->position += to_copy;
+        total_read += to_copy;
+
+        if (cookie->position >= cookie->file_size) {
+            break;
+        }
+    }
+
+    return static_cast<int64_t>(total_read);
+}
+
+int64_t webdav_stream_seek(void* cookie_ptr, int64_t offset) {
+    auto* cookie = static_cast<WebDavStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->spec == nullptr) {
+        return MPV_ERROR_GENERIC;
+    }
+    if (cookie->cancelled.load() || offset < 0) {
+        return MPV_ERROR_GENERIC;
+    }
+    if (cookie->size_known && static_cast<uint64_t>(offset) > cookie->file_size) {
+        return MPV_ERROR_GENERIC;
+    }
+
+    cookie->position = static_cast<uint64_t>(offset);
+    cookie->buffer.clear();
+    cookie->buffer_offset = cookie->position;
+    cookie->eof = false;
+    return offset;
+}
+
+int64_t webdav_stream_size(void* cookie_ptr) {
+    auto* cookie = static_cast<WebDavStreamCookie*>(cookie_ptr);
+    if (cookie == nullptr || cookie->spec == nullptr) {
+        return MPV_ERROR_UNSUPPORTED;
+    }
+    if (!webdav_stream_probe_size(cookie)) {
+        return MPV_ERROR_UNSUPPORTED;
+    }
+
+    return static_cast<int64_t>(cookie->file_size);
+}
+
+void webdav_stream_cancel(void* cookie_ptr) {
+    auto* cookie = static_cast<WebDavStreamCookie*>(cookie_ptr);
+    if (cookie != nullptr) {
+        cookie->cancelled.store(true);
+    }
+}
+
+void webdav_stream_close(void* cookie_ptr) {
+    std::unique_ptr<WebDavStreamCookie> cookie(static_cast<WebDavStreamCookie*>(cookie_ptr));
+}
+
+int webdav_stream_open_ro(void*, char* uri, mpv_stream_cb_info* info) {
+    if (uri == nullptr || info == nullptr) {
+        return MPV_ERROR_LOADING_FAILED;
+    }
+
+    const std::string key = extract_webdav_stream_key(uri);
+    if (key.empty()) {
+        return MPV_ERROR_LOADING_FAILED;
+    }
+
+    auto& registry = webdav_stream_registry();
+    std::shared_ptr<WebDavStreamSpec> spec;
+    {
+        std::scoped_lock lock(registry.mutex);
+        const auto iterator = registry.streams.find(key);
+        if (iterator == registry.streams.end()) {
+            return MPV_ERROR_LOADING_FAILED;
+        }
+        spec = iterator->second;
+    }
+
+    auto* cookie = new (std::nothrow) WebDavStreamCookie();
+    if (cookie == nullptr) {
+        return MPV_ERROR_GENERIC;
+    }
+
+    cookie->key = key;
+    cookie->spec = std::move(spec);
+    info->cookie = cookie;
+    info->read_fn = &webdav_stream_read;
+    info->seek_fn = &webdav_stream_seek;
+    info->size_fn = &webdav_stream_size;
+    info->close_fn = &webdav_stream_close;
+    info->cancel_fn = &webdav_stream_cancel;
+    return 0;
+}
+
 const mpv_node* node_map_find(const mpv_node_list* map, const char* key) {
     if (map == nullptr || key == nullptr) {
         return nullptr;
@@ -523,7 +766,7 @@ bool locator_looks_like_hls_playlist(std::string_view locator) {
     return lower.size() >= 5 && lower.ends_with(".m3u8");
 }
 
-std::string build_default_iptv_user_agent() {
+std::string build_default_http_user_agent() {
     // Match the proven UA used by nxmp/libmpv on Switch to reduce the chance
     // of source-specific server gating on unusual client identifiers.
     return "Mozilla/5.0 (X11; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0";
@@ -599,11 +842,12 @@ void set_option_pair(
     options.emplace_back(std::move(key), std::move(value));
 }
 
-std::vector<std::pair<std::string, std::string>> build_iptv_open_options(
+std::vector<std::pair<std::string, std::string>> build_http_open_options(
     const PlaybackTarget& target,
     const std::string& locator) {
     std::vector<std::pair<std::string, std::string>> options;
-    if (target.source_kind != PlaybackSourceKind::Iptv) {
+    if (target.source_kind != PlaybackSourceKind::Iptv &&
+        target.source_kind != PlaybackSourceKind::WebDav) {
         return options;
     }
 
@@ -618,7 +862,7 @@ std::vector<std::pair<std::string, std::string>> build_iptv_open_options(
     const bool locator_is_builtin_memory = is_builtin_memory_locator(locator);
     const bool locator_is_edl = is_edl_locator(locator);
     const std::string user_agent =
-        trim(target.http_user_agent).empty() ? build_default_iptv_user_agent() : trim(target.http_user_agent);
+        trim(target.http_user_agent).empty() ? build_default_http_user_agent() : trim(target.http_user_agent);
     const std::string referrer = trim(target.http_referrer);
 
     std::vector<std::string> header_fields = target.http_header_fields;
@@ -645,7 +889,8 @@ std::vector<std::pair<std::string, std::string>> build_iptv_open_options(
         }
     }
 
-    if (locator_is_hls_http || locator_is_memory_text || locator_is_inline_data || locator_is_builtin_memory) {
+    if (target.source_kind == PlaybackSourceKind::Iptv &&
+        (locator_is_hls_http || locator_is_memory_text || locator_is_inline_data || locator_is_builtin_memory)) {
         // In-memory HLS playlists are already rewritten to absolute child URLs,
         // so mpv should bypass its generic playlist parser and hand them
         // directly to FFmpeg's HLS demuxer. We apply the same hint to direct
@@ -664,6 +909,7 @@ uint64_t initial_load_timeout_ms_for_source(PlaybackSourceKind source_kind) {
     switch (source_kind) {
         case PlaybackSourceKind::Iptv:
             return kIptvInitialLoadTimeoutMs;
+        case PlaybackSourceKind::WebDav:
         case PlaybackSourceKind::Smb:
         case PlaybackSourceKind::Unknown:
         default:
@@ -946,6 +1192,8 @@ std::string playback_source_kind_label(PlaybackSourceKind kind) {
             return "smb";
         case PlaybackSourceKind::Iptv:
             return "iptv";
+        case PlaybackSourceKind::WebDav:
+            return "webdav";
         default:
             return "unknown";
     }
@@ -1347,7 +1595,9 @@ public:
         } else {
             switchbox::core::switch_smb_mount_release();
             locator = pick_locator(target);
-            if (target.source_kind == PlaybackSourceKind::Iptv) {
+            if (target.source_kind == PlaybackSourceKind::WebDav && target.webdav_locator.has_value()) {
+                locator = register_webdav_stream(target.webdav_locator.value());
+            } else if (target.source_kind == PlaybackSourceKind::Iptv) {
                 if (!target.locator_pre_resolved) {
                     const std::string resolved_locator =
                         switchbox::core::resolve_iptv_stream_url_for_playback(locator);
@@ -1398,19 +1648,21 @@ public:
                 target.iptv_open_plan->stream_class == switchbox::core::IptvPreparedStreamClass::DirectFlv;
         }
 
-        const auto open_options = build_iptv_open_options(target, locator);
+        const auto open_options = build_http_open_options(target, locator);
         append_debug_log(
             "[open] source_kind=" + playback_source_kind_label(target.source_kind) +
             " stream_kind=" + detect_locator_stream_kind(locator) +
             " title=" + target.title +
             " locator=" + summarize_locator_for_debug_log(locator));
-        if (target.source_kind == PlaybackSourceKind::Iptv && !open_options.empty()) {
+        if ((target.source_kind == PlaybackSourceKind::Iptv ||
+             target.source_kind == PlaybackSourceKind::WebDav) &&
+            !open_options.empty()) {
             append_debug_log(
-                "[open] iptv_options count=" + std::to_string(open_options.size()) +
+                "[open] http_options count=" + std::to_string(open_options.size()) +
                 " has_user_agent=" + std::string(trim(target.http_user_agent).empty() ? "false" : "true") +
                 " has_referrer=" + std::string(trim(target.http_referrer).empty() ? "false" : "true") +
                 " header_count=" + std::to_string(target.http_header_fields.size()));
-            append_debug_log("[open] iptv_option_keys=" + join_option_keys_for_debug_log(open_options));
+            append_debug_log("[open] http_option_keys=" + join_option_keys_for_debug_log(open_options));
             if (target.iptv_open_plan.has_value() && !target.iptv_open_plan->debug_summary.empty()) {
                 append_debug_log("[open] iptv_plan " + target.iptv_open_plan->debug_summary);
             }
@@ -2179,6 +2431,33 @@ public:
         return locator;
     }
 
+    std::string register_webdav_stream(const PlaybackTarget::WebDavLocator& locator) {
+        auto stream = std::make_shared<WebDavStreamSpec>();
+        stream->source.key = "runtime-webdav";
+        stream->source.title = locator.url;
+        stream->source.url = locator.url;
+        stream->source.username = locator.username;
+        stream->source.password = locator.password;
+        stream->relative_path = locator.relative_path;
+
+        auto& registry = webdav_stream_registry();
+        std::string key;
+        {
+            std::scoped_lock lock(registry.mutex);
+            const uint64_t id = ++registry.next_id;
+            const std::string fingerprint =
+                locator.url + "|" + locator.username + "|" + locator.relative_path;
+            key = "stream-" + to_hex(id) + "-" + to_hex(fnv1a64(fingerprint));
+            registry.streams[key] = stream;
+        }
+
+        const std::string stream_locator = std::string(kWebDavStreamProtocolPrefix) + key;
+        append_debug_log(
+            "[webdav_stream] registered locator=" + stream_locator +
+            " path=" + locator.relative_path);
+        return stream_locator;
+    }
+
 private:
     void reset_backend_core_state() {
         stop_render_thread();
@@ -2199,6 +2478,7 @@ private:
 
         this->ready = false;
         this->memory_text_protocol_registered = false;
+        this->webdav_stream_protocol_registered = false;
         this->has_media = false;
         this->session_active.store(false);
         this->paused.store(false);
@@ -2788,7 +3068,7 @@ private:
         mpv_set_option_string(this->handle, "idle", "yes");
         mpv_set_option_string(this->handle, "vo", "libmpv");
         mpv_set_option_string(this->handle, "ao", "hos");
-        mpv_set_option_string(this->handle, "user-agent", build_default_iptv_user_agent().c_str());
+        mpv_set_option_string(this->handle, "user-agent", build_default_http_user_agent().c_str());
         mpv_set_option_string(this->handle, "reset-on-next-file", "aid,vid,sid,pause,speed,video-rotate");
         mpv_set_option_string(this->handle, "hwdec", "nvtegra");
         mpv_set_option_string(this->handle, "hwdec-codecs", kHwdecCodecs);
@@ -2826,6 +3106,11 @@ private:
             this->handle = nullptr;
             return false;
         }
+        if (!register_webdav_stream_protocol(error_message)) {
+            mpv_terminate_destroy(this->handle);
+            this->handle = nullptr;
+            return false;
+        }
 
         mpv_request_log_messages(this->handle, "info");
         mpv_observe_property(this->handle, 0, "pause", MPV_FORMAT_FLAG);
@@ -2851,6 +3136,27 @@ private:
 
         this->memory_text_protocol_registered = true;
         append_debug_log("[mem] protocol registered");
+        return true;
+    }
+
+    bool register_webdav_stream_protocol(std::string& error_message) {
+        if (this->handle == nullptr) {
+            error_message = "mpv handle is not initialized.";
+            return false;
+        }
+        if (this->webdav_stream_protocol_registered) {
+            return true;
+        }
+
+        const int rc =
+            mpv_stream_cb_add_ro(this->handle, kWebDavStreamProtocol, nullptr, &webdav_stream_open_ro);
+        if (rc < 0) {
+            error_message = std::string("mpv_stream_cb_add_ro failed: ") + mpv_error_string(rc);
+            return false;
+        }
+
+        this->webdav_stream_protocol_registered = true;
+        append_debug_log("[webdav_stream] protocol registered");
         return true;
     }
 
@@ -2896,6 +3202,7 @@ private:
     mpv_render_context* context = nullptr;
     bool ready = false;
     bool memory_text_protocol_registered = false;
+    bool webdav_stream_protocol_registered = false;
     bool has_media = false;
     std::atomic<bool> session_active = false;
     std::atomic<bool> paused = false;

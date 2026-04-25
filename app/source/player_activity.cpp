@@ -31,6 +31,7 @@
 #include "switchbox/core/smb_browser.hpp"
 #include "switchbox/core/smb2_mount_fs.hpp"
 #include "switchbox/core/switch_mpv_player.hpp"
+#include "switchbox/core/webdav_browser.hpp"
 
 namespace switchbox::app {
 
@@ -46,6 +47,14 @@ std::string tr(const std::string& key) {
 
 std::string tr(const std::string& key, const std::string& arg) {
     return brls::getStr("switchbox/" + key, arg);
+}
+
+std::string build_error_dialog_message(const std::string& summary, const std::string& detail) {
+    if (detail.empty()) {
+        return summary;
+    }
+
+    return summary + "\n\n" + detail;
 }
 
 std::string startup_loading_message_for_prepare_stage(switchbox::core::IptvOpenPlanStage stage) {
@@ -111,9 +120,19 @@ std::string playback_source_kind_name(switchbox::core::PlaybackSourceKind kind) 
             return "smb";
         case switchbox::core::PlaybackSourceKind::Iptv:
             return "iptv";
+        case switchbox::core::PlaybackSourceKind::WebDav:
+            return "webdav";
         default:
             return "unknown";
     }
+}
+
+std::string startup_loading_title_for_source_kind(switchbox::core::PlaybackSourceKind kind) {
+    if (kind == switchbox::core::PlaybackSourceKind::Iptv) {
+        return tr("player_page/loading/title");
+    }
+
+    return tr("player_page/loading/file_title");
 }
 
 std::string detect_unsupported_iptv_web_platform(const switchbox::core::PlaybackTarget& target) {
@@ -370,6 +389,7 @@ PlayerActivity::~PlayerActivity() {
 }
 
 void PlayerActivity::initialize_switch_player_state() {
+    switchbox::core::switch_mpv_begin_debug_log_session();
     switchbox::core::switch_mpv_append_debug_log_note("player_session_begin");
     switchbox::core::switch_mpv_append_debug_log_note(
         "activity_enter source_kind=" + playback_source_kind_name(this->target.source_kind) +
@@ -407,8 +427,17 @@ void PlayerActivity::initialize_switch_player_state() {
     if (ensure_smb_locator_on_target(this->target)) {
         this->has_smb_source = true;
         this->smb_source = make_smb_source_from_target();
+        this->has_webdav_source = false;
+        this->webdav_source = {};
         this->current_relative_path = this->target.smb_locator->relative_path;
         this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+    } else if (this->target.webdav_locator.has_value()) {
+        this->has_smb_source = false;
+        this->smb_source = {};
+        this->has_webdav_source = true;
+        this->webdav_source = make_webdav_source_from_target();
+        this->current_relative_path = this->target.webdav_locator->relative_path;
+        this->overlay_relative_path = switchbox::core::webdav_parent_relative_path(this->current_relative_path);
     }
 
     this->session_volume = std::clamp(switchbox::core::AppConfigStore::current().general.player_volume, 0, 100);
@@ -442,9 +471,21 @@ void PlayerActivity::begin_async_startup_for_target(const switchbox::core::Playb
     this->startup_loading_progress = 0.10f;
     this->startup_loading_started_at = std::chrono::steady_clock::now();
     update_startup_loading_overlay_state();
-    switchbox::core::switch_mpv_append_debug_log_note("iptv_async_prepare begin");
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "async_prepare begin source_kind=" + playback_source_kind_name(next_target.source_kind));
 
-    brls::async([task]() {
+    const std::string webdav_prepare_message = tr("player_page/loading/preparing_file");
+    const std::string webdav_prepare_detail = tr("player_page/loading_details/preparing_file");
+    const std::string webdav_verify_message = tr("player_page/loading/verifying_file");
+    const std::string webdav_verify_detail = tr("player_page/loading_details/verifying_file");
+    const std::string webdav_open_failed_summary = tr("webdav_browser/open_failed");
+
+    brls::async([task,
+                 webdav_prepare_message,
+                 webdav_prepare_detail,
+                 webdav_verify_message,
+                 webdav_verify_detail,
+                 webdav_open_failed_summary]() {
         switchbox::core::PlaybackTarget prepared_target;
         {
             std::scoped_lock lock(task->mutex);
@@ -479,6 +520,47 @@ void PlayerActivity::begin_async_startup_for_target(const switchbox::core::Playb
             prepared_target.http_header_fields = open_plan.effective_header_fields;
             prepared_target.iptv_open_plan = open_plan;
             prepared_target.locator_pre_resolved = true;
+        } else if (prepared_target.source_kind == switchbox::core::PlaybackSourceKind::WebDav &&
+                   prepared_target.webdav_locator.has_value()) {
+            {
+                std::scoped_lock lock(task->mutex);
+                task->use_custom_loading_state = true;
+                task->loading_message = webdav_prepare_message;
+                task->loading_detail = webdav_prepare_detail;
+                task->loading_progress = 0.18f;
+            }
+
+            if (task->cancel_flag->load()) {
+                task->finished.store(true);
+                return;
+            }
+
+            {
+                std::scoped_lock lock(task->mutex);
+                task->loading_message = webdav_verify_message;
+                task->loading_detail = webdav_verify_detail;
+                task->loading_progress = 0.56f;
+            }
+
+            const auto probe_result = switchbox::core::probe_webdav_file(
+                switchbox::core::WebDavSourceSettings{
+                    .key = prepared_target.source_key,
+                    .title = prepared_target.source_label,
+                    .url = prepared_target.webdav_locator->url,
+                    .username = prepared_target.webdav_locator->username,
+                    .password = prepared_target.webdav_locator->password,
+                },
+                prepared_target.webdav_locator->relative_path);
+            if (!probe_result.success) {
+                std::scoped_lock lock(task->mutex);
+                task->startup_error = probe_result.error_message.empty()
+                                          ? webdav_open_failed_summary
+                                          : build_error_dialog_message(
+                                                webdav_open_failed_summary,
+                                                probe_result.error_message);
+                task->finished.store(true);
+                return;
+            }
         }
 
         {
@@ -507,22 +589,33 @@ void PlayerActivity::apply_started_target_state(const switchbox::core::PlaybackT
     if (ensure_smb_locator_on_target(this->target)) {
         this->has_smb_source = true;
         this->smb_source = make_smb_source_from_target();
+        this->has_webdav_source = false;
+        this->webdav_source = {};
         this->current_relative_path = this->target.smb_locator->relative_path;
         this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+    } else if (this->target.webdav_locator.has_value()) {
+        this->has_smb_source = false;
+        this->smb_source = {};
+        this->has_webdav_source = true;
+        this->webdav_source = make_webdav_source_from_target();
+        this->current_relative_path = this->target.webdav_locator->relative_path;
+        this->overlay_relative_path = switchbox::core::webdav_parent_relative_path(this->current_relative_path);
     } else {
         this->has_smb_source = false;
         this->smb_source = {};
+        this->has_webdav_source = false;
+        this->webdav_source = {};
         this->current_relative_path.clear();
         this->overlay_relative_path.clear();
     }
 
-    if (this->has_smb_source) {
+    if (this->has_smb_source || this->has_webdav_source) {
         this->iptv_overlay_context.reset();
         this->iptv_overlay_group_index = 0;
         this->iptv_overlay_group_picker = false;
     }
 
-    if (!this->has_smb_source && this->iptv_overlay_context == nullptr) {
+    if (!this->has_smb_source && !this->has_webdav_source && this->iptv_overlay_context == nullptr) {
         this->overlay_entries.clear();
         this->overlay_selected_index = -1;
         this->overlay_message.clear();
@@ -569,7 +662,8 @@ void PlayerActivity::poll_pending_startup_task() {
         return;
     }
 
-    switchbox::core::switch_mpv_append_debug_log_note("iptv_async_prepare ready");
+    switchbox::core::switch_mpv_append_debug_log_note(
+        "async_prepare ready source_kind=" + playback_source_kind_name(prepared_target.source_kind));
 
     startup_error.clear();
     this->startup_loading_message = tr("player_page/loading/opening_stream");
@@ -613,14 +707,29 @@ void PlayerActivity::update_startup_loading_overlay_state() {
             this->startup_loading_started_at = now;
         }
         switchbox::core::IptvOpenPlanProgress prepare_progress;
+        bool use_custom_loading_state = false;
+        std::string custom_loading_message;
+        std::string custom_loading_detail;
+        float custom_loading_progress = 0.0f;
         {
             std::scoped_lock lock(this->pending_startup_task->mutex);
             prepare_progress = this->pending_startup_task->progress;
+            use_custom_loading_state = this->pending_startup_task->use_custom_loading_state;
+            custom_loading_message = this->pending_startup_task->loading_message;
+            custom_loading_detail = this->pending_startup_task->loading_detail;
+            custom_loading_progress = this->pending_startup_task->loading_progress;
         }
-        this->startup_loading_message = startup_loading_message_for_prepare_stage(prepare_progress.stage);
-        this->startup_loading_detail = startup_loading_detail_for_prepare_stage(prepare_progress.stage);
-        this->startup_loading_progress = std::max(0.10f, std::clamp(prepare_progress.progress, 0.0f, 0.78f));
-    } else if (this->target.source_kind == switchbox::core::PlaybackSourceKind::Iptv &&
+        if (use_custom_loading_state) {
+            this->startup_loading_message = custom_loading_message;
+            this->startup_loading_detail = custom_loading_detail;
+            this->startup_loading_progress = std::clamp(custom_loading_progress, 0.10f, 0.78f);
+        } else {
+            this->startup_loading_message = startup_loading_message_for_prepare_stage(prepare_progress.stage);
+            this->startup_loading_detail = startup_loading_detail_for_prepare_stage(prepare_progress.stage);
+            this->startup_loading_progress = std::max(0.10f, std::clamp(prepare_progress.progress, 0.0f, 0.78f));
+        }
+    } else if ((this->target.source_kind == switchbox::core::PlaybackSourceKind::Iptv ||
+                this->target.source_kind == switchbox::core::PlaybackSourceKind::WebDav) &&
                switchbox::core::switch_mpv_session_active() &&
                !switchbox::core::switch_mpv_has_rendered_video_frame()) {
         this->startup_loading_active = true;
@@ -677,8 +786,10 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
     const bool full_backend_restart_for_switch =
         switching_inside_player &&
         has_existing_playback_session &&
-        this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
-        next_target.source_kind == switchbox::core::PlaybackSourceKind::Smb;
+        ((this->target.source_kind == switchbox::core::PlaybackSourceKind::Smb &&
+          next_target.source_kind == switchbox::core::PlaybackSourceKind::Smb) ||
+         (this->target.source_kind == switchbox::core::PlaybackSourceKind::WebDav &&
+          next_target.source_kind == switchbox::core::PlaybackSourceKind::WebDav));
 
     switchbox::core::switch_mpv_append_debug_log_note(
         "start_playback source_kind=" + playback_source_kind_name(next_target.source_kind) +
@@ -715,7 +826,8 @@ void PlayerActivity::start_playback_with_target(const switchbox::core::PlaybackT
         return;
     }
 
-    if (next_target.source_kind == switchbox::core::PlaybackSourceKind::Iptv) {
+    if (next_target.source_kind == switchbox::core::PlaybackSourceKind::Iptv ||
+        next_target.source_kind == switchbox::core::PlaybackSourceKind::WebDav) {
         begin_async_startup_for_target(next_target);
         return;
     }
@@ -1152,7 +1264,7 @@ void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
     this->overlay_message.clear();
     this->overlay_entries.clear();
 
-    if (!this->has_smb_source && this->iptv_overlay_context == nullptr) {
+    if (!this->has_smb_source && !this->has_webdav_source && this->iptv_overlay_context == nullptr) {
         sync_overlay_to_surface();
         return;
     }
@@ -1179,6 +1291,32 @@ void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
                 .is_directory = entry.is_directory,
                 .is_current = entry.relative_path == this->current_relative_path,
                 .smb_relative_path = entry.relative_path,
+                .webdav_relative_path = {},
+            });
+        }
+    } else if (this->has_webdav_source) {
+        const auto& config = switchbox::core::AppConfigStore::current();
+        const auto result =
+            switchbox::core::browse_webdav_directory(
+                this->webdav_source,
+                config.general,
+                this->overlay_relative_path);
+        if (!result.success) {
+            this->overlay_message = result.error_message;
+            this->overlay_selected_index = -1;
+            sync_overlay_to_surface();
+            return;
+        }
+
+        this->overlay_entries.reserve(result.entries.size());
+        for (const auto& entry : result.entries) {
+            this->overlay_entries.push_back({
+                .title = entry.name,
+                .stable_key = entry.relative_path,
+                .is_directory = entry.is_directory,
+                .is_current = entry.relative_path == this->current_relative_path,
+                .smb_relative_path = {},
+                .webdav_relative_path = entry.relative_path,
             });
         }
     } else if (this->iptv_overlay_context != nullptr) {
@@ -1200,6 +1338,7 @@ void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
                     .is_directory = true,
                     .is_current = group_index == this->iptv_overlay_group_index,
                     .smb_relative_path = {},
+                    .webdav_relative_path = {},
                     .iptv_group_index = group_index,
                     .iptv_entry_index = std::numeric_limits<size_t>::max(),
                 });
@@ -1220,6 +1359,7 @@ void PlayerActivity::refresh_overlay_entries(bool keep_selection) {
                     .is_current =
                         !this->target.iptv_overlay_entry_key.empty() && entry.favorite_key == this->target.iptv_overlay_entry_key,
                     .smb_relative_path = {},
+                    .webdav_relative_path = {},
                     .iptv_group_index = std::numeric_limits<size_t>::max(),
                     .iptv_entry_index = entry_index,
                 });
@@ -1268,6 +1408,8 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.visible = this->overlay_visible;
     if (this->has_smb_source) {
         model.path = switchbox::core::smb_display_path(this->smb_source, this->overlay_relative_path);
+    } else if (this->has_webdav_source) {
+        model.path = switchbox::core::webdav_display_path(this->webdav_source, this->overlay_relative_path);
     } else if (this->iptv_overlay_context != nullptr) {
         model.path = this->target.source_label;
         if (!this->iptv_overlay_group_picker) {
@@ -1291,7 +1433,7 @@ void PlayerActivity::sync_overlay_to_surface() {
     model.subtitle_track_label = this->selected_subtitle_track_label;
     model.subtitle_track_selectable = this->subtitle_track_selectable;
     model.loading_overlay_visible = this->startup_loading_overlay_visible;
-    model.loading_overlay_title = tr("player_page/loading/title");
+    model.loading_overlay_title = startup_loading_title_for_source_kind(this->target.source_kind);
     model.loading_overlay_message = this->startup_loading_message;
     model.loading_overlay_detail = this->startup_loading_detail;
     model.loading_overlay_progress = std::clamp(this->startup_loading_progress, 0.0f, 1.0f);
@@ -1349,6 +1491,18 @@ void PlayerActivity::enter_overlay_selection() {
         return;
     }
 
+    if (this->has_webdav_source && entry.is_directory) {
+        this->overlay_relative_path = entry.webdav_relative_path;
+        refresh_overlay_entries(false);
+        return;
+    }
+
+    if (this->has_webdav_source) {
+        start_playback_with_target(
+            switchbox::core::make_webdav_playback_target(this->webdav_source, entry.webdav_relative_path));
+        return;
+    }
+
     if (this->iptv_overlay_context == nullptr) {
         return;
     }
@@ -1393,6 +1547,18 @@ void PlayerActivity::overlay_go_parent() {
         return;
     }
 
+    if (this->has_webdav_source) {
+        if (this->overlay_relative_path.empty()) {
+            this->overlay_visible = false;
+            sync_overlay_to_surface();
+            return;
+        }
+
+        this->overlay_relative_path = switchbox::core::webdav_parent_relative_path(this->overlay_relative_path);
+        refresh_overlay_entries(false);
+        return;
+    }
+
     if (this->iptv_overlay_context != nullptr) {
         if (!this->iptv_overlay_group_picker) {
             this->iptv_overlay_group_picker = true;
@@ -1416,6 +1582,8 @@ void PlayerActivity::toggle_overlay() {
         this->iptv_overlay_group_picker = false;
         if (this->has_smb_source) {
             this->overlay_relative_path = switchbox::core::smb_parent_relative_path(this->current_relative_path);
+        } else if (this->has_webdav_source) {
+            this->overlay_relative_path = switchbox::core::webdav_parent_relative_path(this->current_relative_path);
         }
     }
     if (this->overlay_visible) {
@@ -2409,6 +2577,18 @@ switchbox::core::SmbSourceSettings PlayerActivity::make_smb_source_from_target()
         source.share = parsed_locator.share;
         source.username = parsed_locator.username;
         source.password = parsed_locator.password;
+    }
+    return source;
+}
+
+switchbox::core::WebDavSourceSettings PlayerActivity::make_webdav_source_from_target() const {
+    switchbox::core::WebDavSourceSettings source;
+    source.key = this->target.source_key.empty() ? "runtime" : this->target.source_key;
+    source.title = this->target.source_label.empty() ? "WebDAV" : this->target.source_label;
+    if (this->target.webdav_locator.has_value()) {
+        source.url = this->target.webdav_locator->url;
+        source.username = this->target.webdav_locator->username;
+        source.password = this->target.webdav_locator->password;
     }
     return source;
 }

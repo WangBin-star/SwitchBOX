@@ -94,6 +94,7 @@ private:
     void confirm_delete_current_file();
     std::string find_next_focus_after_delete() const;
     switchbox::core::SmbSourceSettings make_smb_source_from_target() const;
+    switchbox::core::WebDavSourceSettings make_webdav_source_from_target() const;
     std::vector<size_t> current_iptv_overlay_entry_indices() const;
     std::string current_iptv_overlay_group_title() const;
 
@@ -109,6 +110,7 @@ private:
         bool is_directory = false;
         bool is_current = false;
         std::string smb_relative_path;
+        std::string webdav_relative_path;
         size_t iptv_group_index = std::numeric_limits<size_t>::max();
         size_t iptv_entry_index = std::numeric_limits<size_t>::max();
     };
@@ -120,10 +122,16 @@ private:
         switchbox::core::PlaybackTarget prepared_target;
         std::string startup_error;
         switchbox::core::IptvOpenPlanProgress progress;
+        bool use_custom_loading_state = false;
+        std::string loading_message;
+        std::string loading_detail;
+        float loading_progress = 0.0f;
     };
 
     switchbox::core::SmbSourceSettings smb_source;
     bool has_smb_source = false;
+    switchbox::core::WebDavSourceSettings webdav_source;
+    bool has_webdav_source = false;
     std::shared_ptr<const switchbox::core::IptvPlaybackOverlayContext> iptv_overlay_context;
     size_t iptv_overlay_group_index = 0;
     bool iptv_overlay_group_picker = false;

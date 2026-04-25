@@ -36,6 +36,14 @@
                 }
             }
         },
+        "webdav_browser": {
+            "extensions_hint": "Visible extensions: {0}",
+            "backend_unavailable": "The WebDAV browser backend is not available in this build.",
+            "open_failed": "Failed to open this WebDAV location.",
+            "empty": "This directory does not contain visible folders or files that match the current extension filter.",
+            "folder_detail": "Directory",
+            "file_detail": "Playable file / {0}"
+        },
         "iptv_browser": {
             "loading": "Loading IPTV playlist...",
             "loading_detail": "The first open fetches the remote M3U playlist. Please wait.",
@@ -74,14 +82,23 @@
                 "finalizing": "Finalizing channel list..."
             }
         },
+        "webdav_loading": {
+            "title": "Fetching WebDAV Directory",
+            "stages": {
+                "starting": "Preparing to fetch the WebDAV directory...",
+                "opening_connection": "Fetching remote directory...",
+                "finalizing": "Finalizing file list..."
+            }
+        },
         "home": {
-            "no_sources_hint": "There are no enabled IPTV or SMB sources yet. Press + to add them in Settings.",
+            "no_sources_hint": "There are no enabled IPTV, SMB, or WebDAV sources yet. Press + to add them in Settings.",
             "source_info": "Software source: https://github.com/WangBin-star/SwitchBOX",
             "cards": {
                 "common": {
                     "not_set": "Not set",
                     "untitled_iptv": "Untitled IPTV",
-                    "untitled_smb": "Untitled SMB"
+                    "untitled_smb": "Untitled SMB",
+                    "untitled_webdav": "Untitled WebDAV"
                 },
                 "history": {
                     "eyebrow": "RECENT",
@@ -96,13 +113,17 @@
                 "smb": {
                     "eyebrow": "SMB",
                     "detail": "Shared media source"
+                },
+                "webdav": {
+                    "eyebrow": "WebDAV",
+                    "detail": "WebDAV media source"
                 }
             }
         },
         "sections": {
             "history": {
                 "title": "Playback History",
-                "subtitle": "A future view for recent IPTV and SMB playback in one unified list",
+                "subtitle": "A future view for recent IPTV, SMB, and WebDAV playback in one unified list",
                 "checkpoints": {
                     "1": "Define one shared playback-history structure for IPTV and SMB",
                     "2": "Show the recent-play list with source markers",
@@ -136,6 +157,15 @@
                     "3": "Pass selected files into the shared player activity"
                 }
             },
+            "webdav": {
+                "title": "WebDAV",
+                "subtitle": "Saved WebDAV roots, directory browsing, and direct media playback",
+                "checkpoints": {
+                    "1": "Add saved WebDAV roots and credentials",
+                    "2": "Validate directory listing and file filtering",
+                    "3": "Pass selected files into the shared player activity"
+                }
+            },
             "settings": {
                 "title": "Settings",
                 "subtitle": "Runtime checks, source config and diagnostics surface",
@@ -147,9 +177,9 @@
             }
         },
         "history_page": {
-            "summary": "Review recent IPTV and SMB playback in one unified list",
+            "summary": "Review recent IPTV, SMB, and WebDAV playback in one unified list",
             "empty_title": "No playback history yet",
-            "empty_detail": "Start playing an IPTV channel or SMB file and it will appear here",
+            "empty_detail": "Start playing an IPTV channel, SMB file, or WebDAV file and it will appear here",
             "untitled": "Untitled item",
             "open_failed": "Unable to open this history item.",
             "delete_confirm": "Delete playback history item \"{0}\"?",
@@ -175,7 +205,10 @@
             "volume_label": "Volume: {0}",
             "loading": {
                 "title": "Opening Channel",
+                "file_title": "Opening Media File",
                 "resolving_stream": "Resolving channel address...",
+                "preparing_file": "Preparing remote file...",
+                "verifying_file": "Verifying WebDAV file...",
                 "normalizing_locator": "Normalizing channel locator...",
                 "probing_source": "Probing source response...",
                 "inspecting_response": "Identifying stream type...",
@@ -188,6 +221,8 @@
             },
             "loading_details": {
                 "resolving_stream": "Preparing a playable connection path for this channel.",
+                "preparing_file": "Preparing a readable remote connection for this WebDAV file before handing it to the player.",
+                "verifying_file": "Probing file size and readability to confirm the player can continue opening it.",
                 "normalizing_locator": "Applying special-link rules and normalizing the locator before handing it to the player.",
                 "probing_source": "Reading the first chunk from the source to determine whether it is media, a playlist, or a proxy page.",
                 "inspecting_response": "Distinguishing between direct media, HLS, FLV, TS, and other response types so the correct playback tuning can be applied.",
@@ -438,6 +473,35 @@
                     "username": "Leave empty for guest or fill later",
                     "password": "Fill when needed",
                     "base_path": "Example: /movies or /tv"
+                }
+            },
+            "webdav": {
+                "summary": "Manage WebDAV entries here, including editing existing ones and creating new ones.",
+                "editor_title": "WebDAV Entry",
+                "list_empty": "No WebDAV entries yet.",
+                "add_entry": "Add WebDAV entry",
+                "add_entry_detail": "Create a new WebDAV profile",
+                "delete_confirm": "Delete WebDAV entry \"{0}\"?",
+                "default_title": "New WebDAV entry",
+                "fields": {
+                    "enabled": "Enabled",
+                    "use_history": "Use history",
+                    "title": "Title",
+                    "url": "Address",
+                    "username": "Username",
+                    "password": "Password"
+                },
+                "placeholders": {
+                    "title": "Enter display name",
+                    "url": "Enter WebDAV root URL",
+                    "username": "Enter username",
+                    "password": "Enter password"
+                },
+                "hints": {
+                    "title": "This name will be shown in the WebDAV source list",
+                    "url": "Example: https://example.com/remote.php/dav/files/user/media/",
+                    "username": "Leave empty when the server does not require authentication",
+                    "password": "Fill when needed"
                 }
             }
         }

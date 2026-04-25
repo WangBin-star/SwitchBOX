@@ -22,6 +22,7 @@ struct PlaybackHistoryEntry {
     double resume_duration_seconds = 0.0;
 
     std::string smb_relative_path;
+    std::string webdav_relative_path;
 
     std::string iptv_entry_key;
     std::string iptv_group_title;

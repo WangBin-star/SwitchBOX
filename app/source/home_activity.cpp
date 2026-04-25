@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -27,6 +28,7 @@
 #include "switchbox/app/iptv_browser_activity.hpp"
 #include "switchbox/app/settings_activity.hpp"
 #include "switchbox/app/smb_browser_activity.hpp"
+#include "switchbox/app/webdav_browser_activity.hpp"
 #include "switchbox/core/app_config.hpp"
 
 namespace switchbox::app {
@@ -52,6 +54,20 @@ brls::Label* create_label(
 
 NVGcolor with_alpha(NVGcolor color, float alpha) {
     return nvgRGBAf(color.r, color.g, color.b, alpha);
+}
+
+bool is_descendant_of(brls::View* view, brls::View* ancestor) {
+    if (view == nullptr || ancestor == nullptr) {
+        return false;
+    }
+
+    for (auto* current = view; current != nullptr; current = current->getParent()) {
+        if (current == ancestor) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 std::filesystem::path iptv_debug_log_path() {
@@ -125,6 +141,22 @@ std::string visible_smb_title(const switchbox::core::SmbSourceSettings& source) 
     }
 
     return tr("home/cards/common/untitled_smb");
+}
+
+std::string summarize_webdav_source(const switchbox::core::WebDavSourceSettings& source) {
+    if (!source.url.empty()) {
+        return source.url;
+    }
+
+    return tr("home/cards/common/not_set");
+}
+
+std::string visible_webdav_title(const switchbox::core::WebDavSourceSettings& source) {
+    if (!source.title.empty()) {
+        return source.title;
+    }
+
+    return tr("home/cards/common/untitled_webdav");
 }
 
 struct HomeCardModel {
@@ -321,16 +353,46 @@ std::string build_iptv_playlist_error_message(const switchbox::core::IptvPlaylis
     return tr("iptv_browser/open_failed");
 }
 
-struct IptvLoadingOverlayBuild {
+std::string build_webdav_browser_error_message(const switchbox::core::WebDavBrowserResult& result) {
+    if (!result.backend_available) {
+        return tr("webdav_browser/backend_unavailable");
+    }
+
+    if (!result.success) {
+        return build_error_dialog_message(
+            tr("webdav_browser/open_failed"),
+            result.error_message);
+    }
+
+    return tr("webdav_browser/open_failed");
+}
+
+std::string build_webdav_loading_detail_text(
+    const switchbox::core::WebDavBrowseLoadProgress& progress) {
+    switch (progress.stage) {
+        case switchbox::core::WebDavBrowseLoadStage::Starting:
+            return tr("webdav_loading/stages/starting");
+        case switchbox::core::WebDavBrowseLoadStage::OpeningConnection:
+            return tr("webdav_loading/stages/opening_connection");
+        case switchbox::core::WebDavBrowseLoadStage::ParsingResponse:
+            return tr("webdav_loading/stages/opening_connection");
+        case switchbox::core::WebDavBrowseLoadStage::Finalizing:
+            return tr("webdav_loading/stages/finalizing");
+        default:
+            return tr("webdav_loading/stages/starting");
+    }
+}
+
+struct HomeLoadingOverlayBuild {
     brls::View* view = nullptr;
+    brls::Label* title_label = nullptr;
     brls::Label* source_label = nullptr;
     brls::Label* detail_label = nullptr;
     brls::Label* percent_label = nullptr;
     brls::Box* fill_view = nullptr;
 };
 
-IptvLoadingOverlayBuild create_iptv_loading_overlay_content(
-    const switchbox::core::IptvSourceSettings& source) {
+HomeLoadingOverlayBuild create_home_loading_overlay_content() {
     constexpr float kTrackWidth = 460.0f;
     constexpr float kTrackHeight = 22.0f;
     constexpr float kPercentWidth = 68.0f;
@@ -351,25 +413,17 @@ IptvLoadingOverlayBuild create_iptv_loading_overlay_content(
     panel->setShadowType(brls::ShadowType::GENERIC);
     root->addView(panel);
 
-    auto* title = create_label(tr("iptv_loading/title"), 24.0f, nvgRGBA(255, 255, 255, 245), false);
+    auto* title = create_label("", 24.0f, nvgRGBA(255, 255, 255, 245), false);
     title->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     title->setMargins(0, 0, 8, 0);
     panel->addView(title);
 
-    auto* source_label = create_label(
-        visible_iptv_title(source),
-        16.0f,
-        nvgRGBA(134, 220, 245, 230),
-        true);
+    auto* source_label = create_label("", 16.0f, nvgRGBA(134, 220, 245, 230), true);
     source_label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     source_label->setMargins(0, 0, 18, 0);
     panel->addView(source_label);
 
-    auto* detail_label = create_label(
-        build_iptv_loading_stage_text(switchbox::core::IptvPlaylistLoadStage::Starting),
-        17.0f,
-        theme["brls/text_disabled"],
-        false);
+    auto* detail_label = create_label("", 17.0f, theme["brls/text_disabled"], false);
     detail_label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     detail_label->setMargins(0, 0, 16, 0);
     panel->addView(detail_label);
@@ -403,6 +457,7 @@ IptvLoadingOverlayBuild create_iptv_loading_overlay_content(
 
     return {
         .view = root,
+        .title_label = title,
         .source_label = source_label,
         .detail_label = detail_label,
         .percent_label = percent_label,
@@ -414,6 +469,12 @@ struct HomeFinishedLoad {
     bool ready = false;
     bool user_cancelled = false;
     switchbox::core::IptvPlaylistResult result;
+};
+
+struct HomeFinishedWebDavLoad {
+    bool ready = false;
+    bool user_cancelled = false;
+    switchbox::core::WebDavBrowserResult result;
 };
 
 void apply_native_status_layout(brls::AppletFrame* frame) {
@@ -457,15 +518,28 @@ struct HomeActivity::IptvLoadState {
     bool user_cancelled = false;
 };
 
+struct HomeActivity::WebDavLoadState {
+    std::mutex mutex;
+    std::shared_ptr<std::atomic_bool> cancel_flag = std::make_shared<std::atomic_bool>(false);
+    switchbox::core::WebDavBrowseLoadProgress progress;
+    switchbox::core::WebDavBrowserResult result;
+    bool finished = false;
+    bool completion_consumed = false;
+    bool user_cancelled = false;
+};
+
 HomeActivity::HomeActivity(const StartupContext& context)
     : brls::Activity() {
     (void)context;
 }
 
 HomeActivity::~HomeActivity() {
-    this->iptv_loading_timer.stop();
+    this->loading_timer.stop();
     if (this->iptv_load_state != nullptr) {
         this->iptv_load_state->cancel_flag->store(true);
+    }
+    if (this->webdav_load_state != nullptr) {
+        this->webdav_load_state->cancel_flag->store(true);
     }
 }
 
@@ -479,22 +553,25 @@ void HomeActivity::onContentAvailable() {
         unregisterAction(this->cancel_loading_action_id);
         this->cancel_loading_action_id = ACTION_NONE;
     }
+}
 
-    this->cancel_loading_action_id = registerAction(
-        brls::getStr("hints/back"),
-        brls::BUTTON_B,
-        [this](brls::View*) {
-            if (!this->iptv_loading_visible) {
-                return false;
-            }
+void HomeActivity::onResume() {
+    brls::Activity::onResume();
+    brls::delay(1, [this]() {
+        if (this->loading_visible) {
+            return;
+        }
 
-            append_home_iptv_debug_log("loading_overlay cancel_requested");
-            cancel_iptv_loading(true);
-            return true;
-        },
-        true,
-        false,
-        brls::SOUND_BACK);
+        auto* current_focus = brls::Application::getCurrentFocus();
+        const bool focus_needs_repair =
+            current_focus == nullptr ||
+            current_focus->getParentActivity() != this ||
+            current_focus->getVisibility() != brls::Visibility::VISIBLE ||
+            is_descendant_of(current_focus, this->loading_overlay);
+        if (focus_needs_repair) {
+            restore_home_focus();
+        }
+    });
 }
 
 brls::View* HomeActivity::build_content() {
@@ -549,6 +626,24 @@ brls::View* HomeActivity::build_content() {
         });
     }
 
+    for (const auto& source : config.webdav_sources) {
+        if (!source.enabled) {
+            continue;
+        }
+
+        cards.push_back({
+            .eyebrow = tr("home/cards/webdav/eyebrow"),
+            .title = visible_webdav_title(source),
+            .subtitle = summarize_webdav_source(source),
+            .footer = tr("home/cards/webdav/detail"),
+            .accent_color = nvgRGB(151, 138, 239),
+            .action =
+                [this, source]() {
+                    start_webdav_loading(source);
+                },
+        });
+    }
+
     const bool has_source_cards = cards.size() > 1;
     auto* content = new brls::Box(brls::Axis::COLUMN);
     content->setPadding(14, 0, 28, 0);
@@ -598,57 +693,89 @@ brls::View* HomeActivity::build_content() {
     apply_footer_source_info(frame, tr("home/source_info"));
     root->addView(frame);
 
-    auto overlay_build = create_iptv_loading_overlay_content({});
-    this->iptv_loading_overlay = dynamic_cast<brls::Box*>(overlay_build.view);
-    this->iptv_loading_source_label = overlay_build.source_label;
-    this->iptv_loading_detail_label = overlay_build.detail_label;
-    this->iptv_loading_percent_label = overlay_build.percent_label;
-    this->iptv_loading_fill_view = overlay_build.fill_view;
-    if (this->iptv_loading_overlay != nullptr) {
-        this->iptv_loading_overlay->setPositionType(brls::PositionType::ABSOLUTE);
-        this->iptv_loading_overlay->setPositionTop(0);
-        this->iptv_loading_overlay->setPositionRight(0);
-        this->iptv_loading_overlay->setPositionBottom(0);
-        this->iptv_loading_overlay->setPositionLeft(0);
-        this->iptv_loading_overlay->setVisibility(brls::Visibility::GONE);
-        this->iptv_loading_overlay->setFocusable(true);
-        this->iptv_loading_overlay->setHideHighlight(true);
-        root->addView(this->iptv_loading_overlay);
+    auto overlay_build = create_home_loading_overlay_content();
+    this->loading_overlay = dynamic_cast<brls::Box*>(overlay_build.view);
+    this->loading_title_label = overlay_build.title_label;
+    this->loading_source_label = overlay_build.source_label;
+    this->loading_detail_label = overlay_build.detail_label;
+    this->loading_percent_label = overlay_build.percent_label;
+    this->loading_fill_view = overlay_build.fill_view;
+    if (this->loading_overlay != nullptr) {
+        this->loading_overlay->setPositionType(brls::PositionType::ABSOLUTE);
+        this->loading_overlay->setPositionTop(0);
+        this->loading_overlay->setPositionRight(0);
+        this->loading_overlay->setPositionBottom(0);
+        this->loading_overlay->setPositionLeft(0);
+        this->loading_overlay->setVisibility(brls::Visibility::GONE);
+        this->loading_overlay->setFocusable(true);
+        this->loading_overlay->setHideHighlight(true);
+        root->addView(this->loading_overlay);
     }
 
     return root;
 }
 
 void HomeActivity::start_iptv_loading(const switchbox::core::IptvSourceSettings& source) {
-    if (this->iptv_loading_visible) {
+    if (this->loading_visible) {
         return;
     }
 
+    this->active_loading_kind = LoadingKind::Iptv;
     this->pending_iptv_source = source;
     this->home_focus_before_iptv_loading = brls::Application::getCurrentFocus();
     this->iptv_load_state = std::make_shared<IptvLoadState>();
+    this->webdav_load_state.reset();
     this->iptv_loading_completion_handled = false;
-    this->iptv_loading_visible = true;
+    this->webdav_loading_completion_handled = false;
+    this->loading_visible = true;
 
-    if (this->iptv_loading_source_label != nullptr) {
-        this->iptv_loading_source_label->setText(visible_iptv_title(source));
+    if (this->loading_title_label != nullptr) {
+        this->loading_title_label->setText(tr("iptv_loading/title"));
+    }
+    if (this->loading_source_label != nullptr) {
+        this->loading_source_label->setText(visible_iptv_title(source));
     }
 
     append_home_iptv_debug_log(
         "loading_overlay start source=" + sanitize_home_log_text(visible_iptv_title(source)));
     refresh_iptv_loading_overlay();
-    if (this->iptv_loading_overlay != nullptr) {
-        this->iptv_loading_overlay->setVisibility(brls::Visibility::VISIBLE);
-        brls::Application::giveFocus(this->iptv_loading_overlay);
+    if (this->loading_overlay != nullptr) {
+        this->loading_overlay->setVisibility(brls::Visibility::VISIBLE);
+        brls::Application::giveFocus(this->loading_overlay);
     }
+    if (this->cancel_loading_action_id != ACTION_NONE) {
+        unregisterAction(this->cancel_loading_action_id);
+        this->cancel_loading_action_id = ACTION_NONE;
+    }
+    this->cancel_loading_action_id = registerAction(
+        brls::getStr("hints/back"),
+        brls::BUTTON_B,
+        [this](brls::View*) {
+            append_home_iptv_debug_log("loading_overlay cancel_requested");
+            if (this->active_loading_kind == LoadingKind::WebDav) {
+                cancel_webdav_loading(true);
+            } else {
+                cancel_iptv_loading(true);
+            }
+            return true;
+        },
+        true,
+        false,
+        brls::SOUND_BACK);
 
-    this->iptv_loading_timer.stop();
-    this->iptv_loading_timer.setPeriod(90);
-    this->iptv_loading_timer.setCallback([this]() {
+    this->loading_timer.stop();
+    this->loading_timer.setPeriod(90);
+    this->loading_timer.setCallback([this]() {
+        if (this->active_loading_kind == LoadingKind::WebDav) {
+            refresh_webdav_loading_overlay();
+            handle_webdav_loading_completion();
+            return;
+        }
+
         refresh_iptv_loading_overlay();
         handle_iptv_loading_completion();
     });
-    this->iptv_loading_timer.start();
+    this->loading_timer.start();
 
     auto state = this->iptv_load_state;
     const auto source_copy = source;
@@ -676,6 +803,95 @@ void HomeActivity::start_iptv_loading(const switchbox::core::IptvSourceSettings&
     });
 }
 
+void HomeActivity::start_webdav_loading(const switchbox::core::WebDavSourceSettings& source) {
+    if (this->loading_visible) {
+        return;
+    }
+
+    this->active_loading_kind = LoadingKind::WebDav;
+    this->pending_webdav_source = source;
+    this->home_focus_before_iptv_loading = brls::Application::getCurrentFocus();
+    this->iptv_load_state.reset();
+    this->webdav_load_state = std::make_shared<WebDavLoadState>();
+    this->iptv_loading_completion_handled = false;
+    this->webdav_loading_completion_handled = false;
+    this->loading_visible = true;
+
+    if (this->loading_title_label != nullptr) {
+        this->loading_title_label->setText(tr("webdav_loading/title"));
+    }
+    if (this->loading_source_label != nullptr) {
+        this->loading_source_label->setText(visible_webdav_title(source));
+    }
+
+    append_home_iptv_debug_log(
+        "webdav_loading_overlay start source=" + sanitize_home_log_text(visible_webdav_title(source)));
+    refresh_webdav_loading_overlay();
+    if (this->loading_overlay != nullptr) {
+        this->loading_overlay->setVisibility(brls::Visibility::VISIBLE);
+        brls::Application::giveFocus(this->loading_overlay);
+    }
+    if (this->cancel_loading_action_id != ACTION_NONE) {
+        unregisterAction(this->cancel_loading_action_id);
+        this->cancel_loading_action_id = ACTION_NONE;
+    }
+    this->cancel_loading_action_id = registerAction(
+        brls::getStr("hints/back"),
+        brls::BUTTON_B,
+        [this](brls::View*) {
+            append_home_iptv_debug_log("loading_overlay cancel_requested");
+            if (this->active_loading_kind == LoadingKind::WebDav) {
+                cancel_webdav_loading(true);
+            } else {
+                cancel_iptv_loading(true);
+            }
+            return true;
+        },
+        true,
+        false,
+        brls::SOUND_BACK);
+
+    this->loading_timer.stop();
+    this->loading_timer.setPeriod(90);
+    this->loading_timer.setCallback([this]() {
+        if (this->active_loading_kind == LoadingKind::WebDav) {
+            refresh_webdav_loading_overlay();
+            handle_webdav_loading_completion();
+            return;
+        }
+
+        refresh_iptv_loading_overlay();
+        handle_iptv_loading_completion();
+    });
+    this->loading_timer.start();
+
+    auto state = this->webdav_load_state;
+    const auto source_copy = source;
+    const auto general = switchbox::core::AppConfigStore::current().general;
+    brls::async([state, source_copy, general]() {
+        auto result = switchbox::core::browse_webdav_directory(
+            source_copy,
+            general,
+            {},
+            [state](const switchbox::core::WebDavBrowseLoadProgress& progress) {
+                std::scoped_lock lock(state->mutex);
+                if (state->user_cancelled) {
+                    return;
+                }
+                state->progress = progress;
+            });
+        brls::sync([state, result = std::move(result)]() mutable {
+            std::scoped_lock lock(state->mutex);
+            if (!state->user_cancelled) {
+                state->progress.stage = switchbox::core::WebDavBrowseLoadStage::Finalizing;
+                state->progress.progress = 1.0f;
+            }
+            state->result = std::move(result);
+            state->finished = true;
+        });
+    });
+}
+
 void HomeActivity::cancel_iptv_loading(bool user_cancelled) {
     auto state = this->iptv_load_state;
     if (state != nullptr) {
@@ -686,12 +902,28 @@ void HomeActivity::cancel_iptv_loading(bool user_cancelled) {
         state->cancel_flag->store(true);
     }
 
-    hide_iptv_loading_overlay(true);
+    hide_loading_overlay(true);
     this->iptv_load_state.reset();
 }
 
+void HomeActivity::cancel_webdav_loading(bool user_cancelled) {
+    auto state = this->webdav_load_state;
+    if (state != nullptr) {
+        std::scoped_lock lock(state->mutex);
+        if (user_cancelled) {
+            state->user_cancelled = true;
+        }
+        state->cancel_flag->store(true);
+    }
+
+    hide_loading_overlay(true);
+    this->webdav_load_state.reset();
+}
+
 void HomeActivity::refresh_iptv_loading_overlay() {
-    if (!this->iptv_loading_visible || this->iptv_load_state == nullptr) {
+    if (!this->loading_visible ||
+        this->active_loading_kind != LoadingKind::Iptv ||
+        this->iptv_load_state == nullptr) {
         return;
     }
 
@@ -701,16 +933,45 @@ void HomeActivity::refresh_iptv_loading_overlay() {
         progress = this->iptv_load_state->progress;
     }
 
-    if (this->iptv_loading_detail_label != nullptr) {
-        this->iptv_loading_detail_label->setText(build_iptv_loading_detail_text(progress));
+    if (this->loading_detail_label != nullptr) {
+        this->loading_detail_label->setText(build_iptv_loading_detail_text(progress));
     }
-    if (this->iptv_loading_percent_label != nullptr) {
-        this->iptv_loading_percent_label->setText(build_iptv_loading_percent_text(progress.progress));
+    if (this->loading_percent_label != nullptr) {
+        this->loading_percent_label->setText(build_iptv_loading_percent_text(progress.progress));
     }
-    if (this->iptv_loading_fill_view != nullptr) {
+    if (this->loading_fill_view != nullptr) {
         constexpr float kTrackWidth = 460.0f;
         const float progress_width = std::clamp(progress.progress, 0.0f, 1.0f) * kTrackWidth;
-        this->iptv_loading_fill_view->setWidth(progress_width);
+        this->loading_fill_view->setWidth(progress_width);
+    }
+}
+
+void HomeActivity::refresh_webdav_loading_overlay() {
+    if (!this->loading_visible ||
+        this->active_loading_kind != LoadingKind::WebDav ||
+        this->webdav_load_state == nullptr) {
+        return;
+    }
+
+    switchbox::core::WebDavBrowseLoadProgress progress;
+    {
+        std::scoped_lock lock(this->webdav_load_state->mutex);
+        progress = this->webdav_load_state->progress;
+        if (this->webdav_load_state->finished) {
+            progress.stage = switchbox::core::WebDavBrowseLoadStage::Finalizing;
+            progress.progress = 1.0f;
+        }
+    }
+
+    if (this->loading_detail_label != nullptr) {
+        this->loading_detail_label->setText(build_webdav_loading_detail_text(progress));
+    }
+    if (this->loading_percent_label != nullptr) {
+        this->loading_percent_label->setText(build_iptv_loading_percent_text(progress.progress));
+    }
+    if (this->loading_fill_view != nullptr) {
+        constexpr float kTrackWidth = 460.0f;
+        this->loading_fill_view->setWidth(std::clamp(progress.progress, 0.0f, 1.0f) * kTrackWidth);
     }
 }
 
@@ -737,7 +998,7 @@ void HomeActivity::handle_iptv_loading_completion() {
     }
 
     this->iptv_loading_completion_handled = true;
-    this->iptv_loading_timer.stop();
+    this->loading_timer.stop();
 
     if (finished.user_cancelled) {
         append_home_iptv_debug_log("loading_overlay completion ignored because user cancelled");
@@ -752,7 +1013,7 @@ void HomeActivity::handle_iptv_loading_completion() {
         append_home_iptv_debug_log(
             "loading_overlay success entries=" + std::to_string(finished.result.entries.size()) +
             " push_browser_from_home");
-        hide_iptv_loading_overlay(false);
+        hide_loading_overlay(false);
         this->iptv_load_state.reset();
         brls::Application::pushActivity(new IptvBrowserActivity(source_copy, std::move(finished.result)));
         return;
@@ -760,7 +1021,7 @@ void HomeActivity::handle_iptv_loading_completion() {
 
     const std::string error_message = build_iptv_playlist_error_message(finished.result);
     append_home_iptv_debug_log("loading_overlay failed message=" + sanitize_home_log_text(error_message));
-    hide_iptv_loading_overlay(true);
+    hide_loading_overlay(true);
     this->iptv_load_state.reset();
     brls::delay(1, [error_message]() {
         auto* dialog = new brls::Dialog(error_message);
@@ -769,13 +1030,72 @@ void HomeActivity::handle_iptv_loading_completion() {
     });
 }
 
-void HomeActivity::hide_iptv_loading_overlay(bool restore_focus) {
-    this->iptv_loading_timer.stop();
-    this->iptv_loading_visible = false;
-    this->iptv_loading_completion_handled = false;
+void HomeActivity::handle_webdav_loading_completion() {
+    if (this->webdav_loading_completion_handled || this->webdav_load_state == nullptr) {
+        return;
+    }
 
-    if (this->iptv_loading_overlay != nullptr) {
-        this->iptv_loading_overlay->setVisibility(brls::Visibility::GONE);
+    HomeFinishedWebDavLoad finished;
+    {
+        std::scoped_lock lock(this->webdav_load_state->mutex);
+        if (!this->webdav_load_state->finished || this->webdav_load_state->completion_consumed) {
+            return;
+        }
+
+        this->webdav_load_state->completion_consumed = true;
+        finished.ready = true;
+        finished.user_cancelled = this->webdav_load_state->user_cancelled;
+        finished.result = std::move(this->webdav_load_state->result);
+    }
+
+    if (!finished.ready) {
+        return;
+    }
+
+    this->webdav_loading_completion_handled = true;
+    this->loading_timer.stop();
+
+    if (finished.user_cancelled) {
+        append_home_iptv_debug_log("webdav_loading_overlay completion ignored because user cancelled");
+        this->webdav_load_state.reset();
+        return;
+    }
+
+    if (finished.result.backend_available && finished.result.success) {
+        auto source_copy = this->pending_webdav_source;
+        append_home_iptv_debug_log(
+            "webdav_loading_overlay success entries=" + std::to_string(finished.result.entries.size()) +
+            " push_browser_from_home");
+        hide_loading_overlay(false);
+        this->webdav_load_state.reset();
+        brls::Application::pushActivity(new WebDavBrowserActivity(source_copy, std::move(finished.result)));
+        return;
+    }
+
+    const std::string error_message = build_webdav_browser_error_message(finished.result);
+    append_home_iptv_debug_log("webdav_loading_overlay failed message=" + sanitize_home_log_text(error_message));
+    hide_loading_overlay(true);
+    this->webdav_load_state.reset();
+    brls::delay(1, [error_message]() {
+        auto* dialog = new brls::Dialog(error_message);
+        dialog->addButton(brls::getStr("hints/ok"), []() {});
+        dialog->open();
+    });
+}
+
+void HomeActivity::hide_loading_overlay(bool restore_focus) {
+    this->loading_timer.stop();
+    this->loading_visible = false;
+    this->active_loading_kind = LoadingKind::None;
+    this->iptv_loading_completion_handled = false;
+    this->webdav_loading_completion_handled = false;
+
+    if (this->loading_overlay != nullptr) {
+        this->loading_overlay->setVisibility(brls::Visibility::GONE);
+    }
+    if (this->cancel_loading_action_id != ACTION_NONE) {
+        unregisterAction(this->cancel_loading_action_id);
+        this->cancel_loading_action_id = ACTION_NONE;
     }
 
     if (restore_focus) {

@@ -134,7 +134,12 @@ std::string history_entry_title(const switchbox::core::PlaybackHistoryEntry& ent
 }
 
 std::string history_entry_detail(const switchbox::core::PlaybackHistoryEntry& entry) {
-    std::string detail = entry.source_kind == switchbox::core::PlaybackSourceKind::Smb ? "SMB" : "IPTV";
+    std::string detail = "IPTV";
+    if (entry.source_kind == switchbox::core::PlaybackSourceKind::Smb) {
+        detail = "SMB";
+    } else if (entry.source_kind == switchbox::core::PlaybackSourceKind::WebDav) {
+        detail = "WebDAV";
+    }
 
     if (!entry.source_title.empty()) {
         detail += " · " + entry.source_title;
@@ -143,6 +148,15 @@ std::string history_entry_detail(const switchbox::core::PlaybackHistoryEntry& en
     if (entry.source_kind == switchbox::core::PlaybackSourceKind::Smb) {
         if (!entry.smb_relative_path.empty()) {
             detail += " / " + entry.smb_relative_path;
+        } else if (!entry.item_subtitle.empty()) {
+            detail += " / " + entry.item_subtitle;
+        }
+        return detail;
+    }
+
+    if (entry.source_kind == switchbox::core::PlaybackSourceKind::WebDav) {
+        if (!entry.webdav_relative_path.empty()) {
+            detail += " / " + entry.webdav_relative_path;
         } else if (!entry.item_subtitle.empty()) {
             detail += " / " + entry.item_subtitle;
         }

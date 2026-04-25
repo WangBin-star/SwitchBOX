@@ -9,6 +9,7 @@ add_library(switchbox_app STATIC
     source/player_video_surface.cpp
     source/settings_activity.cpp
     source/smb_browser_activity.cpp
+    source/webdav_browser_activity.cpp
 )
 
 target_include_directories(switchbox_app

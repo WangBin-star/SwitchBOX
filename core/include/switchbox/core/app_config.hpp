@@ -60,10 +60,21 @@ struct SmbSourceSettings {
     bool use_history = true;
 };
 
+struct WebDavSourceSettings {
+    std::string key;
+    std::string title;
+    std::string url;
+    std::string username;
+    std::string password;
+    bool enabled = true;
+    bool use_history = true;
+};
+
 struct AppConfig {
     GeneralSettings general;
     std::vector<IptvSourceSettings> iptv_sources;
     std::vector<SmbSourceSettings> smb_sources;
+    std::vector<WebDavSourceSettings> webdav_sources;
 };
 
 class AppConfigStore {

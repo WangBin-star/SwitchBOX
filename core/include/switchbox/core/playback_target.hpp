@@ -27,12 +27,20 @@ enum class PlaybackSourceKind {
     Unknown,
     Smb,
     Iptv,
+    WebDav,
 };
 
 struct PlaybackTarget {
     struct SmbLocator {
         std::string host;
         std::string share;
+        std::string username;
+        std::string password;
+        std::string relative_path;
+    };
+
+    struct WebDavLocator {
+        std::string url;
         std::string username;
         std::string password;
         std::string relative_path;
@@ -56,6 +64,7 @@ struct PlaybackTarget {
     bool locator_pre_resolved = false;
     bool locator_is_direct = false;
     std::optional<SmbLocator> smb_locator;
+    std::optional<WebDavLocator> webdav_locator;
 };
 
 PlaybackTarget make_smb_playback_target(
@@ -66,6 +75,9 @@ PlaybackTarget make_iptv_playback_target(
     const IptvPlaylistEntry& entry,
     std::shared_ptr<const IptvPlaybackOverlayContext> overlay_context = nullptr,
     size_t overlay_group_index = 0);
+PlaybackTarget make_webdav_playback_target(
+    const WebDavSourceSettings& source,
+    const std::string& relative_path);
 bool try_parse_smb_locator_from_uri(
     std::string_view locator_uri,
     PlaybackTarget::SmbLocator& smb_locator);

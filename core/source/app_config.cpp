@@ -883,6 +883,7 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
 
     config.iptv_sources.clear();
     config.smb_sources.clear();
+    config.webdav_sources.clear();
 
     for (const auto& [sectionName, section] : document) {
         if (starts_with(sectionName, "iptv-")) {
@@ -917,6 +918,23 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
                 get_value(document, sectionName, "use_history"),
                 source.use_history);
             config.smb_sources.push_back(std::move(source));
+            continue;
+        }
+
+        if (starts_with(sectionName, "webdav-")) {
+            WebDavSourceSettings source;
+            source.key = sectionName.substr(7);
+            source.title = get_value(document, sectionName, "title", source.key);
+            source.url = get_value(document, sectionName, "url");
+            source.username = get_value(document, sectionName, "username");
+            source.password = get_value(document, sectionName, "password");
+            source.enabled = parse_bool(
+                get_value(document, sectionName, "enabled"),
+                source.enabled);
+            source.use_history = parse_bool(
+                get_value(document, sectionName, "use_history"),
+                source.use_history);
+            config.webdav_sources.push_back(std::move(source));
         }
     }
 
@@ -949,6 +967,24 @@ void load_config_from_document(const IniDocument& document, AppConfig& config) {
             legacySource.use_history);
         if (!legacySource.host.empty() || !legacySource.share.empty()) {
             config.smb_sources.push_back(std::move(legacySource));
+        }
+    }
+
+    if (config.webdav_sources.empty() && document.contains("webdav")) {
+        WebDavSourceSettings legacySource;
+        legacySource.key = "default";
+        legacySource.title = get_value(document, "webdav", "title", legacySource.key);
+        legacySource.url = get_value(document, "webdav", "url");
+        legacySource.username = get_value(document, "webdav", "username");
+        legacySource.password = get_value(document, "webdav", "password");
+        legacySource.enabled = parse_bool(
+            get_value(document, "webdav", "enabled"),
+            legacySource.enabled);
+        legacySource.use_history = parse_bool(
+            get_value(document, "webdav", "use_history"),
+            legacySource.use_history);
+        if (!legacySource.url.empty()) {
+            config.webdav_sources.push_back(std::move(legacySource));
         }
     }
 }
@@ -1082,6 +1118,33 @@ bool write_config_file(const AppPaths& paths, const AppConfig& config) {
         output << "title=" << source.title << '\n';
         output << "host=" << source.host << '\n';
         output << "share=" << source.share << '\n';
+        output << "username=" << source.username << '\n';
+        output << "password=" << source.password << '\n';
+        output << "enabled=" << (source.enabled ? "true" : "false") << '\n';
+        output << "use_history=" << (source.use_history ? "true" : "false") << '\n';
+        output << '\n';
+    }
+
+    output << "; -----------WebDAV--------------" << '\n';
+    output << "; WebDAV sources use sections named [webdav-xxx]" << '\n';
+    output << "; Example:" << '\n';
+    output << "; [webdav-media]" << '\n';
+    output << "; title=Home WebDAV" << '\n';
+    output << "; url=https://example.com/remote.php/dav/files/user/media/" << '\n';
+    output << "; username=user" << '\n';
+    output << "; password=pass" << '\n';
+    output << "; enabled=true" << '\n';
+    output << "; use_history=true" << '\n';
+    output << '\n';
+
+    for (const auto& source : config.webdav_sources) {
+        if (source.key.empty()) {
+            continue;
+        }
+
+        output << "[webdav-" << source.key << "]" << '\n';
+        output << "title=" << source.title << '\n';
+        output << "url=" << source.url << '\n';
         output << "username=" << source.username << '\n';
         output << "password=" << source.password << '\n';
         output << "enabled=" << (source.enabled ? "true" : "false") << '\n';

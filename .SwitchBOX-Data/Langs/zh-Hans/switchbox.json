@@ -36,6 +36,14 @@
                 }
             }
         },
+        "webdav_browser": {
+            "extensions_hint": "\u5f53\u524d\u663e\u793a\u7684\u6269\u5c55\u540d\uff1a{0}",
+            "backend_unavailable": "\u5f53\u524d\u6784\u5efa\u8fd8\u6ca1\u6709\u63a5\u5165 WebDAV \u6d4f\u89c8\u540e\u7aef\u3002",
+            "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a WebDAV \u4f4d\u7f6e\u3002",
+            "empty": "\u5f53\u524d\u76ee\u5f55\u4e0b\u6ca1\u6709\u53ef\u663e\u793a\u7684\u6587\u4ef6\u5939\uff0c\u6216\u8005\u6ca1\u6709\u7b26\u5408\u5f53\u524d\u6269\u5c55\u540d\u8fc7\u6ee4\u7684\u5a92\u4f53\u6587\u4ef6\u3002",
+            "folder_detail": "\u76ee\u5f55",
+            "file_detail": "\u53ef\u64ad\u653e\u6587\u4ef6 / {0}"
+        },
         "iptv_browser": {
             "loading": "\u6b63\u5728\u52a0\u8f7d IPTV \u64ad\u653e\u5217\u8868...",
             "loading_detail": "\u9996\u6b21\u8fdb\u5165\u4f1a\u8bf7\u6c42\u8fdc\u7a0b M3U \u5217\u8868\uff0c\u8bf7\u7a0d\u5019\u3002",
@@ -74,14 +82,23 @@
                 "finalizing": "\u6b63\u5728\u6574\u7406\u9891\u9053\u5217\u8868\u2026"
             }
         },
+        "webdav_loading": {
+            "title": "\u6b63\u5728\u83b7\u53d6 WebDAV \u76ee\u5f55",
+            "stages": {
+                "starting": "\u6b63\u5728\u51c6\u5907\u83b7\u53d6 WebDAV \u76ee\u5f55\u2026",
+                "opening_connection": "\u6b63\u5728\u83b7\u53d6\u8fdc\u7a0b\u76ee\u5f55\u2026",
+                "finalizing": "\u6b63\u5728\u6574\u7406\u6587\u4ef6\u5217\u8868\u2026"
+            }
+        },
         "home": {
-            "no_sources_hint": "\u5f53\u524d\u6ca1\u6709\u5df2\u542f\u7528\u7684 IPTV \u6216 SMB \u6765\u6e90\uff0c\u6309 + \u524d\u5f80\u8bbe\u7f6e\u6dfb\u52a0\u3002",
+            "no_sources_hint": "\u5f53\u524d\u6ca1\u6709\u5df2\u542f\u7528\u7684 IPTV\u3001SMB \u6216 WebDAV \u6765\u6e90\uff0c\u6309 + \u524d\u5f80\u8bbe\u7f6e\u6dfb\u52a0\u3002",
             "source_info": "\u8f6f\u4ef6\u6765\u81ea https://github.com/WangBin-star/SwitchBOX",
             "cards": {
                 "common": {
                     "not_set": "\u672a\u8bbe\u7f6e",
                     "untitled_iptv": "\u672a\u547d\u540d IPTV",
-                    "untitled_smb": "\u672a\u547d\u540d SMB"
+                    "untitled_smb": "\u672a\u547d\u540d SMB",
+                    "untitled_webdav": "\u672a\u547d\u540d WebDAV"
                 },
                 "history": {
                     "eyebrow": "\u6700\u8fd1\u64ad\u653e",
@@ -96,13 +113,17 @@
                 "smb": {
                     "eyebrow": "SMB",
                     "detail": "\u5171\u4eab\u5a92\u4f53\u6e90"
+                },
+                "webdav": {
+                    "eyebrow": "WebDAV",
+                    "detail": "WebDAV \u5a92\u4f53\u6e90"
                 }
             }
         },
         "sections": {
             "history": {
                 "title": "\u64ad\u653e\u5386\u53f2",
-                "subtitle": "\u5728\u8fd9\u91cc\u7edf\u4e00\u67e5\u770b\u6700\u8fd1\u64ad\u653e\u7684 IPTV \u4e0e SMB \u5185\u5bb9",
+                "subtitle": "\u5728\u8fd9\u91cc\u7edf\u4e00\u67e5\u770b\u6700\u8fd1\u64ad\u653e\u7684 IPTV\u3001SMB \u4e0e WebDAV \u5185\u5bb9",
                 "checkpoints": {
                     "1": "\u8bb0\u5f55 IPTV \u548c SMB \u7684\u7edf\u4e00\u64ad\u653e\u5386\u53f2\u7ed3\u6784",
                     "2": "\u5c55\u793a\u6700\u8fd1\u64ad\u653e\u5217\u8868\u4e0e\u6765\u6e90\u6807\u8bc6",
@@ -136,6 +157,15 @@
                     "3": "\u628a\u9009\u4e2d\u7684\u6587\u4ef6\u63a5\u5165\u7edf\u4e00\u64ad\u653e\u5668\u9875\u9762"
                 }
             },
+            "webdav": {
+                "title": "WebDAV",
+                "subtitle": "\u5df2\u4fdd\u5b58 WebDAV \u6839\u76ee\u5f55\u3001\u76ee\u5f55\u6d4f\u89c8\u4e0e\u76f4\u63a5\u5a92\u4f53\u64ad\u653e",
+                "checkpoints": {
+                    "1": "\u52a0\u5165\u5df2\u4fdd\u5b58 WebDAV \u5730\u5740\u4e0e\u8d26\u53f7\u51ed\u636e",
+                    "2": "\u9a8c\u8bc1\u76ee\u5f55\u5217\u8868\u4e0e\u6587\u4ef6\u8fc7\u6ee4",
+                    "3": "\u628a\u9009\u4e2d\u7684\u6587\u4ef6\u63a5\u5165\u7edf\u4e00\u64ad\u653e\u5668\u9875\u9762"
+                }
+            },
             "settings": {
                 "title": "\u8bbe\u7f6e",
                 "subtitle": "\u8fd0\u884c\u68c0\u67e5\u3001\u6765\u6e90\u914d\u7f6e\u4e0e\u8bca\u65ad\u5165\u53e3",
@@ -147,9 +177,9 @@
             }
         },
         "history_page": {
-            "summary": "\u5728\u8fd9\u91cc\u7edf\u4e00\u67e5\u770b\u6700\u8fd1\u64ad\u653e\u7684 IPTV \u4e0e SMB \u5185\u5bb9",
+            "summary": "\u5728\u8fd9\u91cc\u7edf\u4e00\u67e5\u770b\u6700\u8fd1\u64ad\u653e\u7684 IPTV\u3001SMB \u4e0e WebDAV \u5185\u5bb9",
             "empty_title": "\u8fd8\u6ca1\u6709\u64ad\u653e\u5386\u53f2",
-            "empty_detail": "\u5148\u64ad\u653e\u4e00\u4e2a IPTV \u9891\u9053\u6216 SMB \u6587\u4ef6\uff0c\u5b83\u5c31\u4f1a\u51fa\u73b0\u5728\u8fd9\u91cc",
+            "empty_detail": "\u5148\u64ad\u653e\u4e00\u4e2a IPTV \u9891\u9053\u3001SMB \u6587\u4ef6\u6216 WebDAV \u6587\u4ef6\uff0c\u5b83\u5c31\u4f1a\u51fa\u73b0\u5728\u8fd9\u91cc",
             "untitled": "\u672a\u547d\u540d\u6761\u76ee",
             "open_failed": "\u65e0\u6cd5\u6253\u5f00\u8fd9\u4e2a\u5386\u53f2\u6761\u76ee\u3002",
             "delete_confirm": "\u786e\u5b9a\u5220\u9664\u64ad\u653e\u5386\u53f2\u300c{0}\u300d\u5417\uff1f",
@@ -175,7 +205,10 @@
             "volume_label": "\u97f3\u91cf: {0}",
             "loading": {
                 "title": "\u6b63\u5728\u6253\u5f00\u9891\u9053",
+                "file_title": "\u6b63\u5728\u6253\u5f00\u5a92\u4f53\u6587\u4ef6",
                 "resolving_stream": "\u6b63\u5728\u89e3\u6790\u9891\u9053\u5730\u5740\u2026",
+                "preparing_file": "\u6b63\u5728\u51c6\u5907\u8fdc\u7a0b\u6587\u4ef6\u2026",
+                "verifying_file": "\u6b63\u5728\u9a8c\u8bc1 WebDAV \u6587\u4ef6\u2026",
                 "normalizing_locator": "\u6b63\u5728\u89c4\u6574\u9891\u9053\u5730\u5740\u2026",
                 "probing_source": "\u6b63\u5728\u63a2\u6d4b\u6e90\u7ad9\u54cd\u5e94\u2026",
                 "inspecting_response": "\u6b63\u5728\u8bc6\u522b\u6d41\u5a92\u4f53\u7c7b\u578b\u2026",
@@ -188,6 +221,8 @@
             },
             "loading_details": {
                 "resolving_stream": "\u6b63\u5728\u4e3a\u8fd9\u4e2a\u9891\u9053\u51c6\u5907\u53ef\u64ad\u653e\u7684\u8fde\u63a5\u65b9\u5f0f\u3002",
+                "preparing_file": "\u6b63\u5728\u4e3a\u8fd9\u4e2a WebDAV \u6587\u4ef6\u51c6\u5907\u53ef\u8bfb\u53d6\u7684\u8fde\u63a5\u65b9\u5f0f\u3002",
+                "verifying_file": "\u6b63\u5728\u63a2\u6d4b\u6587\u4ef6\u5927\u5c0f\u4e0e\u53ef\u8bfb\u6027\uff0c\u786e\u8ba4\u64ad\u653e\u5668\u53ef\u4ee5\u7ee7\u7eed\u6253\u5f00\u3002",
                 "normalizing_locator": "\u5904\u7406\u7279\u6b8a\u94fe\u63a5\u89c4\u5219\uff0c\u5e76\u7edf\u4e00\u5373\u5c06\u63d0\u4ea4\u7ed9\u64ad\u653e\u5668\u7684\u5730\u5740\u3002",
                 "probing_source": "\u5c1d\u8bd5\u8bfb\u53d6\u6e90\u7ad9\u8fd4\u56de\u5185\u5bb9\u7684\u524d\u51e0\u6bb5\uff0c\u786e\u8ba4\u5b83\u662f\u5a92\u4f53\u6d41\uff0c\u64ad\u653e\u5217\u8868\uff0c\u8fd8\u662f\u4ee3\u7406\u9875\u9762\u3002",
                 "inspecting_response": "\u6b63\u5728\u533a\u5206\u76f4\u94fe\u3001HLS\u3001FLV\u3001TS \u7b49\u4e0d\u540c\u7c7b\u578b\uff0c\u4ee5\u4fbf\u9009\u62e9\u5408\u9002\u7684\u64ad\u653e\u53c2\u6570\u3002",
@@ -438,6 +473,35 @@
                     "username": "\u7559\u7a7a\u8868\u793a\u533f\u540d\u6216\u7a0d\u540e\u518d\u586b",
                     "password": "\u6309\u9700\u586b\u5199",
                     "base_path": "\u4f8b\u5982 /movies \u6216 /tv"
+                }
+            },
+            "webdav": {
+                "summary": "\u5728\u8fd9\u91cc\u7ba1\u7406 WebDAV \u6761\u76ee\uff0c\u652f\u6301\u65b0\u589e\u4e0e\u7f16\u8f91\u3002",
+                "editor_title": "WebDAV \u6761\u76ee",
+                "list_empty": "\u5c1a\u65e0 WebDAV \u6761\u76ee\u3002",
+                "add_entry": "\u65b0\u589e WebDAV \u6761\u76ee",
+                "add_entry_detail": "\u521b\u5efa\u4e00\u4e2a\u65b0\u7684 WebDAV \u914d\u7f6e",
+                "delete_confirm": "\u786e\u8ba4\u5220\u9664 WebDAV \u6761\u76ee\u300c{0}\u300d\u5417\uff1f",
+                "default_title": "\u65b0 WebDAV \u6761\u76ee",
+                "fields": {
+                    "enabled": "\u542f\u7528",
+                    "use_history": "\u542f\u7528\u5386\u53f2\u8bb0\u5f55",
+                    "title": "\u6807\u9898",
+                    "url": "\u5730\u5740",
+                    "username": "\u7528\u6237\u540d",
+                    "password": "\u5bc6\u7801"
+                },
+                "placeholders": {
+                    "title": "\u8f93\u5165\u663e\u793a\u540d\u79f0",
+                    "url": "\u8f93\u5165 WebDAV \u6839 URL",
+                    "username": "\u8f93\u5165\u7528\u6237\u540d",
+                    "password": "\u8f93\u5165\u5bc6\u7801"
+                },
+                "hints": {
+                    "title": "\u8fd9\u4e2a\u540d\u79f0\u4f1a\u7528\u5728 WebDAV \u6761\u76ee\u5217\u8868\u4e2d",
+                    "url": "\u4f8b\u5982 https://example.com/remote.php/dav/files/user/media/",
+                    "username": "\u5982\u670d\u52a1\u5668\u4e0d\u9700\u8981\u9a8c\u8bc1\u53ef\u4ee5\u7559\u7a7a",
+                    "password": "\u6309\u9700\u586b\u5199"
                 }
             }
         }
