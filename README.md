@@ -1,5 +1,14 @@
 # SwitchBOX
 
+当前版本 / Current version: `1.3.1`
+
+## 1.3.1 更新 / Release Notes
+
+- 修复 Switch 连接电视时视频画面使用逻辑分辨率复制、导致未铺满物理输出的问题。<br>
+  Fixed video rendering on TV output using logical dimensions instead of the physical framebuffer, which could leave the video smaller than the controls.
+- 播放器文档补充了电视输出尺寸和视频源宽高比说明。<br>
+  Documented TV output sizing and source-video aspect-ratio behavior in the player guide.
+
 ## 本项目的目的 / Project Goal
 
 让 `Nintendo Switch` 像机顶盒一样使用，当前聚焦三类核心能力。  
