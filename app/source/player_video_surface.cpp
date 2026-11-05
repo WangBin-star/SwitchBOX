@@ -476,8 +476,6 @@ void PlayerVideoSurface::draw(
     float height,
     brls::Style style,
     brls::FrameContext* ctx) {
-    const int draw_width = std::max(1, static_cast<int>(width));
-    const int draw_height = std::max(1, static_cast<int>(height));
     const bool has_media = switchbox::core::switch_mpv_has_media();
     const bool session_active = switchbox::core::switch_mpv_session_active();
     const bool paused = switchbox::core::switch_mpv_is_paused();
@@ -491,12 +489,16 @@ void PlayerVideoSurface::draw(
     auto* switch_video_context = dynamic_cast<brls::SwitchVideoContext*>(
         brls::Application::getPlatform()->getVideoContext());
     if (switch_video_context != nullptr && (session_active || has_media)) {
+        // Borealis lays out views in logical coordinates (1280x720 when docked),
+        // while the deko3d framebuffer uses the physical output resolution.
+        const int render_width = std::max(1, static_cast<int>(brls::Application::windowWidth));
+        const int render_height = std::max(1, static_cast<int>(brls::Application::windowHeight));
         if (switchbox::core::switch_mpv_render_deko3d_frame(
                 switch_video_context->getDeko3dDevice(),
                 switch_video_context->getQueue(),
                 switch_video_context->getFramebuffer(),
-                draw_width,
-                draw_height)) {
+                render_width,
+                render_height)) {
             rendered_video = true;
         }
     }

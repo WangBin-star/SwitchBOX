@@ -183,6 +183,13 @@ This section describes the main controls available in the current version, with 
 - 暂停时点击屏幕中央图标：恢复播放。  
   When paused, tap the center icon on screen to resume playback.
 
+显示与缩放 / Display scaling:
+
+- 连接电视时，界面使用固定的逻辑布局尺寸，视频渲染使用电视的实际 framebuffer 分辨率；两者会分别处理，因此控制栏和视频应覆盖同一个输出区域。<br>
+  When connected to a TV, the UI uses a fixed logical layout size while video rendering uses the display's physical framebuffer resolution, so the controls and video cover the same output area.
+- 视频源自身的宽高比会被保留。4:3 视频或文件中已经带黑边时，画面仍可能出现左右或上下黑边，这属于源视频比例行为。<br>
+  The source video's aspect ratio is preserved. 4:3 videos or files that already contain letterboxing may still show black bars; this is expected source-video behavior.
+
 ## 捐赠 & 打赏 / Donation
 
 如果这个项目对你有帮助，并且你愿意支持后续开发，可以考虑打赏，感谢。  
